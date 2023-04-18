@@ -47,11 +47,13 @@ float computeVarianceCenter(int2 ipos)
 {
     float sum = 0.f;
 
+    // learnable 
     const float kernel[2][2] = {
         { 1.0 / 4.0, 1.0 / 8.0  },
         { 1.0 / 8.0, 1.0 / 16.0 }
     };
 
+    // do we want to learn this?
     const int radius = 1;
     for (int yy = -radius; yy <= radius; yy++)
     {
@@ -72,6 +74,7 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
     const int2 screenSize = getTextureDims(gAlbedo, 0);
 
     const float epsVariance      = 1e-10;
+    // learnable 
     const float kernelWeights[3] = { 1.0, 2.0 / 3.0, 1.0 / 6.0 };
 
     // constant samplers to prevent the compiler from generating code which

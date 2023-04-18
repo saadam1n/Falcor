@@ -40,6 +40,7 @@ cbuffer PerImageCB
     float       gPhiNormal;
 };
 
+// compute moments
 float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 {
     float4 posH = vsOut.posH;

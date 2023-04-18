@@ -34,6 +34,7 @@ cbuffer PerImageCB
     Texture2D gNormal;
 };
 
+// pack normals and whatnot
 float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 {
     float4 fragCoord = vsOut.posH;

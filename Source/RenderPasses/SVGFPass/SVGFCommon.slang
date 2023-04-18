@@ -32,6 +32,7 @@ int2 getTextureDims(Texture2D tex, uint mip)
     return int2(w,h);
 }
 
+// compute the weight for the filter 
 float computeWeight(
     float depthCenter, float depthP, float phiDepth,
     float3 normalCenter, float3 normalP, float phiNormal,

@@ -53,6 +53,7 @@ cbuffer PerImageCB
     float       gMomentsAlpha;
 };
 
+// divide by albedo to remodulate
 float3 demodulate(float3 c, float3 albedo)
 {
     return c / max(albedo, float3(0.001, 0.001, 0.001));
@@ -74,6 +75,7 @@ bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal
     return true;
 }
 
+// get the temporal data (this function does not accumulate)
 bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out float historyLength)
 {
     const int2 ipos = posH;
@@ -212,8 +214,10 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     float historyLength;
     float4 prevIllumination;
     float2 prevMoments;
-    bool success = loadPrevData(posH.xy, prevIllumination, prevMoments, historyLength);
+    bool success = loadPrevData(posH.xy, prevIllumination, prevMoments, historyLength); // get temporal data with weights
     historyLength = min(32.0f, success ? historyLength + 1.0f : 1.0f);
+
+    // it appears that the temporal accumulation does not have a constant alpha, instead it is adaptive
 
     // this adjusts the alpha for the case where insufficient history is available.
     // It boosts the temporal accumulation to give the samples equal weights in
