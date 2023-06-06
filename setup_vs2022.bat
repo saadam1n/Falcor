@@ -10,8 +10,7 @@ if "%~1"=="ci" (
 )
 
 : Fetch dependencies.
-call %~dp0\setup.bat
-
+call "%~dp0\setup.bat"
 : Configuration.
 set PRESET=windows-vs2022%PRESET_SUFFIX%
 set TOOLSET=host=x86
@@ -20,13 +19,13 @@ set CUSTOM_CUDA_DIR=%~dp0\external\packman\cuda
 
 : Check if custom CUDA directory contains a valid CUDA SDK.
 : Adjust toolset string to use the custom CUDA toolkit.
-if exist %CUSTOM_CUDA_DIR%\bin\nvcc.exe (
+if exist "%CUSTOM_CUDA_DIR%\bin\nvcc.exe" (
     set TOOLSET=%TOOLSET%,cuda="%CUSTOM_CUDA_DIR%"
 )
 
 : Configure solution by running cmake.
 echo Configuring Visual Studio solution ...
-%CMAKE_EXE% --preset %PRESET% -T %TOOLSET%
+"%CMAKE_EXE%" --preset %PRESET% -T %TOOLSET%
 if errorlevel 1 (
     echo Failed to configure solution!
     exit /b 1
