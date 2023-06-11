@@ -59,7 +59,7 @@ float3 demodulate(float3 c, float3 albedo)
     return c / max(albedo, float3(0.001, 0.001, 0.001));
 }
 
-bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal, float3 normalPrev, float fwidthNormal)
+bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal, float3 normalPrev, float fwidthNormal, float[4] reprojectionWeights)
 {
     const int2 imageDim = getTextureDims(gColor, 0);
 
@@ -67,16 +67,16 @@ bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal
     if (any(coord < int2(1,1)) || any(coord > imageDim - int2(1,1))) return false;
 
     // check if deviation of depths is acceptable
-    if (abs(Zprev - Z) / (fwidthZ + 1e-2f) > 10.f) return false;
+    if (abs(Zprev - Z) / (fwidthZ + 1e-2f) > reprojectionWeights[2]) return false;
 
     // check normals for compatibility
-    if (distance(normal, normalPrev) / (fwidthNormal + 1e-2) > 16.0) return false;
+    if (distance(normal, normalPrev) / (fwidthNormal + 1e-2) > reprojectionWeights[3]) return false;
 
     return true;
 }
 
 // get the temporal data (this function does not accumulate)
-bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out float historyLength)
+bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out float historyLength, float[4] reprojectionWeights, float[3] kernelWeights)
 {
     const int2 ipos = posH;
     const float2 imageDim = float2(getTextureDims(gColor, 0));
@@ -105,7 +105,7 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out
         float2 depthPrev = gPrevLinearZAndNormal[loc].xy;
         float3 normalPrev = oct_to_ndir_snorm(gPrevLinearZAndNormal[loc].zw);
 
-        v[sampleIdx] = isReprjValid(iposPrev, depth.x, depthPrev.x, depth.y, normal, normalPrev, normalFwidth);
+        v[sampleIdx] = isReprjValid(iposPrev, depth.x, depthPrev.x, depth.y, normal, normalPrev, normalFwidth, reprojectionWeights);
 
         valid = valid || v[sampleIdx];
     }
@@ -143,6 +143,7 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out
     if (!valid) // perform cross-bilateral filter in the hope to find some suitable samples somewhere
     {
         float nValid = 0.0;
+        float totalWeight = 0.0;
 
         // this code performs a binary descision for each tap of the cross-bilateral filter
         const int radius = 1;
@@ -153,20 +154,22 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out
                 const int2 p = iposPrev + int2(xx, yy);
                 const float2 depthFilter = gPrevLinearZAndNormal[p].xy;
                 const float3 normalFilter = oct_to_ndir_snorm(gPrevLinearZAndNormal[p].zw);
+                float curWeight = kernelWeights[abs(yy) + abs(xx)];
 
-                if (isReprjValid(iposPrev, depth.x, depthFilter.x, depth.y, normal, normalFilter, normalFwidth))
+                if (isReprjValid(iposPrev, depth.x, depthFilter.x, depth.y, normal, normalFilter, normalFwidth, reprojectionWeights))
                 {
-                    prevIllum += gPrevIllum[p];
-                    prevMoments += gPrevMoments[p].xy;
+                    prevIllum += curWeight * gPrevIllum[p];
+                    prevMoments += curWeight * gPrevMoments[p].xy;
                     nValid += 1.0;
+                    totalWeight += curWeight;
                 }
             }
         }
         if (nValid > 0)
         {
             valid = true;
-            prevIllum   /= nValid;
-            prevMoments /= nValid;
+            prevIllum /= totalWeight;
+            prevMoments /= totalWeight;
         }
     }
 
@@ -199,7 +202,8 @@ struct PS_OUT
     float  OutHistoryLength : SV_TARGET2;
 };
 
-PS_OUT main(FullScreenPassVsOut vsOut)
+// perhaps instead of having a simple lerp function for TAA, we can have more complex curves
+PS_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4] reprojectionWeights, float[3] kernelWeights)
 {
     const float4 posH = vsOut.posH;
     const int2 ipos = posH.xy;
@@ -214,20 +218,20 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     float historyLength;
     float4 prevIllumination;
     float2 prevMoments;
-    bool success = loadPrevData(posH.xy, prevIllumination, prevMoments, historyLength); // get temporal data with weights
-    historyLength = min(32.0f, success ? historyLength + 1.0f : 1.0f);
+    bool success = loadPrevData(posH.xy, prevIllumination, prevMoments, historyLength, reprojectionWeights, kernelWeights); // get temporal data with weights
+    historyLength = min(reprojectionWeights[0], success ? historyLength + 1.0f : 1.0f);
 
     // it appears that the temporal accumulation does not have a constant alpha, instead it is adaptive
 
     // this adjusts the alpha for the case where insufficient history is available.
     // It boosts the temporal accumulation to give the samples equal weights in
     // the beginning.
-    const float alpha        = success ? max(gAlpha,        1.0 / historyLength) : 1.0;
-    const float alphaMoments = success ? max(gMomentsAlpha, 1.0 / historyLength) : 1.0;
+    const float alpha        = success ? max(gAlpha,        reprojectionWeights[1] / historyLength) : 1.0;
+    const float alphaMoments = success ? max(gMomentsAlpha, reprojectionWeights[1] / historyLength) : 1.0;
 
     // compute first two moments of luminance
     float2 moments;
-    moments.r = luminance(illumination);
+    moments.r = dot(illumination, luminanceParams.rgb);
     moments.g = moments.r * moments.r;
 
     float2 pm = moments;
@@ -248,4 +252,12 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     psOut.OutHistoryLength = historyLength;
 
     return psOut;
+}
+
+PS_OUT main(FullScreenPassVsOut vsOut) {
+    const float reprojectionWeights[4] = { 32.0, 1.0, 10.0, 16.0 };
+    const float3 luminanceParams = float3(0.3333); // also in the atrous shader
+    const float kernelWeights[3] = { 1.0, 1.0, 1.0 };
+
+    return reproject(vsOut, luminanceParams, reprojectionWeights, kernelWeights);
 }

@@ -32,17 +32,21 @@ int2 getTextureDims(Texture2D tex, uint mip)
     return int2(w,h);
 }
 
+#define NUM_WEIGHT_PARAMS 7 // extra params if needed
+const float weightsParamsGlobal[NUM_WEIGHT_PARAMS] = { 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 };
+
 // compute the weight for the filter 
 float computeWeight(
     float depthCenter, float depthP, float phiDepth,
     float3 normalCenter, float3 normalP, float phiNormal,
-    float luminanceIllumCenter, float luminanceIllumP, float phiIllum)
+    float luminanceIllumCenter, float luminanceIllumP, float phiIllum,
+    float[NUM_WEIGHT_PARAMS] weightParams)
 {
-    const float weightNormal  = pow(saturate(dot(normalCenter, normalP)), phiNormal);
-    const float weightZ       = (phiDepth == 0) ? 0.0f : abs(depthCenter - depthP) / phiDepth;
-    const float weightLillum  = abs(luminanceIllumCenter - luminanceIllumP) / phiIllum;
+    const float weightNormal  = pow(saturate(dot(normalCenter, normalP)), weightParams[0] * phiNormal);
+    const float weightZ       = (phiDepth == 0) ? 0.0f : weightParams[1] * abs(depthCenter - depthP) / phiDepth;
+    const float weightLillum  = weightParams[2] * abs(luminanceIllumCenter - luminanceIllumP) / phiIllum;
 
-    const float weightIllum   = exp(0.0 - max(weightLillum, 0.0) - max(weightZ, 0.0)) * weightNormal;
+    const float weightIllum   = weightParams[3] * exp(weightParams[4] * (-max(weightLillum, 0.0) - max(weightZ, 0.0))) * weightNormal;
 
     return weightIllum;
 }

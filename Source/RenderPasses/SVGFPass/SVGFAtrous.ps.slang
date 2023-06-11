@@ -29,6 +29,9 @@ import Utils.Math.MathHelpers;
 import Utils.Color.ColorHelpers;
 import SVGFCommon;
 
+// the linter gets confused when importing values
+#define NUM_WEIGHT_PARAMS 7
+
 cbuffer PerImageCB
 {
     Texture2D   gAlbedo;
@@ -47,9 +50,6 @@ float computeVarianceCenter(int2 ipos, float[2][2] kernel)
 {
     float sum = 0.f;
 
-    // learnable 
-
-
     // do we want to learn this?
     const int radius = 1;
     for (int yy = -radius; yy <= radius; yy++)
@@ -65,7 +65,7 @@ float computeVarianceCenter(int2 ipos, float[2][2] kernel)
     return sum;
 }
 
-float4 compute_svgf(FullScreenPassVsOut vsOut, float[3] kernelWeights, float[2][2] varianceKernel, float3 luminanceParams) {
+float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] varianceKernel, float3 luminanceParams, float[NUM_WEIGHT_PARAMS] weightsParams) {
     const int2 ipos = int2(vsOut.posH.xy);
     const int2 screenSize = getTextureDims(gAlbedo, 0);
 
@@ -118,7 +118,8 @@ float4 compute_svgf(FullScreenPassVsOut vsOut, float[3] kernelWeights, float[2][
                 const float2 w = computeWeight(
                     zCenter.x, zP, phiDepth * length(float2(xx, yy)),
                     nCenter, nP, gPhiNormal,
-                    lIlluminationCenter, lIlluminationP, phiLIllumination);
+                    lIlluminationCenter, lIlluminationP, phiLIllumination,
+                    weightsParams);
 
                 const float wIllumination = w.x * kernel;
 
@@ -144,5 +145,5 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
     };
     const float3 luminanceParams = float3(0.3333);
 
-    return compute_svgf(vsOut, kernelWeights, varianceKernel, luminanceParams);
+    return atrous(vsOut, kernelWeights, varianceKernel, luminanceParams, weightsParamsGlobal);
 }
