@@ -29,8 +29,9 @@ import Utils.Math.MathHelpers;
 import Utils.Color.ColorHelpers;
 import SVGFCommon;
 
-// the linter gets confused when importing values
+// slang doesn't support importing macros, so we have to redefine
 #define NUM_WEIGHT_PARAMS 7
+#define LUMINANCE_POLYN_DEGREE 3
 
 cbuffer PerImageCB
 {
@@ -43,7 +44,7 @@ cbuffer PerImageCB
     float       gPhiNormal;
 };
 
-float4 filter_moments(FullScreenPassVsOut vsOut, float3 luminanceParams, float weightsParams[NUM_WEIGHT_PARAMS]) {
+float4 filter_moments(FullScreenPassVsOut vsOut, float3[LUMINANCE_POLYN_DEGREE] luminanceParams, float weightsParams[NUM_WEIGHT_PARAMS], float sigmaL, float sigmaZ, float sigmaN) {
     float4 posH = vsOut.posH;
     int2 ipos = int2(posH.xy);
 
@@ -57,7 +58,7 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float3 luminanceParams, float w
         float2 sumMoments = float2(0.0, 0.0);
 
         const float4 illuminationCenter = gIllumination[ipos];
-        const float lIlluminationCenter = luminance(illuminationCenter.rgb);
+        const float lIlluminationCenter = computePolynomialLuminance(illuminationCenter.rgb, luminanceParams);
 
         const float2 zCenter = gLinearZAndNormal[ipos].xy;
         if (zCenter.x < 0)
@@ -66,8 +67,8 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float3 luminanceParams, float w
             return illuminationCenter;
         }
         const float3 nCenter = oct_to_ndir_snorm(gLinearZAndNormal[ipos].zw);
-        const float phiLIllumination = gPhiColor;
-        const float phiDepth = max(zCenter.y, 1e-8) * 3.0;
+        const float phiLIllumination = sigmaL;
+        const float phiDepth = max(zCenter.y, 1e-8);
 
         // compute first and second moment spatially. This code also applies cross-bilateral
         // filtering on the input illumination.
@@ -86,13 +87,13 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float3 luminanceParams, float w
                 {
                     const float3 illuminationP = gIllumination[p].rgb;
                     const float2 momentsP = gMoments[p].xy;
-                    const float lIlluminationP = dot(illuminationP.rgb, luminanceParams);
+                    const float lIlluminationP = computePolynomialLuminance(illuminationP.rgb, luminanceParams);
                     const float zP = gLinearZAndNormal[p].x;
                     const float3 nP = oct_to_ndir_snorm(gLinearZAndNormal[p].zw);
 
                     const float w = computeWeight(
                         zCenter.x, zP, phiDepth * length(float2(xx, yy)),
-                        nCenter, nP, gPhiNormal,
+                        nCenter, nP, sigmaN,
                         lIlluminationCenter, lIlluminationP, phiLIllumination,
                         weightsParams);
 
@@ -127,6 +128,6 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float3 luminanceParams, float w
 // compute moments
 float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 {
-    const float3 luminanceParams = float3(0.3333);
-    return filter_moments(vsOut, luminanceParams, weightsParamsGlobal);
+    const float3 luminanceParams[LUMINANCE_POLYN_DEGREE] = { float3(0.3333), float3(0.3333), float3(0.3333) };
+    return filter_moments(vsOut, luminanceParams, weightsParamsGlobal, gPhiColor, 1.0, gPhiNormal);
 }

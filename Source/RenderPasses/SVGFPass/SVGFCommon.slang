@@ -42,11 +42,11 @@ float computeWeight(
     float luminanceIllumCenter, float luminanceIllumP, float phiIllum,
     float[NUM_WEIGHT_PARAMS] weightParams)
 {
-    const float weightNormal  = pow(saturate(dot(normalCenter, normalP)), weightParams[0] * phiNormal);
-    const float weightZ       = (phiDepth == 0) ? 0.0f : weightParams[1] * abs(depthCenter - depthP) / phiDepth;
-    const float weightLillum  = weightParams[2] * abs(luminanceIllumCenter - luminanceIllumP) / phiIllum;
+    const float weightNormal  = weightParams[0] * pow(saturate(dot(normalCenter, normalP)), phiNormal);
+    const float weightZ       = (phiDepth == 0) ? 0.0f : abs(depthCenter - depthP) / phiDepth;
+    const float weightLillum  = weightParams[1] * abs(luminanceIllumCenter - luminanceIllumP) / phiIllum;
 
-    const float weightIllum   = weightParams[3] * exp(weightParams[4] * (-max(weightLillum, 0.0) - max(weightZ, 0.0))) * weightNormal;
+    const float weightIllum   = exp(-weightParams[2] * (max(weightLillum, 0.0) + max(weightZ, 0.0))) * weightNormal;
 
     return weightIllum;
 }
@@ -60,3 +60,14 @@ struct FullScreenPassVsOut
     float4 posH       : POSITION;
 #endif
 };
+
+#define LUMINANCE_POLYN_DEGREE 3
+float computePolynomialLuminance(float3 col, float3[LUMINANCE_POLYN_DEGREE] coeffs) {
+    float sum = 0.0;
+    float3 input = col;
+    for (int i = 0; i < LUMINANCE_POLYN_DEGREE; i++) {
+        sum += dot(input, coeffs[i]);
+        input *= col;
+    }
+    return sum;
+}
