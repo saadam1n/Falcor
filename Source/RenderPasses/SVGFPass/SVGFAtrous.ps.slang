@@ -51,7 +51,6 @@ float computeVarianceCenter(int2 ipos, float[2][2] kernel)
 {
     float sum = 0.f;
 
-    // do we want to learn this?
     const int radius = 1;
     for (int yy = -radius; yy <= radius; yy++)
     {
@@ -79,9 +78,6 @@ float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] va
 
     // variance, filtered using 3x3 gaussin blur
     const float var = computeVarianceCenter(ipos, varianceKernel);
-
-    // number of temporally integrated pixels
-    const float historyLength = gHistoryLength[ipos].x;
 
     const float2 zCenter = gLinearZAndNormal[ipos].xy;
     if (zCenter.x < 0)
@@ -116,7 +112,7 @@ float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] va
                 const float3 nP = oct_to_ndir_snorm(gLinearZAndNormal[p].zw);
 
                 // compute the edge-stopping functions
-                const float2 w = computeWeight(
+                const float w = computeWeight(
                     zCenter.x, zP, phiDepth * length(float2(xx, yy)),
                     nCenter, nP, sigmaN,
                     lIlluminationCenter, lIlluminationP, phiLIllumination,

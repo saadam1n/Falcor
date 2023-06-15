@@ -34,6 +34,8 @@ int2 getTextureDims(Texture2D tex, uint mip)
 
 #define NUM_WEIGHT_PARAMS 7 // extra params if needed
 const float weightsParamsGlobal[NUM_WEIGHT_PARAMS] = { 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 };
+// params 0,1,2 are reserved for filter weight computation
+// param 3 is reserved for variance boosting in limited history
 
 // compute the weight for the filter 
 float computeWeight(

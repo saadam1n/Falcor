@@ -51,7 +51,7 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float3[LUMINANCE_POLYN_DEGREE] 
     float h = gHistoryLength[ipos].x;
     int2 screenSize = getTextureDims(gHistoryLength, 0);
 
-    if (h < 4.0) // not enough temporal history available
+    if (h < weightsParams[3]) // not enough temporal history available
     {
         float sumWIllumination = 0.0;
         float3 sumIllumination = float3(0.0, 0.0, 0.0);
@@ -68,7 +68,7 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float3[LUMINANCE_POLYN_DEGREE] 
         }
         const float3 nCenter = oct_to_ndir_snorm(gLinearZAndNormal[ipos].zw);
         const float phiLIllumination = sigmaL;
-        const float phiDepth = max(zCenter.y, 1e-8);
+        const float phiDepth = sigmaZ * 3.0 * max(zCenter.y, 1e-8);
 
         // compute first and second moment spatially. This code also applies cross-bilateral
         // filtering on the input illumination.
@@ -114,7 +114,7 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float3[LUMINANCE_POLYN_DEGREE] 
         float variance = sumMoments.g - sumMoments.r * sumMoments.r;
 
         // give the variance a boost for the first frames
-        variance *= 4.0 / h;
+        variance *= weightsParams[3] / h;
 
         return float4(sumIllumination, variance.r);
     }
