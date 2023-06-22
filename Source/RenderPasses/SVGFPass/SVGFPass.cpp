@@ -167,14 +167,14 @@ void SVGFPass::compile(RenderContext* pRenderContext, const CompileData& compile
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    ref<Texture> pAlbedoTexture = renderData.getTexture(kInputBufferAlbedo);
-    ref<Texture> pColorTexture = renderData.getTexture(kInputBufferColor);
-    ref<Texture> pEmissionTexture = renderData.getTexture(kInputBufferEmission);
-    ref<Texture> pWorldPositionTexture = renderData.getTexture(kInputBufferWorldPosition);
-    ref<Texture> pWorldNormalTexture = renderData.getTexture(kInputBufferWorldNormal);
-    ref<Texture> pPosNormalFwidthTexture = renderData.getTexture(kInputBufferPosNormalFwidth);
-    ref<Texture> pLinearZTexture = renderData.getTexture(kInputBufferLinearZ);
-    ref<Texture> pMotionVectorTexture = renderData.getTexture(kInputBufferMotionVector);
+    ref<Texture> pAlbedoTexture = renderData.getTexture(kInputBufferAlbedo);                      // already output by PathTracer pass
+    ref<Texture> pColorTexture = renderData.getTexture(kInputBufferColor);                        // already output by PathTracer pass
+    ref<Texture> pEmissionTexture = renderData.getTexture(kInputBufferEmission);                  // already output by PathTracer pass
+    ref<Texture> pWorldPositionTexture = renderData.getTexture(kInputBufferWorldPosition);        // need to change PathTracer pass to output this
+    ref<Texture> pWorldNormalTexture = renderData.getTexture(kInputBufferWorldNormal);            // need to change PathTracer pass to output this
+    ref<Texture> pPosNormalFwidthTexture = renderData.getTexture(kInputBufferPosNormalFwidth);    // no idea what this is
+    ref<Texture> pLinearZTexture = renderData.getTexture(kInputBufferLinearZ);                    // VBufferRT pass outputs this, though I'm not sure if the depth there is linear
+    ref<Texture> pMotionVectorTexture = renderData.getTexture(kInputBufferMotionVector);          // VBufferRt pass outputs this
 
     ref<Texture> pOutputTexture = renderData.getTexture(kOutputBufferFilteredImage);
 

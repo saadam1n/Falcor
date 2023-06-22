@@ -195,14 +195,15 @@ float computeVarianceScale(float numSamples, float loopLength, float alpha)
     return (1.0 - pow(aa, min(loopLength, numSamples))) / (1.0 - aa);
 }
 
-struct PS_OUT
+struct PS_OUT : IDifferentiable 
 {
     float4 OutIllumination  : SV_TARGET0;
     float2 OutMoments       : SV_TARGET1;
     float  OutHistoryLength : SV_TARGET2;
 };
 
-// perhaps instead of having a simple lerp function for TAA, we can have more complex curves
+// perhaps instead of having a simple lerp function for TAA, we can have more complex curve
+[ForwardDifferentiable]
 PS_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4] reprojectionWeights, float[3] kernelWeights)
 {
     const float4 posH = vsOut.posH;
@@ -259,5 +260,6 @@ PS_OUT main(FullScreenPassVsOut vsOut) {
     const float3 luminanceParams = float3(0.3333); // also in the atrous shader
     const float kernelWeights[3] = { 1.0, 1.0, 1.0 };
 
+    let result = __fwd_diff(reproject)(vsOut, diffPair(luminanceParams, float3(1.0)), diffPair(reprojectionWeights, {1.0, 1.0, 1.0, 1.0}), diffPair(kernelWeights, {1.0, 1.0, 1.0}));
     return reproject(vsOut, luminanceParams, reprojectionWeights, kernelWeights);
 }
