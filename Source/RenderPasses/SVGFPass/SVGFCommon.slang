@@ -25,7 +25,9 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
-int2 getTextureDims(Texture2D tex, uint mip)
+import Utils.Color.ColorHelpers;
+
+ int2 getTextureDims(Texture2D tex, uint mip)
 {
     uint w, h;
     tex.GetDimensions(w, h);
@@ -76,4 +78,9 @@ float4 remodule(float4 c, float4 albedo) {
         return c * albedo;
     else
         return c;
+}
+
+#define LUMINANCE_POLYN_DEGREE 3
+float computePolynomialLuminance(float3 col, float3[LUMINANCE_POLYN_DEGREE] coeffs) {
+    return luminance(col);
 }

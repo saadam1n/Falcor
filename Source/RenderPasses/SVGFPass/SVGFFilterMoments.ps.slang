@@ -29,6 +29,10 @@ import Utils.Math.MathHelpers;
 import Utils.Color.ColorHelpers;
 import SVGFCommon;
 
+// slang doesn't support importing macros, so we have to redefine
+#define NUM_WEIGHT_PARAMS 3
+#define LUMINANCE_POLYN_DEGREE 3
+
 cbuffer PerImageCB
 {
     Texture2D   gIllumination;
@@ -40,24 +44,21 @@ cbuffer PerImageCB
     float       gPhiNormal;
 };
 
-float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
-{
-    float weightParams[] = {1.0, 1.0, 1.0};
-    
+float4 filter_moments(FullScreenPassVsOut vsOut, float historyParam, float3[LUMINANCE_POLYN_DEGREE] luminanceParams, float weightsParams[NUM_WEIGHT_PARAMS], float sigmaL, float sigmaZ, float sigmaN) {
     float4 posH = vsOut.posH;
     int2 ipos = int2(posH.xy);
 
     float h = gHistoryLength[ipos].x;
     int2 screenSize = getTextureDims(gHistoryLength, 0);
 
-    if (h < 4.0) // not enough temporal history available
+    if (h < historyParam) // not enough temporal history available
     {
-        float sumWIllumination   = 0.0;
-        float3 sumIllumination   = float3(0.0, 0.0, 0.0);
-        float2 sumMoments  = float2(0.0, 0.0);
+        float sumWIllumination = 0.0;
+        float3 sumIllumination = float3(0.0, 0.0, 0.0);
+        float2 sumMoments = float2(0.0, 0.0);
 
         const float4 illuminationCenter = gIllumination[ipos];
-        const float lIlluminationCenter = luminance(illuminationCenter.rgb);
+        const float lIlluminationCenter = computePolynomialLuminance(illuminationCenter.rgb, luminanceParams);
 
         const float2 zCenter = gLinearZAndNormal[ipos].xy;
         if (zCenter.x < 0)
@@ -66,8 +67,8 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
             return illuminationCenter;
         }
         const float3 nCenter = oct_to_ndir_snorm(gLinearZAndNormal[ipos].zw);
-        const float phiLIllumination   = gPhiColor;
-        const float phiDepth     = max(zCenter.y, 1e-8) * 3.0;
+        const float phiLIllumination = sigmaL;
+        const float phiDepth = sigmaZ * 3.0 * max(zCenter.y, 1e-8);
 
         // compute first and second moment spatially. This code also applies cross-bilateral
         // filtering on the input illumination.
@@ -77,26 +78,27 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
         {
             for (int xx = -radius; xx <= radius; xx++)
             {
-                const int2 p     = ipos + int2(xx, yy);
-                const bool inside = all(p >= int2(0,0)) && all(p < screenSize);
-                const bool samePixel = (xx ==0 && yy == 0);
+                const int2 p = ipos + int2(xx, yy);
+                const bool inside = all(p >= int2(0, 0)) && all(p < screenSize);
+                const bool samePixel = (xx == 0 && yy == 0);
                 const float kernel = 1.0;
 
                 if (inside)
                 {
                     const float3 illuminationP = gIllumination[p].rgb;
-                    const float2 momentsP      = gMoments[p].xy;
-                    const float lIlluminationP = luminance(illuminationP.rgb);
+                    const float2 momentsP = gMoments[p].xy;
+                    const float lIlluminationP = computePolynomialLuminance(illuminationP.rgb, luminanceParams);
                     const float zP = gLinearZAndNormal[p].x;
                     const float3 nP = oct_to_ndir_snorm(gLinearZAndNormal[p].zw);
 
                     const float w = computeWeight(
                         zCenter.x, zP, phiDepth * length(float2(xx, yy)),
-                        nCenter, nP, gPhiNormal,
-                        lIlluminationCenter, lIlluminationP, phiLIllumination, weightParams);
+                        nCenter, nP, sigmaN,
+                        lIlluminationCenter, lIlluminationP, phiLIllumination,
+                        weightsParams);
 
                     sumWIllumination += w;
-                    sumIllumination  += illuminationP * w;
+                    sumIllumination += illuminationP * w;
                     sumMoments += momentsP * w;
                 }
             }
@@ -105,14 +107,14 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
         // Clamp sum to >0 to avoid NaNs.
         sumWIllumination = max(sumWIllumination, 1e-6f);
 
-        sumIllumination   /= sumWIllumination;
-        sumMoments  /= sumWIllumination;
+        sumIllumination /= sumWIllumination;
+        sumMoments /= sumWIllumination;
 
         // compute variance using the first and second moments
         float variance = sumMoments.g - sumMoments.r * sumMoments.r;
 
         // give the variance a boost for the first frames
-        variance *= 4.0 / h;
+        variance *= historyParam / h;
 
         return float4(sumIllumination, variance.r);
     }
@@ -121,4 +123,13 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
         // do nothing, pass data unmodified
         return gIllumination[ipos];
     }
+}
+
+// compute moments
+float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
+{
+    const float3 luminanceParams[LUMINANCE_POLYN_DEGREE] = { float3(0.3333), float3(0.3333), float3(0.3333) };
+    const float weightsParamsGlobal[NUM_WEIGHT_PARAMS] = { 1.0, 1.0, 1.0};
+    float historyParam = 4.0;
+    return filter_moments(vsOut, historyParam, luminanceParams, weightsParamsGlobal, gPhiColor, 1.0, gPhiNormal);
 }
