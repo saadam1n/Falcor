@@ -53,11 +53,6 @@ cbuffer PerImageCB
     float       gMomentsAlpha;
 };
 
-float3 demodulate(float3 c, float3 albedo)
-{
-    return c / max(albedo, float3(0.001, 0.001, 0.001));
-}
-
 bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal, float3 normalPrev, float fwidthNormal)
 {
     const int2 imageDim = getTextureDims(gColor, 0);

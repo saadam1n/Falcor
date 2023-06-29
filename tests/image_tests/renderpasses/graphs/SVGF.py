@@ -8,6 +8,8 @@ def render_graph_SVGF():
     g.addPass(GBufferRaster, "GBufferRaster")
     PathTracer = createPass("PathTracer")
     g.addPass(PathTracer, "PathTracer")
+    ToneMapper = createPass("ToneMapper", {'autoExposure': False, 'exposureCompensation': 0.0})
+    g.addPass(ToneMapper, "ToneMapper")
 
     g.addEdge("PathTracer.color", "SVGFPass.Color")
     g.addEdge("PathTracer.albedo", "SVGFPass.Albedo")
@@ -19,6 +21,10 @@ def render_graph_SVGF():
     g.addEdge("GBufferRaster.linearZ", "SVGFPass.LinearZ")
     g.addEdge("GBufferRaster.mvec", "SVGFPass.MotionVec")
 
+    g.addEdge("SVGFPass.Filtered image", "ToneMapper.src")
+    g.markOutput("ToneMapper.dst")
+
+    g.markOutput("ToneMapper.dst")
     g.markOutput("SVGFPass.Filtered image")
     g.markOutput("PathTracer.color")
     g.markOutput("PathTracer.albedo")
