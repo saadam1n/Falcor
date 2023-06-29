@@ -42,6 +42,8 @@ cbuffer PerImageCB
 
 float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 {
+    float weightParams[] = {1.0, 1.0, 1.0};
+    
     float4 posH = vsOut.posH;
     int2 ipos = int2(posH.xy);
 
@@ -91,7 +93,7 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
                     const float w = computeWeight(
                         zCenter.x, zP, phiDepth * length(float2(xx, yy)),
                         nCenter, nP, gPhiNormal,
-                        lIlluminationCenter, lIlluminationP, phiLIllumination);
+                        lIlluminationCenter, lIlluminationP, phiLIllumination, weightParams);
 
                     sumWIllumination += w;
                     sumIllumination  += illuminationP * w;

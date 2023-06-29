@@ -68,6 +68,8 @@ float computeVarianceCenter(int2 ipos)
 
 float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 {
+    float weightParams[] = {1.0, 1.0, 1.0};
+
     const int2 ipos       = int2(vsOut.posH.xy);
     const int2 screenSize = getTextureDims(gAlbedo, 0);
 
@@ -121,7 +123,7 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
                 const float2 w = computeWeight(
                     zCenter.x, zP, phiDepth * length(float2(xx, yy)),
                     nCenter, nP, gPhiNormal,
-                    lIlluminationCenter, lIlluminationP, phiLIllumination);
+                    lIlluminationCenter, lIlluminationP, phiLIllumination, weightParams);
 
                 const float wIllumination = w.x * kernel;
 
