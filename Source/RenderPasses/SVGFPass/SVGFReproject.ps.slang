@@ -258,5 +258,8 @@ PS_OUT main(FullScreenPassVsOut vsOut) {
     const float kernelWeights[3] = { 1.0, 1.0, 1.0 };
 
     let result = __fwd_diff(reproject)(vsOut, diffPair(luminanceParams, float3(1.0)), diffPair(reprojectionWeights, {1.0, 1.0, 1.0, 1.0}), diffPair(kernelWeights, {1.0, 1.0, 1.0}));
+
+    result.p.OutDebug.x = 1.0;
+
     return result.p;
 }
