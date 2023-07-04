@@ -71,7 +71,8 @@ namespace
 
     // Output buffer name
     const char kOutputBufferFilteredImage[] = "Filtered image";
-}
+    const char kOutputDebugBuffer[] = "DebugBuf";
+    }
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
@@ -155,6 +156,7 @@ RenderPassReflection SVGFPass::reflect(const CompileData& compileData)
         ;
 
     reflector.addOutput(kOutputBufferFilteredImage, "Filtered image").format(ResourceFormat::RGBA16Float);
+    reflector.addOutput(kOutputDebugBuffer, "DebugBuf").format(ResourceFormat::RGBA32Float);
 
     return reflector;
 }
@@ -177,6 +179,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
     ref<Texture> pMotionVectorTexture = renderData.getTexture(kInputBufferMotionVector);
 
     ref<Texture> pOutputTexture = renderData.getTexture(kOutputBufferFilteredImage);
+    ref<Texture> pDebugTexture = renderData.getTexture(kOutputDebugBuffer);
 
     FALCOR_ASSERT(mpFilteredIlluminationFbo &&
            mpFilteredIlluminationFbo->getWidth() == pAlbedoTexture->getWidth() &&
@@ -202,7 +205,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
             renderData.getTexture(kInternalBufferPreviousLinearZAndNormal);
         computeReprojection(pRenderContext, pAlbedoTexture, pColorTexture, pEmissionTexture,
                             pMotionVectorTexture, pPosNormalFwidthTexture,
-                            pPrevLinearZAndNormalTexture);
+                            pPrevLinearZAndNormalTexture, pDebugTexture);
 
         // Do a first cross-bilateral filtering of the illumination and
         // estimate its variance, storing the result into a float4 in
@@ -224,6 +227,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 
         // Blit into the output texture.
         pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), pOutputTexture->getRTV());
+        pRenderContext->blit(mpCurReprojFbo->getColorTexture(3)->getSRV(), pDebugTexture->getRTV());
 
         // Swap resources so we're ready for next frame.
         std::swap(mpCurReprojFbo, mpPrevReprojFbo);
@@ -246,6 +250,7 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float); // illumination
         desc.setColorTarget(1, Falcor::ResourceFormat::RG32Float);   // moments
         desc.setColorTarget(2, Falcor::ResourceFormat::R16Float);    // history length
+        desc.setColorTarget(3, Falcor::ResourceFormat::RGBA32Float);    // debug buf
         mpCurReprojFbo  = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
         mpPrevReprojFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
     }
@@ -305,7 +310,9 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> p
                                    ref<Texture> pColorTexture, ref<Texture> pEmissionTexture,
                                    ref<Texture> pMotionVectorTexture,
                                    ref<Texture> pPositionNormalFwidthTexture,
-                                   ref<Texture> pPrevLinearZTexture)
+                                   ref<Texture> pPrevLinearZTexture,
+                                   ref<Texture> pDebugTexture
+    )
 {
     auto perImageCB = mpReprojection->getRootVar()["PerImageCB"];
 

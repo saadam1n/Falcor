@@ -26,6 +26,7 @@ def render_graph_SVGF():
 
     g.markOutput("ToneMapper.dst")
     g.markOutput("SVGFPass.Filtered image")
+    g.markOutput("SVGFPass.DebugBuf")
     g.markOutput("PathTracer.color")
     g.markOutput("PathTracer.albedo")
     g.markOutput("GBufferRaster.posW")
