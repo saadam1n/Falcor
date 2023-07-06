@@ -189,8 +189,14 @@ float computeVarianceScale(float numSamples, float loopLength, float alpha)
     return (1.0 - pow(aa, min(loopLength, numSamples))) / (1.0 - aa);
 }
 
-struct PS_OUT : IDifferentiable 
+struct REPROJ_OUT : IDifferentiable 
 {
+    float4 OutIllumination;
+    float2 OutMoments;
+    float  OutHistoryLength;
+};
+
+struct PS_OUT {
     float4 OutIllumination  : SV_TARGET0;
     float2 OutMoments       : SV_TARGET1;
     float  OutHistoryLength : SV_TARGET2;
@@ -199,7 +205,7 @@ struct PS_OUT : IDifferentiable
 
 // perhaps instead of having a simple lerp function for TAA, we can have more complex curve
 [ForwardDifferentiable]
-PS_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4] reprojectionWeights, float[3] kernelWeights)
+REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4] reprojectionWeights, float[3] kernelWeights)
 {
     const float4 posH = vsOut.posH;
     const int2 ipos = posH.xy;
@@ -239,7 +245,7 @@ PS_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4] rep
 
     //variance *= computeVarianceScale(16, 16, alpha);
 
-    PS_OUT psOut;
+    REPROJ_OUT psOut;
     // temporal integration of illumination
     psOut.OutIllumination = lerp(prevIllumination,   float4(illumination,   0), alpha);
     // variance is propagated through the alpha channel
@@ -247,19 +253,58 @@ PS_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4] rep
     psOut.OutMoments = moments;
     psOut.OutHistoryLength = historyLength;
 
-    psOut.OutDebug = float4(0.5);
-
     return psOut;
 }
 
 PS_OUT main(FullScreenPassVsOut vsOut) {
     const float reprojectionWeights[4] = { 32.0, 1.0, 10.0, 16.0 };
-    const float3 luminanceParams = float3(0.3333); // also in the atrous shader
+
     const float kernelWeights[3] = { 1.0, 1.0, 1.0 };
 
-    let result = __fwd_diff(reproject)(vsOut, diffPair(luminanceParams, float3(1.0)), diffPair(reprojectionWeights, {1.0, 1.0, 1.0, 1.0}), diffPair(kernelWeights, {1.0, 1.0, 1.0}));
+    const float  origValue = 0.3333;
+    const float  finiteDiff = 1e-5;
+    const float3 luminanceParams     = float3(origValue); // also in the atrous shader
+    const float3 luminanceParamsStep = float3(origValue + finiteDiff, origValue, origValue); 
 
-    result.p.OutDebug.x = 1.0;
+    let nodiffres = reproject(vsOut, luminanceParams, reprojectionWeights, kernelWeights);
+    let nodiffresStep = reproject(vsOut, luminanceParamsStep, reprojectionWeights, kernelWeights);
+    let result = __fwd_diff(reproject)(vsOut, diffPair(luminanceParams, float3(1.0, 0.0, 0.0)), diffPair(reprojectionWeights, {0.0, 0.0, 0.0, 0.0}), diffPair(kernelWeights, {0.0, 0.0, 0.0}));
 
-    return result.p;
+    PS_OUT ret;
+
+    ret.OutMoments = nodiffres.OutMoments;
+    ret.OutIllumination = nodiffres.OutIllumination;
+    ret.OutHistoryLength = nodiffres.OutHistoryLength;
+
+    float estDeriv = (nodiffresStep.OutMoments.x - nodiffres.OutMoments.x) / finiteDiff;
+   
+    float val;
+    if(false && vsOut.texC.x < 1.0 / 4.0) {
+        val = estDeriv;
+    } else if(false && vsOut.texC.x < 2.0 / 4.0) {
+        val = result.d.OutMoments.x;
+    } else if(false && vsOut.texC.x < 3.0 / 4.0) {
+        val = result.d.OutMoments.x - estDeriv;
+    } else {
+        const float DERIVATIVE_MIN = 2.5e-2f;
+        if(false && (result.d.OutMoments.x < DERIVATIVE_MIN || estDeriv < DERIVATIVE_MIN)) {
+            val = 0.0;
+        } else {
+            if(false && vsOut.texC.x < 7.0 / 8.0) {
+                val = (result.d.OutMoments.x - estDeriv) / estDeriv;
+            } else {
+                val = (estDeriv - result.d.OutMoments.x) / result.d.OutMoments.x;
+            }
+        }
+    }
+
+
+
+    if(vsOut.texC.y > 0.5) {
+        val = abs(val);
+    }
+
+    ret.OutDebug = float4(val);
+
+    return ret;
 }
