@@ -71,10 +71,6 @@ private:
     int32_t mFilterIterations    = 4;
     int32_t mFeedbackTap         = 1;
     float   mVarainceEpsilon     = 1e-4f;
-    float   mPhiColor            = 10.0f;
-    float   mPhiNormal           = 128.0f;
-    float   mAlpha               = 0.05f;
-    float   mMomentsAlpha        = 0.2f;
 
     // SVGF passes
     ref<FullScreenPass> mpPackLinearZAndNormal;
@@ -108,4 +104,10 @@ private:
 
     float dvAtrousVarianceKernel[2][2];
     float dvAtrousKernel[3];
+
+    float   dvSigmaL              = 10.0f;
+    float   dvSigmaZ              = 1.0;
+    float   dvSigmaN              = 128.0f;
+    float   dvAlpha               = 0.05f;
+    float   dvMomentsAlpha        = 0.2f;
 };

@@ -88,10 +88,10 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Dictionary& dict)
         else if (key == kIterations) mFilterIterations = value;
         else if (key == kFeedbackTap) mFeedbackTap = value;
         else if (key == kVarianceEpsilon) mVarainceEpsilon = value;
-        else if (key == kPhiColor) mPhiColor = value;
-        else if (key == kPhiNormal) mPhiNormal = value;
-        else if (key == kAlpha) mAlpha = value;
-        else if (key == kMomentsAlpha) mMomentsAlpha = value;
+        else if (key == kPhiColor) dvSigmaL = value;
+        else if (key == kPhiNormal) dvSigmaN = value;
+        else if (key == kAlpha) dvAlpha = value;
+        else if (key == kMomentsAlpha) dvMomentsAlpha = value;
         else logWarning("Unknown field '{}' in SVGFPass dictionary.", key);
     }
 
@@ -141,10 +141,10 @@ Dictionary SVGFPass::getScriptingDictionary()
     dict[kIterations] = mFilterIterations;
     dict[kFeedbackTap] = mFeedbackTap;
     dict[kVarianceEpsilon] = mVarainceEpsilon;
-    dict[kPhiColor] = mPhiColor;
-    dict[kPhiNormal] = mPhiNormal;
-    dict[kAlpha] = mAlpha;
-    dict[kMomentsAlpha] = mMomentsAlpha;
+    dict[kPhiColor] = dvSigmaL;
+    dict[kPhiNormal] = dvSigmaN;
+    dict[kAlpha] = dvAlpha;
+    dict[kMomentsAlpha] = dvMomentsAlpha;
     return dict;
 }
 
@@ -360,8 +360,8 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> p
     perImageCB["gPrevHistoryLength"] = mpPrevReprojFbo->getColorTexture(2);
 
     // Setup variables for our reprojection pass
-    perImageCB["gAlpha"] = mAlpha;
-    perImageCB["gMomentsAlpha"] = mMomentsAlpha;
+    perImageCB["gAlpha"] = dvAlpha;
+    perImageCB["gMomentsAlpha"] = dvMomentsAlpha;
 
     pRenderContext->clearUAV(mpTempDiffColor->getUAV().get(), Falcor::uint4(0));
     pRenderContext->clearUAV(mpTempDiffAlbedo->getUAV().get(), Falcor::uint4(0));
@@ -394,8 +394,8 @@ void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
     perImageCB["gLinearZAndNormal"]          = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gMoments"]          = mpCurReprojFbo->getColorTexture(1);
 
-    perImageCB["gPhiColor"]  = mPhiColor;
-    perImageCB["gPhiNormal"]  = mPhiNormal;
+    perImageCB["gPhiColor"]  = dvSigmaL;
+    perImageCB["gPhiNormal"]  = dvSigmaN;
 
     perImageCB["dvLuminanceParams"] = dvLuminanceParams;
     perImageCB["dvVarianceBoostFactor"] = dvVarianceBoostFactor;
@@ -415,8 +415,8 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
     perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
     perImageCB["gLinearZAndNormal"]       = mpLinearZAndNormalFbo->getColorTexture(0);
 
-    perImageCB["gPhiColor"]  = mPhiColor;
-    perImageCB["gPhiNormal"] = mPhiNormal;
+    perImageCB["gPhiColor"]  = dvSigmaL;
+    perImageCB["gPhiNormal"] = dvSigmaN;
 
     perImageCB["dvLuminanceParams"] = dvLuminanceParams;
 
@@ -471,14 +471,14 @@ void SVGFPass::renderUI(Gui::Widgets& widget)
 
     widget.text("");
     widget.text("Contol edge stopping on bilateral fitler");
-    dirty |= (int)widget.var("For Color", mPhiColor, 0.0f, 10000.0f, 0.01f);
-    dirty |= (int)widget.var("For Normal", mPhiNormal, 0.001f, 1000.0f, 0.2f);
+    dirty |= (int)widget.var("For Color", dvSigmaL, 0.0f, 10000.0f, 0.01f);
+    dirty |= (int)widget.var("For Normal", dvSigmaN, 0.001f, 1000.0f, 0.2f);
 
     widget.text("");
     widget.text("How much history should be used?");
     widget.text("    (alpha; 0 = full reuse; 1 = no reuse)");
-    dirty |= (int)widget.var("Alpha", mAlpha, 0.0f, 1.0f, 0.001f);
-    dirty |= (int)widget.var("Moments Alpha", mMomentsAlpha, 0.0f, 1.0f, 0.001f);
+    dirty |= (int)widget.var("Alpha", dvAlpha, 0.0f, 1.0f, 0.001f);
+    dirty |= (int)widget.var("Moments Alpha", dvMomentsAlpha, 0.0f, 1.0f, 0.001f);
 
     if (dirty) mBuffersNeedClear = true;
 }
