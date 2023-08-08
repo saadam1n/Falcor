@@ -360,8 +360,8 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> p
     perImageCB["gPrevHistoryLength"] = mpPrevReprojFbo->getColorTexture(2);
 
     // Setup variables for our reprojection pass
-    perImageCB["gAlpha"] = dvAlpha;
-    perImageCB["gMomentsAlpha"] = dvMomentsAlpha;
+    perImageCB["dvAlpha"] = dvAlpha;
+    perImageCB["dvMomentsAlpha"] = dvMomentsAlpha;
 
     pRenderContext->clearUAV(mpTempDiffColor->getUAV().get(), Falcor::uint4(0));
     pRenderContext->clearUAV(mpTempDiffAlbedo->getUAV().get(), Falcor::uint4(0));
@@ -394,8 +394,9 @@ void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
     perImageCB["gLinearZAndNormal"]          = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gMoments"]          = mpCurReprojFbo->getColorTexture(1);
 
-    perImageCB["gPhiColor"]  = dvSigmaL;
-    perImageCB["gPhiNormal"]  = dvSigmaN;
+    perImageCB["dvSigmaL"] = dvSigmaL;
+    perImageCB["dvSigmaZ"] = dvSigmaZ;
+    perImageCB["dvSigmaN"] = dvSigmaN;
 
     perImageCB["dvLuminanceParams"] = dvLuminanceParams;
     perImageCB["dvVarianceBoostFactor"] = dvVarianceBoostFactor;

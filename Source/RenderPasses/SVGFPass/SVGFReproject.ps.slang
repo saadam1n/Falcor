@@ -53,8 +53,8 @@ cbuffer PerImageCB
     RWByteAddressBuffer d_gAlbedo;
     RWByteAddressBuffer d_gEmission;
 
-    float       gAlpha;
-    float       gMomentsAlpha;
+    float       dvAlpha;
+    float       dvMomentsAlpha;
 
     float3 dvLuminanceParams;
     float dvReprojKernel[3];
@@ -275,7 +275,7 @@ struct PS_OUT {
 
 // perhaps instead of having a simple lerp function for TAA, we can have more complex curve
 [BackwardDifferentiable]
-REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4] reprojectionParamters, float[3] kernelWeights)
+REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4] reprojectionParamters, float[3] kernelWeights, float alpha, float momentsAlpha)
 {
     const float4 posH = vsOut.posH;
     const int2 ipos = posH.xy;
@@ -299,8 +299,8 @@ REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4]
     // this adjusts the alpha for the case where insufficient history is available.
     // It boosts the temporal accumulation to give the samples equal weights in
     // the beginning.
-    const float alpha        = success ? max(gAlpha,        reprojectionParamters[1] / historyLength) : 1.0;
-    const float alphaMoments = success ? max(gMomentsAlpha, reprojectionParamters[1] / historyLength) : 1.0;
+    const float alpha        = success ? max(alpha,        reprojectionParamters[1] / historyLength) : 1.0;
+    const float alphaMoments = success ? max(momentsAlpha, reprojectionParamters[1] / historyLength) : 1.0;
 
     // compute first two moments of luminance
     float2 moments;
@@ -331,11 +331,12 @@ PS_OUT main(FullScreenPassVsOut vsOut) {
     DifferentialPair<float3> dpLuminanceParams = diffPair(dvLuminanceParams, float3(1.0, 0.0, 0.0));
     DifferentialPair<float[3]> dpReprojKernel = diffPair(dvReprojKernel, {0, 0, 0});
     DifferentialPair<float[4]> dpReprojParams = diffPair(dvReprojParams, {0, 0, 0, 0});
-
+    DifferentialPair<float> dpAlpha = diffPair(dvAlpha, 0.0);
+    DifferentialPair<float> dpMomentsAlpha = diffPair(dvMomentsAlpha, 0.0);
     
     float  finiteDiff = 1e-5;
-    let nodiffres = reproject(vsOut, dpLuminanceParams.p - float3(finiteDiff, 0, 0), dpReprojParams.p, dpReprojKernel.p);
-    let nodiffresStep = reproject(vsOut, dpLuminanceParams.p + float3(finiteDiff, 0, 0), dpReprojParams.p, dpReprojKernel.p);
+    let nodiffres = reproject(vsOut, dpLuminanceParams.p - float3(finiteDiff, 0, 0), dpReprojParams.p, dpReprojKernel.p, dpAlpha.p, dpMomentsAlpha.p);
+    let nodiffresStep = reproject(vsOut, dpLuminanceParams.p + float3(finiteDiff, 0, 0), dpReprojParams.p, dpReprojKernel.p, dpAlpha.p, dpMomentsAlpha.p);
 
     float finiteDiffDeriv = (nodiffresStep.OutMoments.x - nodiffres.OutMoments.x) / (2.0 * finiteDiff);
 
@@ -347,7 +348,7 @@ PS_OUT main(FullScreenPassVsOut vsOut) {
     diffInput.OutMoments = float2(1.0, 0.0);
     diffInput.OutHistoryLength = 0.0;
 
-    let result = __bwd_diff(reproject)(vsOut, dpLuminanceParams, dpReprojParams, dpReprojKernel, diffInput);
+    let result = __bwd_diff(reproject)(vsOut, dpLuminanceParams, dpReprojParams, dpReprojKernel, dpAlpha, dpMomentsAlpha, diffInput);
 
     float bwdDiffResult = dpLuminanceParams.d.x;
 

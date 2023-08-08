@@ -40,13 +40,14 @@ cbuffer PerImageCB
     Texture2D   gHistoryLength;
     Texture2D   gLinearZAndNormal;
 
-    float       gPhiColor;
-    float       gPhiNormal;
-
     float3 dvLuminanceParams;
     float dvVarianceBoostFactor;
 
     float dvWeightFunctionParams[3];
+
+    float dvSigmaL;
+    float dvSigmaZ;
+    float dvSigmaN;
 };
 
 
@@ -177,5 +178,5 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float historyParam, float3 lumi
 // compute moments
 float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 {
-    return filter_moments(vsOut, dvVarianceBoostFactor, dvLuminanceParams, dvWeightFunctionParams, gPhiColor, 1.0, gPhiNormal);
+    return filter_moments(vsOut, dvVarianceBoostFactor, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL, dvSigmaZ, dvSigmaN);
 }
