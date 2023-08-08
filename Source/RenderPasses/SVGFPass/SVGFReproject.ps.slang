@@ -49,11 +49,87 @@ cbuffer PerImageCB
     Texture2D   gPrevLinearZAndNormal;
     Texture2D   gPrevHistoryLength;
 
+    RWByteAddressBuffer d_gColor;
+    RWByteAddressBuffer d_gAlbedo;
+    RWByteAddressBuffer d_gEmission;
+
     float       gAlpha;
     float       gMomentsAlpha;
+
+    float3 luminanceParams;
+    float reprojKernel[3];
+    float reprojParams[4];
 };
 
-bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal, float3 normalPrev, float fwidthNormal, float[4] reprojectionWeights)
+static const float QUANTIZATION = 1.0;
+
+// Read gColor
+void d_getColor(int2 ipos, float3 val)
+{
+    uint2 dim = getTextureDims(gColor, 0);
+    uint base_addr = 4 * 4 * (dim.x * ipos.y + ipos.x);
+
+    int4 a = int4(QUANTIZATION * int3(val), 0.0);
+    for(int i = 0; i < 3; i++) {
+        uint addr = base_addr + 4 * i;
+        int dummy;
+        d_gColor.InterlockedAdd(addr, a[i], dummy);
+    }
+}
+
+// Read gAlbedo
+void d_getAlbedo(int2 ipos, float3 val)
+{
+    uint2 dim = getTextureDims(gColor, 0);
+    uint base_addr = 4 * 4 * (dim.x * ipos.y + ipos.x);
+
+    int4 a = int4(QUANTIZATION * int3(val), 0.0);
+    for(int i = 0; i < 3; i++) {
+        uint addr = base_addr + 4 * i;
+        int dummy;
+        d_gAlbedo.InterlockedAdd(addr, a[i], dummy);
+    }
+}
+
+// Read gEmission
+void d_getEmission(int2 ipos, float3 val)
+{
+    uint2 dim = getTextureDims(gColor, 0);
+    uint base_addr = 4 * 4 * (dim.x * ipos.y + ipos.x);
+
+    int4 a = int4(QUANTIZATION * int3(val), 0.0);
+    for(int i = 0; i < 3; i++) {
+        uint addr = base_addr + 4 * i;
+        int dummy;
+        d_gEmission.InterlockedAdd(addr, a[i], dummy);
+    }
+}
+
+[BackwardDerivative(d_getColor)]
+float3 getColor(int2 ipos)
+{
+    float3 temp = gColor[ipos].rgb;
+    temp = temp / QUANTIZATION;
+    return temp;
+}
+
+[BackwardDerivative(d_getColor)]
+float3 getAlbedo(int2 ipos)
+{
+    float3 temp = gAlbedo[ipos].rgb;
+    temp = temp / QUANTIZATION;
+    return temp;
+}
+
+[BackwardDerivative(d_getColor)]
+float3 getEmission(int2 ipos)
+{
+    float3 temp = gEmission[ipos].rgb;
+    temp = temp / QUANTIZATION;
+    return temp;
+}
+
+bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal, float3 normalPrev, float fwidthNormal, float[4] reprojectionParamters)
 {
     const int2 imageDim = getTextureDims(gColor, 0);
 
@@ -61,16 +137,16 @@ bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal
     if (any(coord < int2(1,1)) || any(coord > imageDim - int2(1,1))) return false;
 
     // check if deviation of depths is acceptable
-    if (abs(Zprev - Z) / (fwidthZ + 1e-2f) > reprojectionWeights[2]) return false;
+    if (abs(Zprev - Z) / (fwidthZ + 1e-2f) > reprojectionParamters[2]) return false;
 
     // check normals for compatibility
-    if (distance(normal, normalPrev) / (fwidthNormal + 1e-2) > reprojectionWeights[3]) return false;
+    if (distance(normal, normalPrev) / (fwidthNormal + 1e-2) > reprojectionParamters[3]) return false;
 
     return true;
 }
 
 // get the temporal data (this function does not accumulate)
-bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out float historyLength, float[4] reprojectionWeights, float[3] kernelWeights)
+bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out float historyLength, float[4] reprojectionParamters, float[3] kernelWeights)
 {
     const int2 ipos = posH;
     const float2 imageDim = float2(getTextureDims(gColor, 0));
@@ -99,7 +175,7 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out
         float2 depthPrev = gPrevLinearZAndNormal[loc].xy;
         float3 normalPrev = oct_to_ndir_snorm(gPrevLinearZAndNormal[loc].zw);
 
-        v[sampleIdx] = isReprjValid(iposPrev, depth.x, depthPrev.x, depth.y, normal, normalPrev, normalFwidth, reprojectionWeights);
+        v[sampleIdx] = isReprjValid(iposPrev, depth.x, depthPrev.x, depth.y, normal, normalPrev, normalFwidth, reprojectionParamters);
 
         valid = valid || v[sampleIdx];
     }
@@ -150,7 +226,7 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out
                 const float3 normalFilter = oct_to_ndir_snorm(gPrevLinearZAndNormal[p].zw);
                 float curWeight = kernelWeights[abs(yy) + abs(xx)];
 
-                if (isReprjValid(iposPrev, depth.x, depthFilter.x, depth.y, normal, normalFilter, normalFwidth, reprojectionWeights))
+                if (isReprjValid(iposPrev, depth.x, depthFilter.x, depth.y, normal, normalFilter, normalFwidth, reprojectionParamters))
                 {
                     prevIllum += curWeight * gPrevIllum[p];
                     prevMoments += curWeight * gPrevMoments[p].xy;
@@ -204,13 +280,14 @@ struct PS_OUT {
 };
 
 // perhaps instead of having a simple lerp function for TAA, we can have more complex curve
-[ForwardDifferentiable]
-REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4] reprojectionWeights, float[3] kernelWeights)
+[BackwardDifferentiable]
+REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4] reprojectionParamters, float[3] kernelWeights)
 {
     const float4 posH = vsOut.posH;
     const int2 ipos = posH.xy;
 
-    float3 illumination = demodulate(gColor[ipos].rgb - gEmission[ipos].rgb, gAlbedo[ipos].rgb);
+    float3 illumination = demodulate(getColor(ipos) - getEmission(ipos), getAlbedo(ipos));
+
     // Workaround path tracer bugs. TODO: remove this when we can.
     if (isNaN(illumination.x) || isNaN(illumination.y) || isNaN(illumination.z))
     {
@@ -220,16 +297,16 @@ REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4]
     float historyLength;
     float4 prevIllumination;
     float2 prevMoments;
-    bool success = loadPrevData(posH.xy, prevIllumination, prevMoments, historyLength, reprojectionWeights, kernelWeights); // get temporal data with weights
-    historyLength = min(reprojectionWeights[0], success ? historyLength + 1.0f : 1.0f);
+    bool success = loadPrevData(posH.xy, prevIllumination, prevMoments, historyLength, reprojectionParamters, kernelWeights); // get temporal data with weights
+    historyLength = min(reprojectionParamters[0], success ? historyLength + 1.0f : 1.0f);
 
     // it appears that the temporal accumulation does not have a constant alpha, instead it is adaptive
 
     // this adjusts the alpha for the case where insufficient history is available.
     // It boosts the temporal accumulation to give the samples equal weights in
     // the beginning.
-    const float alpha        = success ? max(gAlpha,        reprojectionWeights[1] / historyLength) : 1.0;
-    const float alphaMoments = success ? max(gMomentsAlpha, reprojectionWeights[1] / historyLength) : 1.0;
+    const float alpha        = success ? max(gAlpha,        reprojectionParamters[1] / historyLength) : 1.0;
+    const float alphaMoments = success ? max(gMomentsAlpha, reprojectionParamters[1] / historyLength) : 1.0;
 
     // compute first two moments of luminance
     float2 moments;
@@ -257,18 +334,31 @@ REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4]
 }
 
 PS_OUT main(FullScreenPassVsOut vsOut) {
-    const float reprojectionWeights[4] = { 32.0, 1.0, 10.0, 16.0 };
+    float tempReprojectionWeights[4] = { 32.0, 1.0, 10.0, 16.0 };
+    float tempKernelWeights[3] = { 1.0, 1.0, 1.0 };
 
-    const float kernelWeights[3] = { 1.0, 1.0, 1.0 };
+    DifferentialPair<float3> dLuminanceParams = diffPair(luminanceParams, float3(1.0, 0.0, 0.0));
+    DifferentialPair<float[3]> dKernelWeights = diffPair(reprojKernel, {0, 0, 0});
+    DifferentialPair<float[4]> dReprojectionParamters = diffPair(tempReprojectionWeights, {0, 0, 0, 0});
 
-    const float  origValue = 0.3333;
-    const float  finiteDiff = 1e-5;
-    const float3 luminanceParams     = float3(origValue); // also in the atrous shader
-    const float3 luminanceParamsStep = float3(origValue + finiteDiff, origValue, origValue); 
+    
+    float  finiteDiff = 1e-5;
+    let nodiffres = reproject(vsOut, dLuminanceParams.p - float3(finiteDiff, 0, 0), dReprojectionParamters.p, dKernelWeights.p);
+    let nodiffresStep = reproject(vsOut, dLuminanceParams.p + float3(finiteDiff, 0, 0), dReprojectionParamters.p, dKernelWeights.p);
 
-    let nodiffres = reproject(vsOut, luminanceParams, reprojectionWeights, kernelWeights);
-    let nodiffresStep = reproject(vsOut, luminanceParamsStep, reprojectionWeights, kernelWeights);
-    let result = __fwd_diff(reproject)(vsOut, diffPair(luminanceParams, float3(1.0, 0.0, 0.0)), diffPair(reprojectionWeights, {0.0, 0.0, 0.0, 0.0}), diffPair(kernelWeights, {0.0, 0.0, 0.0}));
+    float finiteDiffDeriv = (nodiffresStep.OutMoments.x - nodiffres.OutMoments.x) / (2.0 * finiteDiff);
+
+
+
+    REPROJ_OUT.Differential diffInput;
+
+    diffInput.OutIllumination = float4(0.0);
+    diffInput.OutMoments = float2(1.0, 0.0);
+    diffInput.OutHistoryLength = 0.0;
+
+    let result = __bwd_diff(reproject)(vsOut, dLuminanceParams, dReprojectionParamters, dKernelWeights, diffInput);
+
+    float bwdDiffResult = dLuminanceParams.d.x;
 
     PS_OUT ret;
 
@@ -276,35 +366,16 @@ PS_OUT main(FullScreenPassVsOut vsOut) {
     ret.OutIllumination = nodiffres.OutIllumination;
     ret.OutHistoryLength = nodiffres.OutHistoryLength;
 
-    float estDeriv = (nodiffresStep.OutMoments.x - nodiffres.OutMoments.x) / finiteDiff;
-   
+    float MIN_DERIV = 0.025;
+
     float val;
-    if(false && vsOut.texC.x < 1.0 / 4.0) {
-        val = estDeriv;
-    } else if(false && vsOut.texC.x < 2.0 / 4.0) {
-        val = result.d.OutMoments.x;
-    } else if(false && vsOut.texC.x < 3.0 / 4.0) {
-        val = result.d.OutMoments.x - estDeriv;
+    if(abs(bwdDiffResult) < MIN_DERIV || abs(finiteDiffDeriv) < MIN_DERIV) {
+        val = 0.0;
     } else {
-        const float DERIVATIVE_MIN = 2.5e-2f;
-        if(false && (result.d.OutMoments.x < DERIVATIVE_MIN || estDeriv < DERIVATIVE_MIN)) {
-            val = 0.0;
-        } else {
-            if(false && vsOut.texC.x < 7.0 / 8.0) {
-                val = (result.d.OutMoments.x - estDeriv) / estDeriv;
-            } else {
-                val = (estDeriv - result.d.OutMoments.x) / result.d.OutMoments.x;
-            }
-        }
+        val = abs((bwdDiffResult - finiteDiffDeriv) / finiteDiffDeriv);
     }
 
-
-
-    if(vsOut.texC.y > 0.5) {
-        val = abs(val);
-    }
-
-    ret.OutDebug = float4(val);
+    ret.OutDebug = float4(reprojKernel[0], reprojKernel[1], reprojKernel[2], 0.0);
 
     return ret;
 }

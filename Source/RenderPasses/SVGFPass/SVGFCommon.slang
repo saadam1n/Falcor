@@ -65,9 +65,11 @@ bool should_modulate(float3 albedo) {
     //return true;
 }
 
+[BackwardDifferentiable]
 float3 demodulate(float3 c, float3 albedo)
 {
-    if(should_modulate(albedo))
+    float lum = dot(albedo, float3(1.0));
+    if(lum > 0.01)
         return c / max(albedo, float3(0.001, 0.001, 0.001));
     else    
         return c;

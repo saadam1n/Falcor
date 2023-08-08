@@ -91,4 +91,14 @@ private:
     ref<Fbo> mpPrevReprojFbo;
     ref<Fbo> mpFilteredIlluminationFbo;
     ref<Fbo> mpFinalFbo;
+
+    // Temporary buffers used during backwards diff
+    ref<Buffer> mpTempDiffColor;
+    ref<Buffer> mpTempDiffAlbedo;
+    ref<Buffer> mpTempDiffEmission;
+
+    float reprojParams[4];
+    float reprojKernel[3];
+
+    float3 luminanceParams;
 };

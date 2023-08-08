@@ -100,7 +100,23 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Dictionary& dict)
     mpAtrous = FullScreenPass::create(mpDevice, kAtrousShader);
     mpFilterMoments = FullScreenPass::create(mpDevice, kFilterMomentShader);
     mpFinalModulate = FullScreenPass::create(mpDevice, kFinalModulateShader);
-    FALCOR_ASSERT(mpPackLinearZAndNormal && mpReprojection && mpAtrous && mpFilterMoments && mpFinalModulate);
+
+    mpTempDiffColor = Buffer::create(pDevice, sizeof(int32_t) * 4 * 1920 * 1080);
+    mpTempDiffAlbedo = Buffer::create(pDevice, sizeof(int32_t) * 4 * 1920 * 1080);
+    mpTempDiffEmission = Buffer::create(pDevice, sizeof(int32_t) * 4 * 1920 * 1080);
+
+    FALCOR_ASSERT(mpPackLinearZAndNormal && mpReprojection && mpAtrous && mpFilterMoments && mpFinalModulate && mpTempDiffColor && mpTempDiffAlbedo && mpTempDiffEmission);
+
+    luminanceParams = float3(0.3333);
+
+    reprojParams[0] = 32.0;
+    reprojParams[1] = 1.0;
+    reprojParams[2] = 10.0;
+    reprojParams[3] = 16.0;
+
+    reprojKernel[0] = 1.0;
+    reprojKernel[1] = 1.0;
+    reprojKernel[2] = 1.0;
 }
 
 Dictionary SVGFPass::getScriptingDictionary()
@@ -331,6 +347,25 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> p
     // Setup variables for our reprojection pass
     perImageCB["gAlpha"] = mAlpha;
     perImageCB["gMomentsAlpha"] = mMomentsAlpha;
+
+    pRenderContext->clearUAV(mpTempDiffColor->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(mpTempDiffAlbedo->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(mpTempDiffEmission->getUAV().get(), Falcor::uint4(0));
+
+    // Setup the temp diff textures
+    perImageCB["d_gColor"] = mpTempDiffColor;
+    perImageCB["d_gAlbedo"] = mpTempDiffAlbedo;
+    perImageCB["d_gEmission"] = mpTempDiffEmission;
+
+    perImageCB["luminanceParams"] = luminanceParams;
+
+    for (int i = 0; i < 3; i++) {
+        perImageCB["reprojKernel"][i] = reprojKernel[i];
+    }
+
+    for (int i = 0; i < 4; i++) {
+        perImageCB["reprojParams"][i] = reprojParams[i];
+    }
 
     mpReprojection->execute(pRenderContext, mpCurReprojFbo);
 }
