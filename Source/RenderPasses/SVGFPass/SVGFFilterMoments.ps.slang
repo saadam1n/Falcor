@@ -42,13 +42,64 @@ cbuffer PerImageCB
 
     float       gPhiColor;
     float       gPhiNormal;
+
+    float3 dvLuminanceParams;
+    float dvVarianceBoostFactor;
+
+    float dvWeightFunctionParams[3];
 };
 
-float4 filter_moments(FullScreenPassVsOut vsOut, float historyParam, float3[LUMINANCE_POLYN_DEGREE] luminanceParams, float weightsParams[NUM_WEIGHT_PARAMS], float sigmaL, float sigmaZ, float sigmaN) {
+
+void d_getIllumination(int2 ipos, float4 val)
+{
+
+}
+
+void d_getLinearZAndNormal(int2 ipos, float4 val)
+{
+
+}
+
+void d_getHistoryLength(int2 ipos, float val)
+{
+
+}
+
+void d_getMoments(int2 ipos, float2 val)
+{
+
+}
+
+[BackwardDerivative(d_getIllumination)]
+float4 getIllumination(int2 ipos)
+{
+    return gIllumination[ipos];
+}
+
+[BackwardDerivative(d_getLinearZAndNormal)]
+float4 getLinearZAndNormal(int2 ipos)
+{
+    return gLinearZAndNormal[ipos];
+}
+
+[BackwardDerivative(d_getHistoryLength)]
+float getHistoryLength(int2 ipos)
+{
+    return gHistoryLength[ipos].x;
+}
+
+[BackwardDerivative(d_getMoments)]
+float2 getMoments(int2 ipos)
+{
+    return gMoments[ipos].xy;
+}
+
+[BackwardDifferentiable]
+float4 filter_moments(FullScreenPassVsOut vsOut, float historyParam, float3 luminanceParams, float weightsParams[NUM_WEIGHT_PARAMS], float sigmaL, float sigmaZ, float sigmaN) {
     float4 posH = vsOut.posH;
     int2 ipos = int2(posH.xy);
 
-    float h = gHistoryLength[ipos].x;
+    float h = getHistoryLength(ipos).x;
     int2 screenSize = getTextureDims(gHistoryLength, 0);
 
     if (h < historyParam) // not enough temporal history available
@@ -57,26 +108,24 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float historyParam, float3[LUMI
         float3 sumIllumination = float3(0.0, 0.0, 0.0);
         float2 sumMoments = float2(0.0, 0.0);
 
-        const float4 illuminationCenter = gIllumination[ipos];
-        const float lIlluminationCenter = computePolynomialLuminance(illuminationCenter.rgb, luminanceParams);
+        const float4 illuminationCenter = getIllumination(ipos);
+        const float lIlluminationCenter = dot(illuminationCenter.rgb, luminanceParams);
 
-        const float2 zCenter = gLinearZAndNormal[ipos].xy;
+        const float2 zCenter = getLinearZAndNormal(ipos).xy;
         if (zCenter.x < 0)
         {
             // current pixel does not a valid depth => must be envmap => do nothing
             return illuminationCenter;
         }
-        const float3 nCenter = oct_to_ndir_snorm(gLinearZAndNormal[ipos].zw);
+        const float3 nCenter = oct_to_ndir_snorm(getLinearZAndNormal(ipos).zw);
         const float phiLIllumination = sigmaL;
         const float phiDepth = sigmaZ * 3.0 * max(zCenter.y, 1e-8);
 
         // compute first and second moment spatially. This code also applies cross-bilateral
         // filtering on the input illumination.
-        const int radius = 3;
-
-        for (int yy = -radius; yy <= radius; yy++)
+        for (int yy = -3; yy <= 3; yy++)
         {
-            for (int xx = -radius; xx <= radius; xx++)
+            for (int xx = -3; xx <= 3; xx++)
             {
                 const int2 p = ipos + int2(xx, yy);
                 const bool inside = all(p >= int2(0, 0)) && all(p < screenSize);
@@ -85,11 +134,11 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float historyParam, float3[LUMI
 
                 if (inside)
                 {
-                    const float3 illuminationP = gIllumination[p].rgb;
-                    const float2 momentsP = gMoments[p].xy;
-                    const float lIlluminationP = computePolynomialLuminance(illuminationP.rgb, luminanceParams);
-                    const float zP = gLinearZAndNormal[p].x;
-                    const float3 nP = oct_to_ndir_snorm(gLinearZAndNormal[p].zw);
+                    const float3 illuminationP = getIllumination(p).rgb;
+                    const float2 momentsP = getMoments(p).xy;
+                    const float lIlluminationP = dot(illuminationP.rgb, luminanceParams);
+                    const float zP = getLinearZAndNormal(p).x;
+                    const float3 nP = oct_to_ndir_snorm(getLinearZAndNormal(p).zw);
 
                     const float w = computeWeight(
                         zCenter.x, zP, phiDepth * length(float2(xx, yy)),
@@ -121,15 +170,12 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float historyParam, float3[LUMI
     else
     {
         // do nothing, pass data unmodified
-        return gIllumination[ipos];
+        return getIllumination(ipos);
     }
 }
 
 // compute moments
 float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 {
-    const float3 luminanceParams[LUMINANCE_POLYN_DEGREE] = { float3(0.3333), float3(0.3333), float3(0.3333) };
-    const float weightsParamsGlobal[NUM_WEIGHT_PARAMS] = { 1.0, 1.0, 1.0};
-    float historyParam = 4.0;
-    return filter_moments(vsOut, historyParam, luminanceParams, weightsParamsGlobal, gPhiColor, 1.0, gPhiNormal);
+    return filter_moments(vsOut, dvVarianceBoostFactor, dvLuminanceParams, dvWeightFunctionParams, gPhiColor, 1.0, gPhiNormal);
 }

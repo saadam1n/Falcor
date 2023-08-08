@@ -117,6 +117,12 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Dictionary& dict)
     dvReprojKernel[0] = 1.0;
     dvReprojKernel[1] = 1.0;
     dvReprojKernel[2] = 1.0;
+
+    dvVarianceBoostFactor = 4.0;
+
+    dvWeightFunctionParams[0] = 1.0;
+    dvWeightFunctionParams[1] = 1.0;
+    dvWeightFunctionParams[2] = 1.0;
 }
 
 Dictionary SVGFPass::getScriptingDictionary()
@@ -381,6 +387,13 @@ void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
 
     perImageCB["gPhiColor"]  = mPhiColor;
     perImageCB["gPhiNormal"]  = mPhiNormal;
+
+    perImageCB["dvLuminanceParams"] = dvLuminanceParams;
+    perImageCB["dvVarianceBoostFactor"] = dvVarianceBoostFactor;
+
+    for (int i = 0; i < 3; i++) {
+        perImageCB["dvWeightFunctionParams"][i] = dvWeightFunctionParams[i];
+    }
 
     mpFilterMoments->execute(pRenderContext, mpPingPongFbo[0]);
 }

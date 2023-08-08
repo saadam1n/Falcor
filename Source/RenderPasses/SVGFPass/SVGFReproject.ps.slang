@@ -108,25 +108,19 @@ void d_getEmission(int2 ipos, float3 val)
 [BackwardDerivative(d_getColor)]
 float3 getColor(int2 ipos)
 {
-    float3 temp = gColor[ipos].rgb;
-    temp = temp / QUANTIZATION;
-    return temp;
+    return gColor[ipos].rgb;
 }
 
-[BackwardDerivative(d_getColor)]
+[BackwardDerivative(d_getAlbedo)]
 float3 getAlbedo(int2 ipos)
 {
-    float3 temp = gAlbedo[ipos].rgb;
-    temp = temp / QUANTIZATION;
-    return temp;
+    return gAlbedo[ipos].rgb;
 }
 
-[BackwardDerivative(d_getColor)]
+[BackwardDerivative(d_getEmission)]
 float3 getEmission(int2 ipos)
 {
-    float3 temp = gEmission[ipos].rgb;
-    temp = temp / QUANTIZATION;
-    return temp;
+    return gEmission[ipos].rgb;
 }
 
 bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal, float3 normalPrev, float fwidthNormal, float[4] reprojectionParamters)

@@ -34,6 +34,7 @@ import Utils.Color.ColorHelpers;
     return int2(w,h);
 }
 
+[BackwardDifferentiable]
 float computeWeight(
     float depthCenter, float depthP, float phiDepth,
     float3 normalCenter, float3 normalP, float phiNormal,

@@ -186,6 +186,7 @@ float2 ndir_to_oct_unorm(float3 n)
  * @param[in] p Position in octahedral map in [-1,1] for each component.
  * @return Normalized direction.
  */
+[BackwardDifferentiable]
 float3 oct_to_ndir_snorm(float2 p)
 {
     float3 n = float3(p.xy, 1.0 - abs(p.x) - abs(p.y));

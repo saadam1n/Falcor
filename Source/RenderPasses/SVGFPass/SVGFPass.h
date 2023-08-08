@@ -97,8 +97,12 @@ private:
     ref<Buffer> mpTempDiffAlbedo;
     ref<Buffer> mpTempDiffEmission;
 
+    float3 dvLuminanceParams;
+
     float dvReprojParams[4];
     float dvReprojKernel[3];
 
-    float3 dvLuminanceParams;
+    float dvVarianceBoostFactor;
+
+    float dvWeightFunctionParams[3];
 };
