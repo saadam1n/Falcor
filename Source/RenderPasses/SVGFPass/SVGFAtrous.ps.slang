@@ -173,7 +173,17 @@ float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] va
     return filteredIllumination;
 }
 
-float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
+struct FS_OUT {
+    float4 filter_result : SV_TARGET0;
+    float4 debug_buf : SV_TARGET1;
+};
+
+FS_OUT main(FullScreenPassVsOut vsOut)
 {
-    return atrous(vsOut, dvAtrousKernel, dvAtrousVarianceKernel, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL, dvSigmaZ, dvSigmaN);
+    FS_OUT fs_out;
+
+    fs_out.filter_result = atrous(vsOut, dvAtrousKernel, dvAtrousVarianceKernel, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL, dvSigmaZ, dvSigmaN);
+    fs_out.debug_buf = float4(0.0);
+
+    return fs_out;
 }

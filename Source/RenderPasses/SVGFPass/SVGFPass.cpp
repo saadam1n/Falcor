@@ -243,6 +243,8 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
         // mpPingPongFbo[0].  Takes mpCurReprojFbo as input.
         computeFilteredMoments(pRenderContext);
 
+        pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(1)->getSRV(), pDebugTexture->getRTV());
+
         // Filter illumination from mpCurReprojFbo[0], storing the result
         // in mpPingPongFbo[0].  Along the way (or at the end, depending on
         // the value of mFeedbackTap), save the filtered illumination for
@@ -258,7 +260,6 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 
         // Blit into the output texture.
         pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), pOutputTexture->getRTV());
-        pRenderContext->blit(mpCurReprojFbo->getColorTexture(3)->getSRV(), pDebugTexture->getRTV());
 
         // Swap resources so we're ready for next frame.
         std::swap(mpCurReprojFbo, mpPrevReprojFbo);
@@ -297,6 +298,8 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         // Screen-size FBOs with 1 RGBA32F buffer
         Fbo::Desc desc;
         desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Float);    // debug buf
+
         mpPingPongFbo[0]  = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
         mpPingPongFbo[1]  = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
         mpFilteredPastFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);

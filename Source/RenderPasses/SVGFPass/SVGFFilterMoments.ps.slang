@@ -175,8 +175,18 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float historyParam, float3 lumi
     }
 }
 
+struct FS_OUT {
+    float4 illum_and_var : SV_TARGET0;
+    float4 debug_buf : SV_TARGET1;
+};
+
 // compute moments
-float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
+FS_OUT main(FullScreenPassVsOut vsOut)
 {
-    return filter_moments(vsOut, dvVarianceBoostFactor, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL, dvSigmaZ, dvSigmaN);
+    FS_OUT fs_out;
+
+    fs_out.illum_and_var = filter_moments(vsOut, dvVarianceBoostFactor, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL, dvSigmaZ, dvSigmaN);
+    fs_out.debug_buf = float4(1.0, 0.0, 0.5, 0.0);
+
+    return fs_out;
 }
