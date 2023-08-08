@@ -123,6 +123,15 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Dictionary& dict)
     dvWeightFunctionParams[0] = 1.0;
     dvWeightFunctionParams[1] = 1.0;
     dvWeightFunctionParams[2] = 1.0;
+
+    dvAtrousKernel[0] = 1.0;
+    dvAtrousKernel[1] = 2.0f / 3.0f;
+    dvAtrousKernel[2] = 1.0f / 6.0f;
+
+    dvAtrousVarianceKernel[0][0] = 1.0 / 4.0;
+    dvAtrousVarianceKernel[0][1] = 1.0 / 8.0;
+    dvAtrousVarianceKernel[1][0] = 1.0 / 8.0;
+    dvAtrousVarianceKernel[1][1] = 1.0 / 16.0;
 }
 
 Dictionary SVGFPass::getScriptingDictionary()
@@ -408,6 +417,22 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
 
     perImageCB["gPhiColor"]  = mPhiColor;
     perImageCB["gPhiNormal"] = mPhiNormal;
+
+    perImageCB["dvLuminanceParams"] = dvLuminanceParams;
+
+    for (int i = 0; i < 3; i++) {
+        perImageCB["dvWeightFunctionParams"][i] = dvWeightFunctionParams[i];
+    }
+
+    for (int i = 0; i < 3; i++) {
+        perImageCB["dvAtrousKernel"][i] = dvAtrousKernel[i];
+    }
+
+    for (int i = 0; i < 2; i++) {
+        for (int j = 0; j < 2; j++) {
+            perImageCB["dvAtrousVarianceKernel"][i][j] = dvAtrousVarianceKernel[i][j];
+        }
+    }
 
     for (int i = 0; i < mFilterIterations; i++)
     {

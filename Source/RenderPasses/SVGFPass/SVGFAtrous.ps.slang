@@ -43,6 +43,12 @@ cbuffer PerImageCB
     int         gStepSize;
     float       gPhiColor;
     float       gPhiNormal;
+
+    float3 dvLuminanceParams;
+
+    float dvWeightFunctionParams[3];
+    float dvAtrousKernel[3];
+    float dvAtrousVarianceKernel[2][2];
 };
 
 // computes a 3x3 gaussian blur of the variance, centered around
@@ -51,10 +57,9 @@ float computeVarianceCenter(int2 ipos, float[2][2] kernel)
 {
     float sum = 0.f;
 
-    const int radius = 1;
-    for (int yy = -radius; yy <= radius; yy++)
+    for (int yy = -1; yy <= 1; yy++)
     {
-        for (int xx = -radius; xx <= radius; xx++)
+        for (int xx = -1; xx <= 1; xx++)
         {
             const int2 p = ipos + int2(xx, yy);
             const float k = kernel[abs(xx)][abs(yy)];
@@ -65,7 +70,7 @@ float computeVarianceCenter(int2 ipos, float[2][2] kernel)
     return sum;
 }
 
-float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] varianceKernel, float3[LUMINANCE_POLYN_DEGREE] luminanceParams, float[NUM_WEIGHT_PARAMS] weightsParams, float sigmaL, float sigmaZ, float sigmaN) {
+float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] varianceKernel, float3 luminanceParams, float[NUM_WEIGHT_PARAMS] weightsParams, float sigmaL, float sigmaZ, float sigmaN) {
     const int2 ipos = int2(vsOut.posH.xy);
     const int2 screenSize = getTextureDims(gAlbedo, 0);
 
@@ -74,7 +79,7 @@ float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] va
     // constant samplers to prevent the compiler from generating code which
     // fetches the sampler descriptor from memory for each texture access
     const float4 illuminationCenter = gIllumination.Load(int3(ipos, 0));
-    const float lIlluminationCenter = computePolynomialLuminance(illuminationCenter.rgb, luminanceParams);
+    const float lIlluminationCenter = dot(illuminationCenter.rgb, luminanceParams);
 
     // variance, filtered using 3x3 gaussin blur
     const float var = computeVarianceCenter(ipos, varianceKernel);
@@ -107,7 +112,7 @@ float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] va
             if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
             {
                 const float4 illuminationP = gIllumination.Load(int3(p, 0));
-                const float lIlluminationP = computePolynomialLuminance(illuminationP.rgb, luminanceParams);
+                const float lIlluminationP = dot(illuminationP.rgb, luminanceParams);
                 const float zP = gLinearZAndNormal[p].x;
                 const float3 nP = oct_to_ndir_snorm(gLinearZAndNormal[p].zw);
 
@@ -135,13 +140,5 @@ float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] va
 
 float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 {
-    const float kernelWeights[3] = { 1.0, 2.0 / 3.0, 1.0 / 6.0 };
-    const float varianceKernel[2][2] = {
-        { 1.0 / 4.0, 1.0 / 8.0 },
-        { 1.0 / 8.0, 1.0 / 16.0 }
-    };
-    const float3 luminanceParams[LUMINANCE_POLYN_DEGREE] = { float3(0.3333), float3(0.3333), float3(0.3333) };
-    const float weightsParamsGlobal[NUM_WEIGHT_PARAMS] = { 1.0, 1.0, 1.0};
-
-    return atrous(vsOut, kernelWeights, varianceKernel, luminanceParams, weightsParamsGlobal, gPhiColor, 1.0, gPhiNormal);
+    return atrous(vsOut, dvAtrousKernel, dvAtrousVarianceKernel, dvLuminanceParams, dvWeightFunctionParams, gPhiColor, 1.0, gPhiNormal);
 }

@@ -105,4 +105,7 @@ private:
     float dvVarianceBoostFactor;
 
     float dvWeightFunctionParams[3];
+
+    float dvAtrousVarianceKernel[2][2];
+    float dvAtrousKernel[3];
 };
