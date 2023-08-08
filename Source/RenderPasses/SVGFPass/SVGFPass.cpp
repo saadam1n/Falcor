@@ -107,16 +107,16 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Dictionary& dict)
 
     FALCOR_ASSERT(mpPackLinearZAndNormal && mpReprojection && mpAtrous && mpFilterMoments && mpFinalModulate && mpTempDiffColor && mpTempDiffAlbedo && mpTempDiffEmission);
 
-    luminanceParams = float3(0.3333);
+    dvLuminanceParams = float3(0.3333);
 
-    reprojParams[0] = 32.0;
-    reprojParams[1] = 1.0;
-    reprojParams[2] = 10.0;
-    reprojParams[3] = 16.0;
+    dvReprojParams[0] = 32.0;
+    dvReprojParams[1] = 1.0;
+    dvReprojParams[2] = 10.0;
+    dvReprojParams[3] = 16.0;
 
-    reprojKernel[0] = 1.0;
-    reprojKernel[1] = 1.0;
-    reprojKernel[2] = 1.0;
+    dvReprojKernel[0] = 1.0;
+    dvReprojKernel[1] = 1.0;
+    dvReprojKernel[2] = 1.0;
 }
 
 Dictionary SVGFPass::getScriptingDictionary()
@@ -357,14 +357,14 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> p
     perImageCB["d_gAlbedo"] = mpTempDiffAlbedo;
     perImageCB["d_gEmission"] = mpTempDiffEmission;
 
-    perImageCB["luminanceParams"] = luminanceParams;
+    perImageCB["dvLuminanceParams"] = dvLuminanceParams;
 
     for (int i = 0; i < 3; i++) {
-        perImageCB["reprojKernel"][i] = reprojKernel[i];
+        perImageCB["dvReprojKernel"][i] = dvReprojKernel[i];
     }
 
     for (int i = 0; i < 4; i++) {
-        perImageCB["reprojParams"][i] = reprojParams[i];
+        perImageCB["dvReprojParams"][i] = dvReprojParams[i];
     }
 
     mpReprojection->execute(pRenderContext, mpCurReprojFbo);

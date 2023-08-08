@@ -56,9 +56,9 @@ cbuffer PerImageCB
     float       gAlpha;
     float       gMomentsAlpha;
 
-    float3 luminanceParams;
-    float reprojKernel[3];
-    float reprojParams[4];
+    float3 dvLuminanceParams;
+    float dvReprojKernel[3];
+    float dvReprojParams[4];
 };
 
 static const float QUANTIZATION = 1.0;
@@ -334,17 +334,14 @@ REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4]
 }
 
 PS_OUT main(FullScreenPassVsOut vsOut) {
-    float tempReprojectionWeights[4] = { 32.0, 1.0, 10.0, 16.0 };
-    float tempKernelWeights[3] = { 1.0, 1.0, 1.0 };
-
-    DifferentialPair<float3> dLuminanceParams = diffPair(luminanceParams, float3(1.0, 0.0, 0.0));
-    DifferentialPair<float[3]> dKernelWeights = diffPair(reprojKernel, {0, 0, 0});
-    DifferentialPair<float[4]> dReprojectionParamters = diffPair(tempReprojectionWeights, {0, 0, 0, 0});
+    DifferentialPair<float3> dpLuminanceParams = diffPair(dvLuminanceParams, float3(1.0, 0.0, 0.0));
+    DifferentialPair<float[3]> dpReprojKernel = diffPair(dvReprojKernel, {0, 0, 0});
+    DifferentialPair<float[4]> dpReprojParams = diffPair(dvReprojParams, {0, 0, 0, 0});
 
     
     float  finiteDiff = 1e-5;
-    let nodiffres = reproject(vsOut, dLuminanceParams.p - float3(finiteDiff, 0, 0), dReprojectionParamters.p, dKernelWeights.p);
-    let nodiffresStep = reproject(vsOut, dLuminanceParams.p + float3(finiteDiff, 0, 0), dReprojectionParamters.p, dKernelWeights.p);
+    let nodiffres = reproject(vsOut, dpLuminanceParams.p - float3(finiteDiff, 0, 0), dpReprojParams.p, dpReprojKernel.p);
+    let nodiffresStep = reproject(vsOut, dpLuminanceParams.p + float3(finiteDiff, 0, 0), dpReprojParams.p, dpReprojKernel.p);
 
     float finiteDiffDeriv = (nodiffresStep.OutMoments.x - nodiffres.OutMoments.x) / (2.0 * finiteDiff);
 
@@ -356,9 +353,9 @@ PS_OUT main(FullScreenPassVsOut vsOut) {
     diffInput.OutMoments = float2(1.0, 0.0);
     diffInput.OutHistoryLength = 0.0;
 
-    let result = __bwd_diff(reproject)(vsOut, dLuminanceParams, dReprojectionParamters, dKernelWeights, diffInput);
+    let result = __bwd_diff(reproject)(vsOut, dpLuminanceParams, dpReprojParams, dpReprojKernel, diffInput);
 
-    float bwdDiffResult = dLuminanceParams.d.x;
+    float bwdDiffResult = dpLuminanceParams.d.x;
 
     PS_OUT ret;
 
@@ -375,7 +372,7 @@ PS_OUT main(FullScreenPassVsOut vsOut) {
         val = abs((bwdDiffResult - finiteDiffDeriv) / finiteDiffDeriv);
     }
 
-    ret.OutDebug = float4(reprojKernel[0], reprojKernel[1], reprojKernel[2], 0.0);
+    ret.OutDebug = float4(dvReprojKernel[0], dvReprojKernel[1], dvReprojKernel[2], 0.0);
 
     return ret;
 }
