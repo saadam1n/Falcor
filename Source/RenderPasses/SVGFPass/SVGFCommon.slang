@@ -60,12 +60,6 @@ struct FullScreenPassVsOut
 #endif
 };
 
-bool should_modulate(float3 albedo) {
-    float lum = dot(albedo, float3(1.0));
-    return (lum > 0.01);
-    //return true;
-}
-
 [BackwardDifferentiable]
 float3 demodulate(float3 c, float3 albedo)
 {
@@ -76,14 +70,11 @@ float3 demodulate(float3 c, float3 albedo)
         return c;
 }
 
-float4 remodule(float4 c, float4 albedo) {
-    if(should_modulate(albedo.rgb))
-        return c * albedo;
-    else
+float3 remodulate(float3 c, float3 albedo) {
+    float lum = dot(albedo, float3(1.0));
+    if(lum > 0.01)
+        return c * max(albedo, float3(0.001, 0.001, 0.001));
+    else    
         return c;
 }
 
-#define LUMINANCE_POLYN_DEGREE 3
-float computePolynomialLuminance(float3 col, float3[LUMINANCE_POLYN_DEGREE] coeffs) {
-    return luminance(col);
-}

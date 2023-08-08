@@ -38,5 +38,5 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 {
     const int2 ipos = int2(vsOut.posH.xy);
 
-    return remodule(gIllumination[ipos], gAlbedo[ipos]) + gEmission[ipos];
+    return float4(remodulate(gIllumination[ipos].rgb, gAlbedo[ipos].rgb) + gEmission[ipos].rgb, 0.0);
 }
