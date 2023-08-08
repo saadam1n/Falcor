@@ -185,8 +185,24 @@ FS_OUT main(FullScreenPassVsOut vsOut)
 {
     FS_OUT fs_out;
 
-    fs_out.illum_and_var = filter_moments(vsOut, dvVarianceBoostFactor, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL, dvSigmaZ, dvSigmaN);
-    fs_out.debug_buf = float4(1.0, 0.0, 0.5, 0.0);
+    var dpVarianceBoostFactor = diffPair(dvVarianceBoostFactor, 1.0);
+    var dpLuminanceParams = diffPair(dvLuminanceParams, float3(0.0));
+    var dpWeightFunctionParams = diffPair(dvWeightFunctionParams, {0.0, 0.0, 0.0});
+    var dpSigmaL = diffPair(dvSigmaL, 0.0);
+    var dpSigmaZ = diffPair(dvSigmaZ, 0.0);
+    var dpSigmaN = diffPair(dvSigmaN, 0.0);
+
+
+    let finiteDiffStep = 0.001;
+    var lower = filter_moments(vsOut, dvVarianceBoostFactor - finiteDiffStep, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL, dvSigmaZ, dvSigmaN);
+    var upper = filter_moments(vsOut, dvVarianceBoostFactor + finiteDiffStep, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL, dvSigmaZ, dvSigmaN);
+    float finite = (upper.r - lower.r) / (2.0 * finiteDiffStep);
+
+     __bwd_diff(filter_moments)(vsOut, dpVarianceBoostFactor, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaZ, float4(1.0, 0.0, 0.0, 0.0));
+    float bwd = dpVarianceBoostFactor.d;
+
+    fs_out.illum_and_var = lower;
+    fs_out.debug_buf = computeDebugDiffError(finite, bwd);
 
     return fs_out;
 }

@@ -340,8 +340,6 @@ PS_OUT main(FullScreenPassVsOut vsOut) {
 
     float finiteDiffDeriv = (nodiffresStep.OutMoments.x - nodiffres.OutMoments.x) / (2.0 * finiteDiff);
 
-
-
     REPROJ_OUT.Differential diffInput;
 
     diffInput.OutIllumination = float4(0.0);
@@ -357,15 +355,6 @@ PS_OUT main(FullScreenPassVsOut vsOut) {
     ret.OutMoments = nodiffres.OutMoments;
     ret.OutIllumination = nodiffres.OutIllumination;
     ret.OutHistoryLength = nodiffres.OutHistoryLength;
-
-    float MIN_DERIV = 0.025;
-
-    float val;
-    if(abs(bwdDiffResult) < MIN_DERIV || abs(finiteDiffDeriv) < MIN_DERIV) {
-        val = 0.0;
-    } else {
-        val = abs((bwdDiffResult - finiteDiffDeriv) / finiteDiffDeriv);
-    }
 
     ret.OutDebug = float4(dvReprojKernel[0], dvReprojKernel[1], dvReprojKernel[2], 0.0);
 

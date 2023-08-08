@@ -78,3 +78,15 @@ float3 remodulate(float3 c, float3 albedo) {
         return c;
 }
 
+float4 computeDebugDiffError(float finite, float bwd) {
+    float MIN_DERIV = 0.025;
+
+    float val;
+    if(abs(bwd) < MIN_DERIV || abs(bwd) < MIN_DERIV) {
+        val = 0.0;
+    } else {
+        val = abs((bwd - finite) / finite);
+    }
+
+    return float4(val);
+}
