@@ -416,8 +416,9 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
     perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
     perImageCB["gLinearZAndNormal"]       = mpLinearZAndNormalFbo->getColorTexture(0);
 
-    perImageCB["gPhiColor"]  = dvSigmaL;
-    perImageCB["gPhiNormal"] = dvSigmaN;
+    perImageCB["dvSigmaL"] = dvSigmaL;
+    perImageCB["dvSigmaZ"] = dvSigmaZ;
+    perImageCB["dvSigmaN"] = dvSigmaN;
 
     perImageCB["dvLuminanceParams"] = dvLuminanceParams;
 

@@ -37,8 +37,10 @@ cbuffer PerImageCB
     Texture2D   gLinearZAndNormal;
 
     int         gStepSize;
-    float       gPhiColor;
-    float       gPhiNormal;
+
+    float dvSigmaL;
+    float dvSigmaZ;
+    float dvSigmaN;
 
     float3 dvLuminanceParams;
 
@@ -173,5 +175,5 @@ float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] va
 
 float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 {
-    return atrous(vsOut, dvAtrousKernel, dvAtrousVarianceKernel, dvLuminanceParams, dvWeightFunctionParams, gPhiColor, 1.0, gPhiNormal);
+    return atrous(vsOut, dvAtrousKernel, dvAtrousVarianceKernel, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL, dvSigmaZ, dvSigmaN);
 }
