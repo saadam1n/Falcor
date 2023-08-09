@@ -195,7 +195,7 @@ FS_OUT main(FullScreenPassVsOut vsOut)
     var upper = atrous(vsOut, dvAtrousKernel, dvAtrousVarianceKernel, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL + finiteDiffStep, dvSigmaZ, dvSigmaN);
     float finite = (upper.r - lower.r) / (2.0 * finiteDiffStep);
 
-    //__bwd_diff(atrous)(vsOut, dpAtrousKernel, dpAtrousVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, float4(1.0, 0.0, 0.0, 0.0));
+    __bwd_diff(atrous)(vsOut, dpAtrousKernel, dpAtrousVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, float4(1.0, 0.0, 0.0, 0.0));
     float bwd = dpSigmaL.d;
 
     fs_out.filter_result = lower;
