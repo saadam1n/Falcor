@@ -198,7 +198,7 @@ FS_OUT main(FullScreenPassVsOut vsOut)
     var upper = filter_moments(vsOut, dvVarianceBoostFactor + finiteDiffStep, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL, dvSigmaZ, dvSigmaN);
     float finite = (upper.r - lower.r) / (2.0 * finiteDiffStep);
 
-     __bwd_diff(filter_moments)(vsOut, dpVarianceBoostFactor, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaZ, float4(1.0, 0.0, 0.0, 0.0));
+     //__bwd_diff(filter_moments)(vsOut, dpVarianceBoostFactor, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaZ, float4(1.0, 0.0, 0.0, 0.0));
     float bwd = dpVarianceBoostFactor.d;
 
     fs_out.illum_and_var = lower;
