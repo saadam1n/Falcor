@@ -26,17 +26,9 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 import SVGFCommon;
-
-cbuffer PerImageCB
-{
-    Texture2D   gAlbedo;
-    Texture2D   gEmission;
-    Texture2D   gIllumination;
-};
+import SVGFFinalModulateC;
 
 float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 {
-    const int2 ipos = int2(vsOut.posH.xy);
-
-    return float4(remodulate(gIllumination[ipos].rgb, gAlbedo[ipos].rgb) + gEmission[ipos].rgb, 0.0);
+    return final_mod(vsOut); // we don't have anywhere to put derivatives. so...
 }

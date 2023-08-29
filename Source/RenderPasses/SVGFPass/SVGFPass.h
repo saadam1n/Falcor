@@ -61,6 +61,9 @@ private:
                              ref<Texture> pPrevLinearZAndNormalTexture,
                              ref<Texture> pDebugTexture
         );
+
+    void computeDerivatives(RenderContext* pRenderContext, const RenderData& renderData);
+
     void computeFilteredMoments(RenderContext* pRenderContext);
     void computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture);
 
@@ -79,6 +82,8 @@ private:
     ref<FullScreenPass> mpAtrous;
     ref<FullScreenPass> mpFinalModulate;
 
+    ref<FullScreenPass> mpFinalModulateD;
+
     // Intermediate framebuffers
     ref<Fbo> mpPingPongFbo[2];
     ref<Fbo> mpLinearZAndNormalFbo;
@@ -93,21 +98,55 @@ private:
     ref<Buffer> mpTempDiffAlbedo;
     ref<Buffer> mpTempDiffEmission;
 
-    float3 dvLuminanceParams;
+    // we want to optimize parameters per pass to get a little bit of extra tuning
+    // da is short for derivative accum
 
-    float dvReprojParams[4];
-    float dvReprojKernel[3];
+    struct {
 
-    float dvVarianceBoostFactor;
+    } mPackLinearZAndNormalState;
 
-    float dvWeightFunctionParams[3];
+    struct {
+        float dvAlpha;
+        float dvMomentsAlpha;
 
-    float dvAtrousVarianceKernel[2][2];
-    float dvAtrousKernel[3];
+        float3 dvLuminanceParams;
 
-    float   dvSigmaL              = 10.0f;
-    float   dvSigmaZ              = 1.0;
-    float   dvSigmaN              = 128.0f;
-    float   dvAlpha               = 0.05f;
-    float   dvMomentsAlpha        = 0.2f;
+        float dvParams[4];
+        float dvKernel[3];
+    } mReprojectState;
+
+    struct {
+        float   dvSigmaL;
+        float   dvSigmaZ;
+        float   dvSigmaN;
+
+        float3 dvLuminanceParams;
+        float dvWeightFunctionParams[3];
+
+        float dvVarianceBoostFactor;
+    } mFilterMomentsState;
+
+    struct {
+        ref<Buffer> pdaKernel;
+        ref<Buffer> pdaVarianceKernel;
+        ref<Buffer> pdaLuminanceParams;
+        ref<Buffer> pdaWeightFunctionParams;
+        ref<Buffer> pdaSigmaL;
+        ref<Buffer> pdaSigmaZ;
+        ref<Buffer> pdaSigmaN;
+
+        float   dvSigmaL;
+        float   dvSigmaZ;
+        float   dvSigmaN;
+
+        float dvWeightFunctionParams[3];
+        float3 dvLuminanceParams;
+
+        float dvVarianceKernel[2][2];
+        float dvKernel[3];
+    } mAtrousState;
+
+    struct {
+
+    } mFinalModulateState;
 };

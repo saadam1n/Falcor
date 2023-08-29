@@ -70,6 +70,7 @@ float3 demodulate(float3 c, float3 albedo)
         return c;
 }
 
+[BackwardDifferentiable]
 float3 remodulate(float3 c, float3 albedo) {
     float lum = dot(albedo, float3(1.0));
     if(lum > 0.01)

@@ -4,7 +4,11 @@ target_sources(SVGFPass PRIVATE
     SVGFAtrous.ps.slang
     SVGFCommon.slang
     SVGFFilterMoments.ps.slang
-    SVGFFinalModulate.ps.slang
+
+    SVGFFinalModulateC.slang
+    SVGFFinalModulateD.ps.slang
+    SVGFFinalModulateS.ps.slang
+
     SVGFPackLinearZAndNormal.ps.slang
     SVGFPass.cpp
     SVGFPass.h

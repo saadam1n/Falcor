@@ -42,7 +42,9 @@ namespace
     const char kReprojectShader[]            = "RenderPasses/SVGFPass/SVGFReproject.ps.slang";
     const char kAtrousShader[]               = "RenderPasses/SVGFPass/SVGFAtrous.ps.slang";
     const char kFilterMomentShader[]         = "RenderPasses/SVGFPass/SVGFFilterMoments.ps.slang";
-    const char kFinalModulateShader[]        = "RenderPasses/SVGFPass/SVGFFinalModulate.ps.slang";
+
+    const char kFinalModulateShaderS[]        = "RenderPasses/SVGFPass/SVGFFinalModulateS.ps.slang";
+    const char kFinalModulateShaderD[]        = "RenderPasses/SVGFPass/SVGFFinalModulateD.ps.slang";
 
     // Names of valid entries in the parameter dictionary.
     const char kEnabled[] = "Enabled";
@@ -88,10 +90,10 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Dictionary& dict)
         else if (key == kIterations) mFilterIterations = value;
         else if (key == kFeedbackTap) mFeedbackTap = value;
         else if (key == kVarianceEpsilon) mVarainceEpsilon = value;
-        else if (key == kPhiColor) dvSigmaL = value;
-        else if (key == kPhiNormal) dvSigmaN = value;
-        else if (key == kAlpha) dvAlpha = value;
-        else if (key == kMomentsAlpha) dvMomentsAlpha = value;
+        else if (key == kPhiColor) ;//dvSigmaL = value;
+        else if (key == kPhiNormal) ;//dvSigmaN = value;
+        else if (key == kAlpha) ;//dvAlpha = value;
+        else if (key == kMomentsAlpha) ;//dvMomentsAlpha = value;
         else logWarning("Unknown field '{}' in SVGFPass dictionary.", key);
     }
 
@@ -99,7 +101,10 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Dictionary& dict)
     mpReprojection = FullScreenPass::create(mpDevice, kReprojectShader);
     mpAtrous = FullScreenPass::create(mpDevice, kAtrousShader);
     mpFilterMoments = FullScreenPass::create(mpDevice, kFilterMomentShader);
-    mpFinalModulate = FullScreenPass::create(mpDevice, kFinalModulateShader);
+    mpFinalModulate = FullScreenPass::create(mpDevice, kFinalModulateShaderS);
+
+
+    mpFinalModulateD = FullScreenPass::create(mpDevice, kFinalModulateShaderD);
 
     mpTempDiffColor = Buffer::create(pDevice, sizeof(int32_t) * 4 * 1920 * 1080);
     mpTempDiffAlbedo = Buffer::create(pDevice, sizeof(int32_t) * 4 * 1920 * 1080);
@@ -107,31 +112,69 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Dictionary& dict)
 
     FALCOR_ASSERT(mpPackLinearZAndNormal && mpReprojection && mpAtrous && mpFilterMoments && mpFinalModulate && mpTempDiffColor && mpTempDiffAlbedo && mpTempDiffEmission);
 
-    dvLuminanceParams = float3(0.3333);
+    // set common stuff first
+    float3 dvLuminanceParams = float3(0.3333);
 
-    dvReprojParams[0] = 32.0;
-    dvReprojParams[1] = 1.0;
-    dvReprojParams[2] = 10.0;
-    dvReprojParams[3] = 16.0;
+    float   dvSigmaL              = 10.0f;
+    float   dvSigmaZ              = 1.0;
+    float   dvSigmaN              = 128.0f;
+    float   dvAlpha               = 0.05f;
+    float   dvMomentsAlpha        = 0.2f;
 
-    dvReprojKernel[0] = 1.0;
-    dvReprojKernel[1] = 1.0;
-    dvReprojKernel[2] = 1.0;
+    float dvWeightFunctionParams[3] {1.0, 1.0, 1.0};
 
-    dvVarianceBoostFactor = 4.0;
+    // set pack linear z and normal params
 
-    dvWeightFunctionParams[0] = 1.0;
-    dvWeightFunctionParams[1] = 1.0;
-    dvWeightFunctionParams[2] = 1.0;
 
-    dvAtrousKernel[0] = 1.0;
-    dvAtrousKernel[1] = 2.0f / 3.0f;
-    dvAtrousKernel[2] = 1.0f / 6.0f;
+    // set reproj params
+    mReprojectState.dvLuminanceParams = dvLuminanceParams;
+    mReprojectState.dvAlpha = dvAlpha;
+    mReprojectState.dvMomentsAlpha = dvMomentsAlpha;
 
-    dvAtrousVarianceKernel[0][0] = 1.0 / 4.0;
-    dvAtrousVarianceKernel[0][1] = 1.0 / 8.0;
-    dvAtrousVarianceKernel[1][0] = 1.0 / 8.0;
-    dvAtrousVarianceKernel[1][1] = 1.0 / 16.0;
+    mReprojectState.dvParams[0] = 32.0;
+    mReprojectState.dvParams[1] = 1.0;
+    mReprojectState.dvParams[2] = 10.0;
+    mReprojectState.dvParams[3] = 16.0;
+
+    mReprojectState.dvKernel[0] = 1.0;
+    mReprojectState.dvKernel[1] = 1.0;
+    mReprojectState.dvKernel[2] = 1.0;
+
+    // set filter moments params
+    mFilterMomentsState.dvSigmaL = dvSigmaL;
+    mFilterMomentsState.dvSigmaZ = dvSigmaZ;
+    mFilterMomentsState.dvSigmaN = dvSigmaN;
+
+    mFilterMomentsState.dvLuminanceParams = dvLuminanceParams;
+
+    for (int i = 0; i < 3; i++) {
+        mFilterMomentsState.dvWeightFunctionParams[i] = dvWeightFunctionParams[i];
+    }
+
+    mFilterMomentsState.dvVarianceBoostFactor = 4.0;
+
+
+    // Set atrous state vars
+    mAtrousState.dvSigmaL = dvSigmaL;
+    mAtrousState.dvSigmaZ = dvSigmaZ;
+    mAtrousState.dvSigmaN = dvSigmaN;
+
+    for (int i = 0; i < 3; i++) {
+        mAtrousState.dvWeightFunctionParams[i] = dvWeightFunctionParams[i];
+    }
+
+    mAtrousState.dvLuminanceParams = dvLuminanceParams;
+
+    mAtrousState.dvKernel[0] = 1.0;
+    mAtrousState.dvKernel[1] = 2.0f / 3.0f;
+    mAtrousState.dvKernel[2] = 1.0f / 6.0f;
+
+    mAtrousState.dvVarianceKernel[0][0] = 1.0 / 4.0;
+    mAtrousState.dvVarianceKernel[0][1] = 1.0 / 8.0;
+    mAtrousState.dvVarianceKernel[1][0] = 1.0 / 8.0;
+    mAtrousState.dvVarianceKernel[1][1] = 1.0 / 16.0;
+
+
 }
 
 Dictionary SVGFPass::getScriptingDictionary()
@@ -141,10 +184,11 @@ Dictionary SVGFPass::getScriptingDictionary()
     dict[kIterations] = mFilterIterations;
     dict[kFeedbackTap] = mFeedbackTap;
     dict[kVarianceEpsilon] = mVarainceEpsilon;
-    dict[kPhiColor] = dvSigmaL;
-    dict[kPhiNormal] = dvSigmaN;
-    dict[kAlpha] = dvAlpha;
-    dict[kMomentsAlpha] = dvMomentsAlpha;
+    // doesn't really make sense for our use case
+    dict[kPhiColor] = -1.0;
+    dict[kPhiNormal] = -1.0;
+    dict[kAlpha] = -1.0;
+    dict[kMomentsAlpha] = -1.0;
     return dict;
 }
 
@@ -265,6 +309,8 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
         std::swap(mpCurReprojFbo, mpPrevReprojFbo);
         pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(),
                              pPrevLinearZAndNormalTexture->getRTV());
+
+        computeDerivatives(pRenderContext, renderData);
     }
     else
     {
@@ -308,6 +354,11 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
     }
 
     mBuffersNeedClear = true;
+}
+
+void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const RenderData& renderData)
+{
+
 }
 
 void SVGFPass::clearBuffers(RenderContext* pRenderContext, const RenderData& renderData)
@@ -363,8 +414,8 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> p
     perImageCB["gPrevHistoryLength"] = mpPrevReprojFbo->getColorTexture(2);
 
     // Setup variables for our reprojection pass
-    perImageCB["dvAlpha"] = dvAlpha;
-    perImageCB["dvMomentsAlpha"] = dvMomentsAlpha;
+    perImageCB["dvAlpha"] = mReprojectState.dvAlpha;
+    perImageCB["dvMomentsAlpha"] = mReprojectState.dvMomentsAlpha;
 
     pRenderContext->clearUAV(mpTempDiffColor->getUAV().get(), Falcor::uint4(0));
     pRenderContext->clearUAV(mpTempDiffAlbedo->getUAV().get(), Falcor::uint4(0));
@@ -375,14 +426,14 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> p
     perImageCB["d_gAlbedo"] = mpTempDiffAlbedo;
     perImageCB["d_gEmission"] = mpTempDiffEmission;
 
-    perImageCB["dvLuminanceParams"] = dvLuminanceParams;
+    perImageCB["dvLuminanceParams"] = mReprojectState.dvLuminanceParams;
 
     for (int i = 0; i < 3; i++) {
-        perImageCB["dvReprojKernel"][i] = dvReprojKernel[i];
+        perImageCB["dvReprojKernel"][i] = mReprojectState.dvKernel[i];
     }
 
     for (int i = 0; i < 4; i++) {
-        perImageCB["dvReprojParams"][i] = dvReprojParams[i];
+        perImageCB["dvReprojParams"][i] = mReprojectState.dvParams[i];
     }
 
     mpReprojection->execute(pRenderContext, mpCurReprojFbo);
@@ -397,15 +448,15 @@ void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
     perImageCB["gLinearZAndNormal"]          = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gMoments"]          = mpCurReprojFbo->getColorTexture(1);
 
-    perImageCB["dvSigmaL"] = dvSigmaL;
-    perImageCB["dvSigmaZ"] = dvSigmaZ;
-    perImageCB["dvSigmaN"] = dvSigmaN;
+    perImageCB["dvSigmaL"] = mFilterMomentsState.dvSigmaL;
+    perImageCB["dvSigmaZ"] = mFilterMomentsState.dvSigmaZ;
+    perImageCB["dvSigmaN"] = mFilterMomentsState.dvSigmaN;
 
-    perImageCB["dvLuminanceParams"] = dvLuminanceParams;
-    perImageCB["dvVarianceBoostFactor"] = dvVarianceBoostFactor;
+    perImageCB["dvLuminanceParams"] =mFilterMomentsState. dvLuminanceParams;
+    perImageCB["dvVarianceBoostFactor"] = mFilterMomentsState.dvVarianceBoostFactor;
 
     for (int i = 0; i < 3; i++) {
-        perImageCB["dvWeightFunctionParams"][i] = dvWeightFunctionParams[i];
+        perImageCB["dvWeightFunctionParams"][i] = mFilterMomentsState.dvWeightFunctionParams[i];
     }
 
     mpFilterMoments->execute(pRenderContext, mpPingPongFbo[0]);
@@ -419,23 +470,23 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
     perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
     perImageCB["gLinearZAndNormal"]       = mpLinearZAndNormalFbo->getColorTexture(0);
 
-    perImageCB["dvSigmaL"] = dvSigmaL;
-    perImageCB["dvSigmaZ"] = dvSigmaZ;
-    perImageCB["dvSigmaN"] = dvSigmaN;
+    perImageCB["dvSigmaL"] = mAtrousState.dvSigmaL;
+    perImageCB["dvSigmaZ"] = mAtrousState.dvSigmaZ;
+    perImageCB["dvSigmaN"] = mAtrousState.dvSigmaN;
 
-    perImageCB["dvLuminanceParams"] = dvLuminanceParams;
+    perImageCB["dvLuminanceParams"] = mAtrousState.dvLuminanceParams;
 
     for (int i = 0; i < 3; i++) {
-        perImageCB["dvWeightFunctionParams"][i] = dvWeightFunctionParams[i];
+        perImageCB["dvWeightFunctionParams"][i] = mAtrousState.dvWeightFunctionParams[i];
     }
 
     for (int i = 0; i < 3; i++) {
-        perImageCB["dvAtrousKernel"][i] = dvAtrousKernel[i];
+        perImageCB["mAtrousState.dvKernel"][i] = mAtrousState.dvKernel[i];
     }
 
     for (int i = 0; i < 2; i++) {
         for (int j = 0; j < 2; j++) {
-            perImageCB["dvAtrousVarianceKernel"][i][j] = dvAtrousVarianceKernel[i][j];
+            perImageCB["mAtrousState.dvVarianceKernel"][i][j] = mAtrousState.dvVarianceKernel[i][j];
         }
     }
 
@@ -476,14 +527,14 @@ void SVGFPass::renderUI(Gui::Widgets& widget)
 
     widget.text("");
     widget.text("Contol edge stopping on bilateral fitler");
-    dirty |= (int)widget.var("For Color", dvSigmaL, 0.0f, 10000.0f, 0.01f);
-    dirty |= (int)widget.var("For Normal", dvSigmaN, 0.001f, 1000.0f, 0.2f);
+    dirty |= (int)widget.var("For Color", mAtrousState.dvSigmaL, 0.0f, 10000.0f, 0.01f);  // pass in sigma l as dummy var
+    dirty |= (int)widget.var("For Normal", mAtrousState.dvSigmaL, 0.001f, 1000.0f, 0.2f);
 
     widget.text("");
     widget.text("How much history should be used?");
     widget.text("    (alpha; 0 = full reuse; 1 = no reuse)");
-    dirty |= (int)widget.var("Alpha", dvAlpha, 0.0f, 1.0f, 0.001f);
-    dirty |= (int)widget.var("Moments Alpha", dvMomentsAlpha, 0.0f, 1.0f, 0.001f);
+    dirty |= (int)widget.var("Alpha", mAtrousState.dvSigmaL, 0.0f, 1.0f, 0.001f);
+    dirty |= (int)widget.var("Moments Alpha", mAtrousState.dvSigmaL, 0.0f, 1.0f, 0.001f);
 
     if (dirty) mBuffersNeedClear = true;
 }
