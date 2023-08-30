@@ -113,6 +113,8 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Dictionary& dict)
     FALCOR_ASSERT(mpPackLinearZAndNormal && mpReprojection && mpAtrous && mpFilterMoments && mpFinalModulate && mpTempDiffColor && mpTempDiffAlbedo && mpTempDiffEmission);
 
     // set common stuff first
+    const size_t numPixels = 1920 * 1080;
+
     float3 dvLuminanceParams = float3(0.3333);
 
     float   dvSigmaL              = 10.0f;
@@ -173,6 +175,11 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Dictionary& dict)
     mAtrousState.dvVarianceKernel[0][1] = 1.0 / 8.0;
     mAtrousState.dvVarianceKernel[1][0] = 1.0 / 8.0;
     mAtrousState.dvVarianceKernel[1][1] = 1.0 / 16.0;
+
+    // set final modulate state vars
+    mFinalModulateState.pdaIllum = Buffer::create(pDevice, sizeof(int4) * numPixels);
+
+    FALCOR_ASSERT(mFinalModulateState.pdaIllum);
 
 
 }
@@ -356,8 +363,32 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
     mBuffersNeedClear = true;
 }
 
+// I'll move parts of this off to other function as need be
 void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    ref<Texture> pOutputTexture = renderData.getTexture(kOutputBufferFilteredImage);
+    ref<Texture> pAlbedoTexture = renderData.getTexture(kInputBufferAlbedo);
+    ref<Texture> pEmissionTexture = renderData.getTexture(kInputBufferEmission);
+    ref<Texture> pIllumTexture = mpPingPongFbo[0]->getColorTexture(0);
+    ref<Texture> pColorTexture = renderData.getTexture(kInputBufferColor);
+
+
+    if (mFilterEnabled) {
+        computeDerivFinalModulate(pRenderContext, pOutputTexture, pIllumTexture, pAlbedoTexture, pEmissionTexture);
+       
+
+    }
+}
+
+void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pResultantImage, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture) {
+    pRenderContext->clearUAV(mFinalModulateState.pdaIllum->getUAV().get(), Falcor::uint4(0));
+
+    auto perImageCB = mFinalModulateState.dPass->getRootVar()["PerImageCB"];
+    perImageCB["gAlbedo"] = pAlbedoTexture;
+    perImageCB["gEmission"] = pEmissionTexture;
+    perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
+
+    auto perImageCB_D = mFinalModulateState.dPass->getRootVar()["PerImageCB_D"];
 
 }
 

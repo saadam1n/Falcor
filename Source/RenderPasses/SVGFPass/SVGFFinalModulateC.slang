@@ -5,12 +5,23 @@ cbuffer PerImageCB
     Texture2D   gAlbedo;
     Texture2D   gEmission;
     Texture2D   gIllumination;
+
+    RWByteAddressBuffer daIllum;
 };
 
 // Read gColor
 void d_getIllum(int2 ipos, float3 val)
 {
+    // this we actually care about, as this feeds into the previous stage's output 
+    uint2 dim = getTextureDims(gIllumination, 0);
+    uint base_addr = sizeof(int4) * (dim.x * ipos.y + ipos.x);
 
+    int4 a = quantVal(val);
+    for(int i = 0; i < 3; i++) {
+        uint addr = base_addr + sizeof(int) * i;
+        int dummy;
+        daIllum.InterlockedAdd(addr, a[i], dummy);
+    }
 }
 
 // Read gAlbedo

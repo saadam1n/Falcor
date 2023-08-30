@@ -62,10 +62,12 @@ private:
                              ref<Texture> pDebugTexture
         );
 
-    void computeDerivatives(RenderContext* pRenderContext, const RenderData& renderData);
 
     void computeFilteredMoments(RenderContext* pRenderContext);
     void computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture);
+
+    void computeDerivatives(RenderContext* pRenderContext, const RenderData& renderData);
+    void computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pResultantImage, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture);
 
     bool mBuffersNeedClear = false;
 
@@ -147,6 +149,9 @@ private:
     } mAtrousState;
 
     struct {
+        ref<Buffer> pdaIllum;
 
+        //ref<FullScreenPass> sPass;
+        ref<FullScreenPass> dPass;
     } mFinalModulateState;
 };

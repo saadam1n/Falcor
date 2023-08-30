@@ -69,7 +69,7 @@ void d_getColor(int2 ipos, float3 val)
     uint2 dim = getTextureDims(gColor, 0);
     uint base_addr = 4 * 4 * (dim.x * ipos.y + ipos.x);
 
-    int4 a = int4(QUANTIZATION * int3(val), 0.0);
+    int4 a = quantVal4(val);
     for(int i = 0; i < 3; i++) {
         uint addr = base_addr + 4 * i;
         int dummy;
@@ -83,7 +83,7 @@ void d_getAlbedo(int2 ipos, float3 val)
     uint2 dim = getTextureDims(gColor, 0);
     uint base_addr = 4 * 4 * (dim.x * ipos.y + ipos.x);
 
-    int4 a = int4(QUANTIZATION * int3(val), 0.0);
+    int4 a = quantVal4(val);
     for(int i = 0; i < 3; i++) {
         uint addr = base_addr + 4 * i;
         int dummy;
@@ -97,7 +97,7 @@ void d_getEmission(int2 ipos, float3 val)
     uint2 dim = getTextureDims(gColor, 0);
     uint base_addr = 4 * 4 * (dim.x * ipos.y + ipos.x);
 
-    int4 a = int4(QUANTIZATION * int3(val), 0.0);
+    int4 a = quantVal4(val);
     for(int i = 0; i < 3; i++) {
         uint addr = base_addr + 4 * i;
         int dummy;

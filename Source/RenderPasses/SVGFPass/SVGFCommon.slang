@@ -91,3 +91,17 @@ float4 computeDebugDiffError(float finite, float bwd) {
 
     return float4(val);
 }
+
+static const float QUANTIZATION = 1.0;
+
+int3 quantVal3(float3 val) {
+    return int3(QUANTIZATION * val);
+}
+
+int4 quantVal4(float3 val) {
+    return int4(QUANTIZATION * val, 0);
+}
+
+int4 quantVal4(float4 val) {
+    return int4(QUANTIZATION * val);
+}
