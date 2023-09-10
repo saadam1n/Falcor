@@ -119,7 +119,6 @@ private:
         ref<Texture> ptHistoryLen;
         ref<Texture> ptMoments;
 
-
         float dvAlpha;
         float dvMomentsAlpha;
 
