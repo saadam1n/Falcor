@@ -16,7 +16,7 @@ void d_getIllum(int2 ipos, float3 val)
     uint2 dim = getTextureDims(gIllumination, 0);
     uint base_addr = sizeof(int4) * (dim.x * ipos.y + ipos.x);
 
-    int4 a = quantVal(val);
+    int4 a = quantVal4(val);
     for(int i = 0; i < 3; i++) {
         uint addr = base_addr + sizeof(int) * i;
         int dummy;
@@ -36,7 +36,7 @@ void d_getEmission(int2 ipos, float3 val)
 
 }
 
-[BackwardDerivative(d_getColor)]
+[BackwardDerivative(d_getIllum)]
 float3 getIllum(int2 ipos)
 {
     return gIllumination[ipos].rgb;

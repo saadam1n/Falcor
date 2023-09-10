@@ -39,9 +39,15 @@ namespace
 {
     // Shader source files
     const char kPackLinearZAndNormalShader[] = "RenderPasses/SVGFPass/SVGFPackLinearZAndNormal.ps.slang";
-    const char kReprojectShader[]            = "RenderPasses/SVGFPass/SVGFReproject.ps.slang";
-    const char kAtrousShader[]               = "RenderPasses/SVGFPass/SVGFAtrous.ps.slang";
-    const char kFilterMomentShader[]         = "RenderPasses/SVGFPass/SVGFFilterMoments.ps.slang";
+
+    const char kReprojectShaderS[]            = "RenderPasses/SVGFPass/SVGFReprojectS.ps.slang";
+    const char kReprojectShaderD[]            = "RenderPasses/SVGFPass/SVGFReprojectD.ps.slang";
+
+    const char kAtrousShaderS[]               = "RenderPasses/SVGFPass/SVGFAtrousS.ps.slang";
+    const char kAtrousShaderD[]               = "RenderPasses/SVGFPass/SVGFAtrousD.ps.slang";
+
+    const char kFilterMomentShaderS[]         = "RenderPasses/SVGFPass/SVGFFilterMomentsS.ps.slang";
+    const char kFilterMomentShaderD[]         = "RenderPasses/SVGFPass/SVGFFilterMomentsD.ps.slang";
 
     const char kFinalModulateShaderS[]        = "RenderPasses/SVGFPass/SVGFFinalModulateS.ps.slang";
     const char kFinalModulateShaderD[]        = "RenderPasses/SVGFPass/SVGFFinalModulateD.ps.slang";
@@ -98,13 +104,22 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Dictionary& dict)
     }
 
     mpPackLinearZAndNormal = FullScreenPass::create(mpDevice, kPackLinearZAndNormalShader);
-    mpReprojection = FullScreenPass::create(mpDevice, kReprojectShader);
-    mpAtrous = FullScreenPass::create(mpDevice, kAtrousShader);
-    mpFilterMoments = FullScreenPass::create(mpDevice, kFilterMomentShader);
+    mpReprojection = FullScreenPass::create(mpDevice, kReprojectShaderS);
+    mpAtrous = FullScreenPass::create(mpDevice, kAtrousShaderS);
+    mpFilterMoments = FullScreenPass::create(mpDevice, kFilterMomentShaderS);
     mpFinalModulate = FullScreenPass::create(mpDevice, kFinalModulateShaderS);
 
+    mFinalModulateState.dPass = FullScreenPass::create(mpDevice, kFinalModulateShaderD);
+    mAtrousState.dPass = FullScreenPass::create(mpDevice, kAtrousShaderD);
+    mFilterMomentsState.dPass = FullScreenPass::create(mpDevice, kFilterMomentShaderD);
+    mReprojectState.dPass = FullScreenPass::create(mpDevice, kReprojectShaderD);
 
-    mpFinalModulateD = FullScreenPass::create(mpDevice, kFinalModulateShaderD);
+    FALCOR_ASSERT(
+        mFinalModulateState.dPass &&
+        mAtrousState.dPass &&
+        mFilterMomentsState.dPass &&
+        mReprojectState.dPass
+    );
 
     mpTempDiffColor = Buffer::create(pDevice, sizeof(int32_t) * 4 * 1920 * 1080);
     mpTempDiffAlbedo = Buffer::create(pDevice, sizeof(int32_t) * 4 * 1920 * 1080);
@@ -113,7 +128,9 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Dictionary& dict)
     FALCOR_ASSERT(mpPackLinearZAndNormal && mpReprojection && mpAtrous && mpFilterMoments && mpFinalModulate && mpTempDiffColor && mpTempDiffAlbedo && mpTempDiffEmission);
 
     // set common stuff first
-    const size_t numPixels = 1920 * 1080;
+    const size_t screenWidth = 1920;
+    const size_t screenHeight = 1080;
+    const size_t numPixels = screenWidth * screenHeight;
 
     float3 dvLuminanceParams = float3(0.3333);
 
@@ -175,6 +192,13 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Dictionary& dict)
     mAtrousState.dvVarianceKernel[0][1] = 1.0 / 8.0;
     mAtrousState.dvVarianceKernel[1][0] = 1.0 / 8.0;
     mAtrousState.dvVarianceKernel[1][1] = 1.0 / 16.0;
+
+    mAtrousState.pdaIllumBufs.resize(mFilterIterations);
+    mAtrousState.pdaIllumTex.resize(mFilterIterations);
+    for (int i = 0; i < mFilterIterations; i++) {
+        mAtrousState.pdaIllumBufs[i] = Buffer::create(pDevice, sizeof(int4) * numPixels);
+        mAtrousState.pdaIllumTex[i] = Texture::create2D(pDevice, screenWidth, screenHeight, Falcor::ResourceFormat::RGBA32Float);
+    }
 
     // set final modulate state vars
     mFinalModulateState.pdaIllum = Buffer::create(pDevice, sizeof(int4) * numPixels);
@@ -317,7 +341,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
         pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(),
                              pPrevLinearZAndNormalTexture->getRTV());
 
-        computeDerivatives(pRenderContext, renderData);
+        //computeDerivatives(pRenderContext, renderData);
     }
     else
     {
@@ -375,21 +399,164 @@ void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const RenderDat
 
     if (mFilterEnabled) {
         computeDerivFinalModulate(pRenderContext, pOutputTexture, pIllumTexture, pAlbedoTexture, pEmissionTexture);
-       
 
+        // now, the derivative is stored in mFinalModulateState.pdaIllum
+        // now, we will have to computer the atrous decomposition reverse
+        // the atrous decomp has multiple stages
+        // each stage outputs the exact same result - a color
+        // we need to use that color and its derivative to feed the previous pass
+        // ideally, we will want a buffer and specific variables for each stage
+        // right now, I'll just set up the buffers
+
+        computeDerivAtrousDecomposition(pRenderContext, pAlbedoTexture, pOutputTexture);
+
+        computeDerivFilteredMoments(pRenderContext);
     }
 }
 
-void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pResultantImage, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture) {
+void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pOutputTexture, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture) {
     pRenderContext->clearUAV(mFinalModulateState.pdaIllum->getUAV().get(), Falcor::uint4(0));
 
     auto perImageCB = mFinalModulateState.dPass->getRootVar()["PerImageCB"];
     perImageCB["gAlbedo"] = pAlbedoTexture;
     perImageCB["gEmission"] = pEmissionTexture;
     perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
+    perImageCB["daIllum"] = mFinalModulateState.pdaIllum;
 
     auto perImageCB_D = mFinalModulateState.dPass->getRootVar()["PerImageCB_D"];
+    perImageCB_D["gResultColor"] = pOutputTexture;
 
+    mFinalModulateState.dPass->execute(pRenderContext, nullptr); // we aren't rendering to anything, so pass in a null fbo
+}
+
+void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, ref<Texture> pOutputTexture)
+{
+    auto perImageCB = mAtrousState.dPass->getRootVar()["PerImageCB"];
+    auto perImageCB_D = mAtrousState.dPass->getRootVar()["PerImageCB_D"];
+
+
+    perImageCB["gAlbedo"]        = pAlbedoTexture;
+    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
+    perImageCB["gLinearZAndNormal"]       = mpLinearZAndNormalFbo->getColorTexture(0);
+
+    perImageCB["dvSigmaL"] = mAtrousState.dvSigmaL;
+    perImageCB["dvSigmaZ"] = mAtrousState.dvSigmaZ;
+    perImageCB["dvSigmaN"] = mAtrousState.dvSigmaN;
+
+    perImageCB["dvLuminanceParams"] = mAtrousState.dvLuminanceParams;
+
+    for (int i = 0; i < 3; i++) {
+        perImageCB["dvWeightFunctionParams"][i] = mAtrousState.dvWeightFunctionParams[i];
+    }
+
+    for (int i = 0; i < 3; i++) {
+        perImageCB["dvKernel"][i] = mAtrousState.dvKernel[i];
+    }
+
+    for (int i = 0; i < 2; i++) {
+        for (int j = 0; j < 2; j++) {
+            perImageCB["dvVarianceKernel"][i][j] = mAtrousState.dvVarianceKernel[i][j];
+        }
+    }
+
+    for (int i = mFilterIterations - 1; i >= 0; i--)
+    {
+        pRenderContext->clearUAV(mAtrousState.pdaIllumBufs[i]->getUAV().get(), Falcor::uint4(0));
+
+        perImageCB["gIllumination"] = mAtrousState.pdaIllumTex[i];
+        //perImageCB["d_gIllumination"] = mAtrousState.pdaIllumBufs[i]; // since we write to this, we'll have to clear it
+        perImageCB["gStepSize"] = 1 << i;
+
+        perImageCB_D["gResultColor"] = (i + 1 == mFilterIterations ? pOutputTexture : mAtrousState.pdaIllumTex[i + 1]);
+
+        mAtrousState.dPass->execute(pRenderContext, nullptr);
+    }
+
+    if (mFeedbackTap < 0)
+    {
+        pRenderContext->blit(mpCurReprojFbo->getColorTexture(0)->getSRV(), mpFilteredPastFbo->getRenderTargetView(0));
+    }
+}
+
+void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
+{
+    auto perImageCB = mFilterMomentsState.dPass->getRootVar()["PerImageCB"];
+
+    perImageCB["gIllumination"]     = mpCurReprojFbo->getColorTexture(0);
+    perImageCB["gHistoryLength"]    = mpCurReprojFbo->getColorTexture(2);
+    perImageCB["gLinearZAndNormal"]          = mpLinearZAndNormalFbo->getColorTexture(0);
+    perImageCB["gMoments"]          = mpCurReprojFbo->getColorTexture(1);
+
+    perImageCB["dvSigmaL"] = mFilterMomentsState.dvSigmaL;
+    perImageCB["dvSigmaZ"] = mFilterMomentsState.dvSigmaZ;
+    perImageCB["dvSigmaN"] = mFilterMomentsState.dvSigmaN;
+
+    perImageCB["dvLuminanceParams"] =mFilterMomentsState. dvLuminanceParams;
+    perImageCB["dvVarianceBoostFactor"] = mFilterMomentsState.dvVarianceBoostFactor;
+
+    for (int i = 0; i < 3; i++) {
+        perImageCB["dvWeightFunctionParams"][i] = mFilterMomentsState.dvWeightFunctionParams[i];
+    }
+
+    auto perImageCB_D = mFilterMomentsState.dPass->getRootVar()["PerImageCB_D"];
+
+    perImageCB_D["gResultIllumAndVar"] = mFilterMomentsState.pLumVarTex;
+
+    mFilterMomentsState.dPass->execute(pRenderContext, nullptr);
+}
+
+void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture,
+                                   ref<Texture> pColorTexture, ref<Texture> pEmissionTexture,
+                                   ref<Texture> pMotionVectorTexture,
+                                   ref<Texture> pPositionNormalFwidthTexture,
+                                   ref<Texture> pPrevLinearZTexture,
+                                   ref<Texture> pDebugTexture
+    )
+{
+    auto perImageCB = mReprojectState.dPass->getRootVar()["PerImageCB"];
+
+    // Setup textures for our reprojection shader pass
+    perImageCB["gMotion"]        = pMotionVectorTexture;
+    perImageCB["gColor"]         = pColorTexture;
+    perImageCB["gEmission"]      = pEmissionTexture;
+    perImageCB["gAlbedo"]        = pAlbedoTexture;
+    perImageCB["gPositionNormalFwidth"] = pPositionNormalFwidthTexture;
+    perImageCB["gPrevIllum"]     = mpFilteredPastFbo->getColorTexture(0);
+    perImageCB["gPrevMoments"]   = mpPrevReprojFbo->getColorTexture(1);
+    perImageCB["gLinearZAndNormal"]       = mpLinearZAndNormalFbo->getColorTexture(0);
+    perImageCB["gPrevLinearZAndNormal"]   = pPrevLinearZTexture;
+    perImageCB["gPrevHistoryLength"] = mpPrevReprojFbo->getColorTexture(2);
+
+    // Setup variables for our reprojection pass
+    perImageCB["dvAlpha"] = mReprojectState.dvAlpha;
+    perImageCB["dvMomentsAlpha"] = mReprojectState.dvMomentsAlpha;
+
+    pRenderContext->clearUAV(mpTempDiffColor->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(mpTempDiffAlbedo->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(mpTempDiffEmission->getUAV().get(), Falcor::uint4(0));
+
+    // Setup the temp diff textures
+    perImageCB["d_gColor"] = mpTempDiffColor;
+    perImageCB["d_gAlbedo"] = mpTempDiffAlbedo;
+    perImageCB["d_gEmission"] = mpTempDiffEmission;
+
+    perImageCB["dvLuminanceParams"] = mReprojectState.dvLuminanceParams;
+
+    for (int i = 0; i < 3; i++) {
+        perImageCB["dvReprojKernel"][i] = mReprojectState.dvKernel[i];
+    }
+
+    for (int i = 0; i < 4; i++) {
+        perImageCB["dvReprojParams"][i] = mReprojectState.dvParams[i];
+    }
+
+    auto perImageCB_D = mReprojectState.dPass->getRootVar()["PerImageCB_D"];
+
+    perImageCB_D["gIllum"] = mReprojectState.ptIllum;
+    perImageCB_D["gHistoryLength"] = mReprojectState.ptHistoryLen;
+    perImageCB_D["gMoments"] = mReprojectState.ptMoments;
+
+    mReprojectState.dPass->execute(pRenderContext, nullptr);
 }
 
 void SVGFPass::clearBuffers(RenderContext* pRenderContext, const RenderData& renderData)
@@ -512,12 +679,12 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
     }
 
     for (int i = 0; i < 3; i++) {
-        perImageCB["mAtrousState.dvKernel"][i] = mAtrousState.dvKernel[i];
+        perImageCB["dvKernel"][i] = mAtrousState.dvKernel[i];
     }
 
     for (int i = 0; i < 2; i++) {
         for (int j = 0; j < 2; j++) {
-            perImageCB["mAtrousState.dvVarianceKernel"][i][j] = mAtrousState.dvVarianceKernel[i][j];
+            perImageCB["dvVarianceKernel"][i][j] = mAtrousState.dvVarianceKernel[i][j];
         }
     }
 

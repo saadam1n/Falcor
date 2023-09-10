@@ -45,8 +45,8 @@ cbuffer PerImageCB
     float3 dvLuminanceParams;
 
     float dvWeightFunctionParams[3];
-    float dvAtrousKernel[3];
-    float dvAtrousVarianceKernel[2][2];
+    float dvKernel[3];
+    float dvVarianceKernel[2][2];
 };
 
 void d_getIllumination(int2 ipos, float4 val)
@@ -171,35 +171,4 @@ float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] va
     float4 filteredIllumination = float4(sumIllumination / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination));
 
     return filteredIllumination;
-}
-
-struct FS_OUT {
-    float4 filter_result : SV_TARGET0;
-    float4 debug_buf : SV_TARGET1;
-};
-
-FS_OUT main(FullScreenPassVsOut vsOut)
-{
-    FS_OUT fs_out;
-
-    var dpAtrousKernel = diffPair(dvAtrousKernel, {0.0, 0.0, 0.0});
-    var dpAtrousVarianceKernel = diffPair(dvAtrousVarianceKernel, {{0.0, 0.0}, {0.0, 0.0}});
-    var dpLuminanceParams =  diffPair(dvLuminanceParams, float3(0.0));
-    var dpWeightFunctionParams = diffPair(dvWeightFunctionParams, {0.0, 0.0, 0.0});
-    var dpSigmaL = diffPair(dvSigmaL, 1.0);
-    var dpSigmaZ = diffPair(dvSigmaZ, 0.0);
-    var dpSigmaN = diffPair(dvSigmaN, 0.0);
-    
-    float finiteDiffStep = 0.0001;
-    var lower = atrous(vsOut, dvAtrousKernel, dvAtrousVarianceKernel, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL - finiteDiffStep, dvSigmaZ, dvSigmaN);
-    var upper = atrous(vsOut, dvAtrousKernel, dvAtrousVarianceKernel, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL + finiteDiffStep, dvSigmaZ, dvSigmaN);
-    float finite = (upper.r - lower.r) / (2.0 * finiteDiffStep);
-
-    __bwd_diff(atrous)(vsOut, dpAtrousKernel, dpAtrousVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, float4(1.0, 0.0, 0.0, 0.0));
-    float bwd = dpSigmaL.d;
-
-    fs_out.filter_result = lower;
-    fs_out.debug_buf = computeDebugDiffError(finite, bwd);
-
-    return fs_out;
 }

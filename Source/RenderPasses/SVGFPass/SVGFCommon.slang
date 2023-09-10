@@ -105,3 +105,27 @@ int4 quantVal4(float3 val) {
 int4 quantVal4(float4 val) {
     return int4(QUANTIZATION * val);
 }
+
+void accumDerivBuf(RWByteAddressBuffer rwaddrbuff, int2 ipos, float3 val, Texture2D tex) {
+    uint2 dim = getTextureDims(tex, 0);
+    uint base_addr = sizeof(int3) * (dim.x * ipos.y + ipos.x);
+
+    int3 a = quantVal3(val);
+    for(int i = 0; i < 3; i++) {
+        uint addr = base_addr + 4 * i;
+        int dummy;
+        rwaddrbuff.InterlockedAdd(addr, a[i], dummy);
+    }
+}
+
+void accumDerivBuf(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Texture2D tex) {
+    uint2 dim = getTextureDims(tex, 0);
+    uint base_addr = sizeof(int4) * (dim.x * ipos.y + ipos.x);
+
+    int4 a = quantVal4(val);
+    for(int i = 0; i < 3; i++) {
+        uint addr = base_addr + 4 * i;
+        int dummy;
+        rwaddrbuff.InterlockedAdd(addr, a[i], dummy);
+    }
+}

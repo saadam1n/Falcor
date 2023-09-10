@@ -68,6 +68,15 @@ private:
 
     void computeDerivatives(RenderContext* pRenderContext, const RenderData& renderData);
     void computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pResultantImage, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture);
+    void computeDerivAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, ref<Texture> pOutputTexture);
+    void computeDerivFilteredMoments(RenderContext* pRenderContext);
+    void computeDerivReprojection(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture,
+                             ref<Texture> pColorTexture, ref<Texture> pEmissionTexture,
+                             ref<Texture> pMotionVectorTexture,
+                             ref<Texture> pPositionNormalFwidthTexture,
+                             ref<Texture> pPrevLinearZAndNormalTexture,
+                             ref<Texture> pDebugTexture
+        );
 
     bool mBuffersNeedClear = false;
 
@@ -83,8 +92,6 @@ private:
     ref<FullScreenPass> mpFilterMoments;
     ref<FullScreenPass> mpAtrous;
     ref<FullScreenPass> mpFinalModulate;
-
-    ref<FullScreenPass> mpFinalModulateD;
 
     // Intermediate framebuffers
     ref<Fbo> mpPingPongFbo[2];
@@ -108,6 +115,11 @@ private:
     } mPackLinearZAndNormalState;
 
     struct {
+        ref<Texture> ptIllum;
+        ref<Texture> ptHistoryLen;
+        ref<Texture> ptMoments;
+
+
         float dvAlpha;
         float dvMomentsAlpha;
 
@@ -115,9 +127,13 @@ private:
 
         float dvParams[4];
         float dvKernel[3];
+
+        ref<FullScreenPass> dPass;
     } mReprojectState;
 
     struct {
+        ref<Texture> pLumVarTex;
+
         float   dvSigmaL;
         float   dvSigmaZ;
         float   dvSigmaN;
@@ -126,6 +142,8 @@ private:
         float dvWeightFunctionParams[3];
 
         float dvVarianceBoostFactor;
+
+        ref<FullScreenPass> dPass;
     } mFilterMomentsState;
 
     struct {
@@ -137,6 +155,9 @@ private:
         ref<Buffer> pdaSigmaZ;
         ref<Buffer> pdaSigmaN;
 
+        std::vector<ref<Buffer>> pdaIllumBufs;
+        std::vector<ref<Texture>> pdaIllumTex;
+
         float   dvSigmaL;
         float   dvSigmaZ;
         float   dvSigmaN;
@@ -146,6 +167,8 @@ private:
 
         float dvVarianceKernel[2][2];
         float dvKernel[3];
+
+        ref<FullScreenPass> dPass;
     } mAtrousState;
 
     struct {

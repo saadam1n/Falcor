@@ -1,9 +1,15 @@
 add_plugin(SVGFPass)
 
 target_sources(SVGFPass PRIVATE
-    SVGFAtrous.ps.slang
+    SVGFAtrousC.slang
+    SVGFAtrousD.ps.slang
+    SVGFAtrousS.ps.slang
+
     SVGFCommon.slang
-    SVGFFilterMoments.ps.slang
+
+    SVGFFilterMomentsC.slang
+    SVGFFilterMomentsD.ps.slang
+    SVGFFilterMomentsS.ps.slang
 
     SVGFFinalModulateC.slang
     SVGFFinalModulateD.ps.slang
@@ -12,7 +18,10 @@ target_sources(SVGFPass PRIVATE
     SVGFPackLinearZAndNormal.ps.slang
     SVGFPass.cpp
     SVGFPass.h
-    SVGFReproject.ps.slang
+
+    SVGFReprojectC.slang
+    SVGFReprojectD.ps.slang
+    SVGFReprojectS.ps.slang
 )
 
 target_copy_shaders(SVGFPass RenderPasses/SVGFPass)
