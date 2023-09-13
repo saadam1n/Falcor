@@ -341,7 +341,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
         pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(),
                              pPrevLinearZAndNormalTexture->getRTV());
 
-        //computeDerivatives(pRenderContext, renderData);
+        computeDerivatives(pRenderContext, renderData);
     }
     else
     {
