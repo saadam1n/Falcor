@@ -92,23 +92,42 @@ float4 computeDebugDiffError(float finite, float bwd) {
     return float4(val);
 }
 
-static const float QUANTIZATION = 1.0;
+static const float QUANTIZATION = 16384.0;
 
 int3 quantVal3(float3 val) {
     return int3(QUANTIZATION * val);
 }
 
 int4 quantVal4(float3 val) {
-    return int4(QUANTIZATION * val, 0);
+    return int4(int3(QUANTIZATION * val), 0);
 }
 
 int4 quantVal4(float4 val) {
     return int4(QUANTIZATION * val);
 }
 
-void accumDerivBuf(RWByteAddressBuffer rwaddrbuff, int2 ipos, float3 val, Texture2D tex) {
+float3 dequant3(int3 val) {
+    return float3(val) / QUANTIZATION;
+}
+
+float4 dequant4(int4 val) {
+    return float4(val) / QUANTIZATION;
+}
+
+uint getBufIdx3(int2 ipos, Texture2D tex) {
     uint2 dim = getTextureDims(tex, 0);
     uint base_addr = sizeof(int3) * (dim.x * ipos.y + ipos.x);
+    return base_addr;
+}
+
+uint getBufIdx4(int2 ipos, Texture2D tex) {
+    uint2 dim = getTextureDims(tex, 0);
+    uint base_addr = sizeof(int4) * (dim.x * ipos.y + ipos.x);
+    return base_addr;
+}
+
+void accumDerivBuf3(RWByteAddressBuffer rwaddrbuff, int2 ipos, float3 val, Texture2D tex) {
+    uint base_addr = getBufIdx3(ipos, tex);
 
     int3 a = quantVal3(val);
     for(int i = 0; i < 3; i++) {
@@ -118,14 +137,39 @@ void accumDerivBuf(RWByteAddressBuffer rwaddrbuff, int2 ipos, float3 val, Textur
     }
 }
 
-void accumDerivBuf(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Texture2D tex) {
-    uint2 dim = getTextureDims(tex, 0);
-    uint base_addr = sizeof(int4) * (dim.x * ipos.y + ipos.x);
+void accumDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Texture2D tex) {
+    uint base_addr = getBufIdx4(ipos, tex);
 
     int4 a = quantVal4(val);
-    for(int i = 0; i < 3; i++) {
+    for(int i = 0; i < 4; i++) {
         uint addr = base_addr + 4 * i;
         int dummy;
         rwaddrbuff.InterlockedAdd(addr, a[i], dummy);
     }
+}
+
+// TODO: figure out how to properly read from a rwbyteaddressbuf
+
+float3 readDerivBuf3(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex) {
+    uint base_addr = getBufIdx3(ipos, tex);
+
+    int3 temp;
+    for(int i = 0; i < 3; i++) {
+        uint addr = base_addr + 4 * i;
+        rwaddrbuff.InterlockedAdd(addr, 0, temp[i]);
+    }
+
+    return dequant3(temp);
+}
+
+float4 readDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex) {
+    uint base_addr = getBufIdx4(ipos, tex);
+
+    int4 temp;
+    for(int i = 0; i < 4; i++) {
+        uint addr = base_addr + 4 * i;
+        rwaddrbuff.InterlockedAdd(addr, 0, temp[i]);
+    }
+
+    return dequant4(temp);
 }

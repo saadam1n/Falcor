@@ -3,7 +3,7 @@ import SVGFCommon;
 
 cbuffer PerImageCB_D
 {
-    Texture2D   gResultColor;
+    RWByteAddressBuffer drIllumination;
 };
 
 void main(FullScreenPassVsOut vsOut)
@@ -18,5 +18,5 @@ void main(FullScreenPassVsOut vsOut)
     
     const int2 ipos = int2(vsOut.posH.xy);
 
-    __bwd_diff(atrous)(vsOut, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, gResultColor[ipos]);    
+    __bwd_diff(atrous)(vsOut, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, readDerivBuf4(drIllumination, ipos, gAlbedo));    
 }

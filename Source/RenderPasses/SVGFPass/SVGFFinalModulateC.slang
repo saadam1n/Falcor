@@ -6,7 +6,7 @@ cbuffer PerImageCB
     Texture2D   gEmission;
     Texture2D   gIllumination;
 
-    RWByteAddressBuffer daIllum;
+    RWByteAddressBuffer daIllumination;
 };
 
 // Read gColor
@@ -20,7 +20,7 @@ void d_getIllum(int2 ipos, float3 val)
     for(int i = 0; i < 3; i++) {
         uint addr = base_addr + sizeof(int) * i;
         int dummy;
-        daIllum.InterlockedAdd(addr, a[i], dummy);
+        daIllumination.InterlockedAdd(addr, a[i], dummy);
     }
 }
 

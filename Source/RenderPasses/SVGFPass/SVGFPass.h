@@ -154,8 +154,9 @@ private:
         ref<Buffer> pdaSigmaZ;
         ref<Buffer> pdaSigmaN;
 
-        std::vector<ref<Buffer>> pdaIllumBufs;
-        std::vector<ref<Texture>> pdaIllumTex;
+        ref<Buffer> pdaIllumination[2];
+
+        std::vector<ref<Texture>> pgIllumination;
 
         float   dvSigmaL;
         float   dvSigmaZ;
@@ -171,7 +172,8 @@ private:
     } mAtrousState;
 
     struct {
-        ref<Buffer> pdaIllum;
+        ref<Buffer> pdaIllumination;
+        ref<Buffer> pdrFilteredImage;
 
         //ref<FullScreenPass> sPass;
         ref<FullScreenPass> dPass;

@@ -193,17 +193,22 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Dictionary& dict)
     mAtrousState.dvVarianceKernel[1][0] = 1.0 / 8.0;
     mAtrousState.dvVarianceKernel[1][1] = 1.0 / 16.0;
 
-    mAtrousState.pdaIllumBufs.resize(mFilterIterations);
-    mAtrousState.pdaIllumTex.resize(mFilterIterations);
+    mAtrousState.pgIllumination.resize(mFilterIterations);
     for (int i = 0; i < mFilterIterations; i++) {
-        mAtrousState.pdaIllumBufs[i] = Buffer::create(pDevice, sizeof(int4) * numPixels);
-        mAtrousState.pdaIllumTex[i] = Texture::create2D(pDevice, screenWidth, screenHeight, Falcor::ResourceFormat::RGBA32Float);
+        // Who puts flags at the end????????????
+        mAtrousState.pgIllumination[i] = Texture::create2D(pDevice, screenWidth, screenHeight, ResourceFormat::RGBA32Float, 1, UINT32_MAX, nullptr, Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource);
+    }
+
+    for (int i = 0; i < 2; i++) {
+        mAtrousState.pdaIllumination[i] = Buffer::create(pDevice, sizeof(int4) * numPixels);
     }
 
     // set final modulate state vars
-    mFinalModulateState.pdaIllum = Buffer::create(pDevice, sizeof(int4) * numPixels);
+    mFinalModulateState.pdaIllumination = Buffer::create(pDevice, sizeof(int4) * numPixels);
+    mFinalModulateState.pdrFilteredImage = Buffer::create(pDevice, sizeof(int4) * numPixels);
 
-    FALCOR_ASSERT(mFinalModulateState.pdaIllum);
+
+    FALCOR_ASSERT(mFinalModulateState.pdaIllum &&  mFinalModulateState.pdrFilteredImage);
 
 
 }
@@ -415,16 +420,16 @@ void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const RenderDat
 }
 
 void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pOutputTexture, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture) {
-    pRenderContext->clearUAV(mFinalModulateState.pdaIllum->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(mFinalModulateState.pdaIllumination->getUAV().get(), Falcor::uint4(0));
 
     auto perImageCB = mFinalModulateState.dPass->getRootVar()["PerImageCB"];
     perImageCB["gAlbedo"] = pAlbedoTexture;
     perImageCB["gEmission"] = pEmissionTexture;
     perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
-    perImageCB["daIllum"] = mFinalModulateState.pdaIllum;
+    perImageCB["daIllumination"] = mFinalModulateState.pdaIllumination;
 
     auto perImageCB_D = mFinalModulateState.dPass->getRootVar()["PerImageCB_D"];
-    perImageCB_D["gResultColor"] = pOutputTexture;
+    perImageCB_D["drFilteredImage"] =  mFinalModulateState.pdrFilteredImage; // uh placehold for now
 
     mFinalModulateState.dPass->execute(pRenderContext, nullptr); // we aren't rendering to anything, so pass in a null fbo
 }
@@ -459,18 +464,29 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
         }
     }
 
+    // here, let's have [0] be the buffer we read from, and [1] be the buffer we write to 
     for (int i = mFilterIterations - 1; i >= 0; i--)
     {
-        pRenderContext->clearUAV(mAtrousState.pdaIllumBufs[i]->getUAV().get(), Falcor::uint4(0));
+        // clear our write buffer
+        pRenderContext->clearUAV(mAtrousState.pdaIllumination[1]->getUAV().get(), Falcor::uint4(0));
 
-        perImageCB["gIllumination"] = mAtrousState.pdaIllumTex[i];
-        //perImageCB["d_gIllumination"] = mAtrousState.pdaIllumBufs[i]; // since we write to this, we'll have to clear it
+        perImageCB["gIllumination"] = mAtrousState.pgIllumination[i];
         perImageCB["gStepSize"] = 1 << i;
 
-        perImageCB_D["gResultColor"] = (i + 1 == mFilterIterations ? pOutputTexture : mAtrousState.pdaIllumTex[i + 1]);
+        // we read deriv from 0. if first iteration of this loop, use the final modulate buffer instead 
+        perImageCB_D["drIllumination"] = (i == mFilterIterations - 1 ? mFinalModulateState.pdaIllumination : mAtrousState.pdaIllumination[0]);
+        perImageCB["daIllumination"] = mAtrousState.pdaIllumination[1];
 
         mAtrousState.dPass->execute(pRenderContext, nullptr);
+
+        // Swap our ping pong buffers 
+        std::swap(mAtrousState.pdaIllumination[0], mAtrousState.pdaIllumination[1]);
+
+        // our written results are now in buf 0
+        // if we exit the loop now, we can access idx 0 for results from atrous loop 
     }
+
+    // Since we swapped the buffer we wrote to at the end
 
     if (mFeedbackTap < 0)
     {
@@ -694,6 +710,9 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
 
         perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
         perImageCB["gStepSize"] = 1 << i;
+
+        // keep a copy of our input for backwards differation 
+        pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), mAtrousState.pgIllumination[i]->getRTV());
 
         mpAtrous->execute(pRenderContext, curTargetFbo);
 

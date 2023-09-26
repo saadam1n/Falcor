@@ -38,6 +38,8 @@ cbuffer PerImageCB
 
     int         gStepSize;
 
+    RWByteAddressBuffer   daIllumination;
+
     float dvSigmaL;
     float dvSigmaZ;
     float dvSigmaN;
@@ -51,7 +53,7 @@ cbuffer PerImageCB
 
 void d_getIllumination(int2 ipos, float4 val)
 {
-
+    accumDerivBuf4(daIllumination, ipos, val, gAlbedo);
 }
 
 void d_getLinearZAndNormal(int2 ipos, float4 val)
