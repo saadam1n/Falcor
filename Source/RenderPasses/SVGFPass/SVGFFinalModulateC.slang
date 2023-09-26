@@ -13,15 +13,8 @@ cbuffer PerImageCB
 void d_getIllum(int2 ipos, float3 val)
 {
     // this we actually care about, as this feeds into the previous stage's output 
-    uint2 dim = getTextureDims(gIllumination, 0);
-    uint base_addr = sizeof(int4) * (dim.x * ipos.y + ipos.x);
-
-    int4 a = quantVal4(val);
-    for(int i = 0; i < 3; i++) {
-        uint addr = base_addr + sizeof(int) * i;
-        int dummy;
-        daIllumination.InterlockedAdd(addr, a[i], dummy);
-    }
+    // add one float of padding because that is what the atrous pipeline uses
+    accumDerivBuf4(daIllumination, ipos, float4(val, 0.0), gAlbedo);
 }
 
 // Read gAlbedo
