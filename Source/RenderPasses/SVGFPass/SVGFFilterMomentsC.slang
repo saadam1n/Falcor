@@ -48,27 +48,32 @@ cbuffer PerImageCB
     float dvSigmaL;
     float dvSigmaZ;
     float dvSigmaN;
+
+    RWByteAddressBuffer   daIllumination;
+    RWByteAddressBuffer   daHistoryLen;
+    RWByteAddressBuffer   daMoments;
+
 };
 
 
 void d_getIllumination(int2 ipos, float4 val)
 {
-
+    accumDerivBuf4(daIllumination, ipos, val, gIllumination);
 }
 
 void d_getLinearZAndNormal(int2 ipos, float4 val)
 {
-
+    // Something we really don't care about
 }
 
 void d_getHistoryLength(int2 ipos, float val)
 {
-
+    accumDerivBuf4(daHistoryLen, ipos, float4(val, 0.0, 0.0, 0.0), gIllumination);
 }
 
 void d_getMoments(int2 ipos, float2 val)
 {
-
+    accumDerivBuf4(daMoments, ipos, float4(val, 0.0, 0.0), gIllumination);
 }
 
 [BackwardDerivative(d_getIllumination)]

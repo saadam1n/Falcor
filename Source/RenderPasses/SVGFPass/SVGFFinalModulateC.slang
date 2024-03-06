@@ -20,13 +20,13 @@ void d_getIllum(int2 ipos, float3 val)
 // Read gAlbedo
 void d_getAlbedo(int2 ipos, float3 val)
 {
-
+    // constant that we do not care about
 }
 
 // Read gEmission
 void d_getEmission(int2 ipos, float3 val)
 {
-
+    // constant that we do not care about
 }
 
 [BackwardDerivative(d_getIllum)]

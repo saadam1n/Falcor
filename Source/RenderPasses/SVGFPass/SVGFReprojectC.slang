@@ -66,43 +66,19 @@ static const float QUANTIZATION = 1.0;
 // Read gColor
 void d_getColor(int2 ipos, float3 val)
 {
-    uint2 dim = getTextureDims(gColor, 0);
-    uint base_addr = 4 * 4 * (dim.x * ipos.y + ipos.x);
-
-    int4 a = quantVal4(val);
-    for(int i = 0; i < 3; i++) {
-        uint addr = base_addr + 4 * i;
-        int dummy;
-        d_gColor.InterlockedAdd(addr, a[i], dummy);
-    }
+    // Constant we do not care about
 }
 
 // Read gAlbedo
 void d_getAlbedo(int2 ipos, float3 val)
 {
-    uint2 dim = getTextureDims(gColor, 0);
-    uint base_addr = 4 * 4 * (dim.x * ipos.y + ipos.x);
-
-    int4 a = quantVal4(val);
-    for(int i = 0; i < 3; i++) {
-        uint addr = base_addr + 4 * i;
-        int dummy;
-        d_gAlbedo.InterlockedAdd(addr, a[i], dummy);
-    }
+    // Constant we do not care about
 }
 
 // Read gEmission
 void d_getEmission(int2 ipos, float3 val)
 {
-    uint2 dim = getTextureDims(gColor, 0);
-    uint base_addr = 4 * 4 * (dim.x * ipos.y + ipos.x);
-
-    int4 a = quantVal4(val);
-    for(int i = 0; i < 3; i++) {
-        uint addr = base_addr + 4 * i;
-        int dummy;
-        d_gEmission.InterlockedAdd(addr, a[i], dummy);
-    }
+    // Constant we do not care about
 }
 
 [BackwardDerivative(d_getColor)]

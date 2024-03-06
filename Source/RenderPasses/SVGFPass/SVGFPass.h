@@ -133,6 +133,9 @@ private:
     struct {
         ref<Texture> pLumVarTex;
 
+        ref<Buffer> pdaIllumination; // accum illumination into here
+        ref<Buffer> pdaMoments; 
+
         float   dvSigmaL;
         float   dvSigmaZ;
         float   dvSigmaN;
@@ -155,6 +158,8 @@ private:
         ref<Buffer> pdaSigmaN;
 
         ref<Buffer> pdaIllumination[2];
+
+        ref<Buffer> pdaHistoryLen;
 
         std::vector<ref<Texture>> pgIllumination;
 

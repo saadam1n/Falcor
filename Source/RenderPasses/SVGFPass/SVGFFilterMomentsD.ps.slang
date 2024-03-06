@@ -3,7 +3,8 @@ import SVGFFilterMomentsC;
 
 cbuffer PerImageCB_D
 {
-    Texture2D gResultIllumAndVar;
+    // Technically the alpha channel also contains variance
+    RWByteAddressBuffer drIllumination;
 };
 
 // compute moments
@@ -18,6 +19,6 @@ void main(FullScreenPassVsOut vsOut)
     
     const int2 ipos = int2(vsOut.posH.xy);
 
-     __bwd_diff(filter_moments)(vsOut, dpVarianceBoostFactor, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaZ, gResultIllumAndVar[ipos]);
+     __bwd_diff(filter_moments)(vsOut, dpVarianceBoostFactor, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaZ, readDerivBuf4(drIllumination, ipos, gIllumination));
     float bwd = dpVarianceBoostFactor.d;
 }

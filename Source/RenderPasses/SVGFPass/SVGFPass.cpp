@@ -171,7 +171,8 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Dictionary& dict)
     }
 
     mFilterMomentsState.dvVarianceBoostFactor = 4.0;
-
+    mFilterMomentsState.pdaIllumination = Buffer::create(pDevice, sizeof(int4) * numPixels);
+    mFilterMomentsState.pdaMoments = Buffer::create(pDevice, sizeof(int4) * numPixels);
 
     // Set atrous state vars
     mAtrousState.dvSigmaL = dvSigmaL;
@@ -202,6 +203,8 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Dictionary& dict)
     for (int i = 0; i < 2; i++) {
         mAtrousState.pdaIllumination[i] = Buffer::create(pDevice, sizeof(int4) * numPixels);
     }
+
+    mAtrousState.pdaHistoryLen =  Buffer::create(pDevice, sizeof(int4) * numPixels);
 
     // set final modulate state vars
     mFinalModulateState.pdaIllumination = Buffer::create(pDevice, sizeof(int4) * numPixels);
@@ -464,7 +467,8 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
         }
     }
 
-    // here, let's have [0] be the buffer we read from, and [1] be the buffer we write to 
+    // here, let's have [0] be the buffer we read from, and [1] be the buffer we write to
+    pRenderContext->clearUAV(mAtrousState.pdaHistoryLen->getUAV().get(), Falcor::uint4(0));
     for (int i = mFilterIterations - 1; i >= 0; i--)
     {
         // clear our write buffer
@@ -476,6 +480,7 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
         // we read deriv from 0. if first iteration of this loop, use the final modulate buffer instead 
         perImageCB_D["drIllumination"] = (i == mFilterIterations - 1 ? mFinalModulateState.pdaIllumination : mAtrousState.pdaIllumination[0]);
         perImageCB["daIllumination"] = mAtrousState.pdaIllumination[1];
+        perImageCB["daHistoryLen"] = mAtrousState.pdaHistoryLen;
 
         mAtrousState.dPass->execute(pRenderContext, nullptr);
 
@@ -503,6 +508,13 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
     perImageCB["gLinearZAndNormal"]          = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gMoments"]          = mpCurReprojFbo->getColorTexture(1);
 
+    pRenderContext->clearUAV(mFilterMomentsState.pdaIllumination->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(mFilterMomentsState.pdaMoments->getUAV().get(), Falcor::uint4(0));
+
+    perImageCB["daIllumination"]     = mFilterMomentsState.pdaIllumination;
+    perImageCB["daHistoryLen"]    = mAtrousState.pdaHistoryLen;
+    perImageCB["daMoments"]          = mFilterMomentsState.pdaMoments;
+
     perImageCB["dvSigmaL"] = mFilterMomentsState.dvSigmaL;
     perImageCB["dvSigmaZ"] = mFilterMomentsState.dvSigmaZ;
     perImageCB["dvSigmaN"] = mFilterMomentsState.dvSigmaN;
@@ -516,7 +528,7 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
 
     auto perImageCB_D = mFilterMomentsState.dPass->getRootVar()["PerImageCB_D"];
 
-    perImageCB_D["gResultIllumAndVar"] = mFilterMomentsState.pLumVarTex;
+    perImageCB_D["drIllumination"] = mAtrousState.pdaIllumination[0];
 
     mFilterMomentsState.dPass->execute(pRenderContext, nullptr);
 }

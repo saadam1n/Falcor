@@ -39,6 +39,7 @@ cbuffer PerImageCB
     int         gStepSize;
 
     RWByteAddressBuffer   daIllumination;
+    RWByteAddressBuffer   daHistoryLen;
 
     float dvSigmaL;
     float dvSigmaZ;
@@ -58,14 +59,14 @@ void d_getIllumination(int2 ipos, float4 val)
 
 void d_getLinearZAndNormal(int2 ipos, float4 val)
 {
-
+    // Something we really don't care about
 }
 
 void d_getHistoryLength(int2 ipos, float val)
 {
-
+    // waste of space, I know, but I don't care
+    accumDerivBuf4(daHistoryLen, ipos, val, gAlbedo);
 }
-
 
 [BackwardDerivative(d_getIllumination)]
 float4 getIllumination(int2 ipos)
