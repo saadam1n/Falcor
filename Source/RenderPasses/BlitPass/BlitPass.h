@@ -31,31 +31,32 @@
 
 using namespace Falcor;
 
-/** Render pass that blits an input texture to an output texture.
-
-    This pass is useful for format conversion.
-*/
+/**
+ * Render pass that blits an input texture to an output texture.
+ *
+ * This pass is useful for format conversion.
+ */
 class BlitPass : public RenderPass
 {
 public:
     FALCOR_PLUGIN_CLASS(BlitPass, "BlitPass", "Blit a texture into a different texture.");
 
-    static ref<BlitPass> create(ref<Device> pDevice, const Dictionary& dict) { return make_ref<BlitPass>(pDevice, dict); }
+    static ref<BlitPass> create(ref<Device> pDevice, const Properties& props) { return make_ref<BlitPass>(pDevice, props); }
 
-    BlitPass(ref<Device> pDevice, const Dictionary& dict);
+    BlitPass(ref<Device> pDevice, const Properties& props);
 
-    virtual Dictionary getScriptingDictionary() override;
+    virtual Properties getProperties() const override;
     virtual RenderPassReflection reflect(const CompileData& compileData) override;
     virtual void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     virtual void renderUI(Gui::Widgets& widget) override;
 
     // Scripting functions
-    Sampler::Filter getFilter() const { return mFilter; }
-    void setFilter(Sampler::Filter filter) { mFilter = filter; }
+    TextureFilteringMode getFilter() const { return mFilter; }
+    void setFilter(TextureFilteringMode filter) { mFilter = filter; }
 
 private:
-    void parseDictionary(const Dictionary& dict);
+    void parseProperties(const Properties& props);
 
-    Sampler::Filter mFilter = Sampler::Filter::Linear;
+    TextureFilteringMode mFilter = TextureFilteringMode::Linear;
     ResourceFormat mOutputFormat = ResourceFormat::Unknown;
 };

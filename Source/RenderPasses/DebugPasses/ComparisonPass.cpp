@@ -29,23 +29,22 @@
 
 namespace
 {
-    const std::string kSplitLocation = "splitLocation";
-    const std::string kShowTextLabels = "showTextLabels";
-    const std::string kLeftLabel = "leftLabel";
-    const std::string kRightLabel = "rightLabel";
+const std::string kSplitLocation = "splitLocation";
+const std::string kShowTextLabels = "showTextLabels";
+const std::string kLeftLabel = "leftLabel";
+const std::string kRightLabel = "rightLabel";
 
-    const std::string kLeftInput = "leftInput";
-    const std::string kRightInput = "rightInput";
-    const std::string kOutput = "output";
-}
+const std::string kLeftInput = "leftInput";
+const std::string kRightInput = "rightInput";
+const std::string kOutput = "output";
+} // namespace
 
-ComparisonPass::ComparisonPass(ref<Device> pDevice)
-    : RenderPass(pDevice)
+ComparisonPass::ComparisonPass(ref<Device> pDevice) : RenderPass(pDevice)
 {
     mpTextRenderer = std::make_unique<TextRenderer>(mpDevice);
 }
 
-bool ComparisonPass::parseKeyValuePair(const std::string key, const Dictionary::Value val)
+bool ComparisonPass::parseKeyValuePair(const std::string key, const Properties::ConstValue& val)
 {
     if (key == kSplitLocation)
     {
@@ -69,25 +68,26 @@ bool ComparisonPass::parseKeyValuePair(const std::string key, const Dictionary::
         mRightLabel = str;
         return true;
     }
-    else return false;
+    else
+        return false;
 }
 
-Dictionary ComparisonPass::getScriptingDictionary()
+Properties ComparisonPass::getProperties() const
 {
-    Dictionary dict;
-    dict[kSplitLocation] = mSplitLoc;
-    dict[kShowTextLabels] = mShowLabels;
-    dict[kLeftLabel] = mLeftLabel;
-    dict[kRightLabel] = mRightLabel;
-    return dict;
+    Properties props;
+    props[kSplitLocation] = mSplitLoc;
+    props[kShowTextLabels] = mShowLabels;
+    props[kLeftLabel] = mLeftLabel;
+    props[kRightLabel] = mRightLabel;
+    return props;
 }
 
 RenderPassReflection ComparisonPass::reflect(const CompileData& compileData)
 {
     RenderPassReflection r;
-    r.addInput(kLeftInput, "Left side image").bindFlags(Falcor::Resource::BindFlags::ShaderResource).texture2D(0, 0);
-    r.addInput(kRightInput, "Right side image").bindFlags(Falcor::Resource::BindFlags::ShaderResource).texture2D(0, 0);
-    r.addOutput(kOutput, "Output image").bindFlags(Falcor::Resource::BindFlags::RenderTarget).texture2D(0, 0);
+    r.addInput(kLeftInput, "Left side image").bindFlags(Falcor::ResourceBindFlags::ShaderResource).texture2D(0, 0);
+    r.addInput(kRightInput, "Right side image").bindFlags(Falcor::ResourceBindFlags::ShaderResource).texture2D(0, 0);
+    r.addOutput(kOutput, "Output image").bindFlags(Falcor::ResourceBindFlags::RenderTarget).texture2D(0, 0);
     return r;
 }
 
@@ -96,10 +96,11 @@ void ComparisonPass::execute(RenderContext* pRenderContext, const RenderData& re
     // Get references to our input, output, and temporary accumulation texture
     pLeftSrcTex = renderData.getTexture(kLeftInput);
     pRightSrcTex = renderData.getTexture(kRightInput);
-    pDstFbo = Fbo::create(mpDevice, { renderData.getTexture(kOutput) });
+    pDstFbo = Fbo::create(mpDevice, {renderData.getTexture(kOutput)});
 
     // If we haven't initialized the split location, split the screen in half by default
-    if (mSplitLoc < 0) mSplitLoc = 0.5f;
+    if (mSplitLoc < 0)
+        mSplitLoc = 0.5f;
 
     // Set shader parameters
     auto var = mpSplitShader->getRootVar();

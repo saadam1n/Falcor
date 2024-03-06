@@ -53,13 +53,14 @@ namespace Falcor
     */
     class FALCOR_API PBRTCoatedDiffuseMaterial : public BasicMaterial
     {
+        FALCOR_OBJECT(PBRTCoatedDiffuseMaterial)
     public:
         static ref<PBRTCoatedDiffuseMaterial> create(ref<Device> pDevice, const std::string& name) { return make_ref<PBRTCoatedDiffuseMaterial>(pDevice, name); }
 
         PBRTCoatedDiffuseMaterial(ref<Device> pDevice, const std::string& name);
 
-        Program::ShaderModuleList getShaderModules() const override;
-        Program::TypeConformanceList getTypeConformances() const override;
+        ProgramDesc::ShaderModuleList getShaderModules() const override;
+        TypeConformanceList getTypeConformances() const override;
 
         /** Set the roughness.
         */

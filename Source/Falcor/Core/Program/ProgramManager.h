@@ -27,6 +27,7 @@
  **************************************************************************/
 #pragma once
 #include "Program.h"
+#include "Core/Macros.h"
 #include "Core/API/fwd.h"
 
 #include <memory>
@@ -34,7 +35,7 @@
 namespace Falcor
 {
 
-class ProgramManager
+class FALCOR_API ProgramManager
 {
 public:
     ProgramManager(Device* pDevice);
@@ -45,8 +46,8 @@ public:
      */
     struct ForcedCompilerFlags
     {
-        Shader::CompilerFlags enabled = Shader::CompilerFlags::None;  ///< Compiler flags forcefully enabled on all shaders
-        Shader::CompilerFlags disabled = Shader::CompilerFlags::None; ///< Compiler flags forcefully enabled on all shaders
+        SlangCompilerFlags enabled = SlangCompilerFlags::None;  ///< Compiler flags forcefully enabled on all shaders
+        SlangCompilerFlags disabled = SlangCompilerFlags::None; ///< Compiler flags forcefully enabled on all shaders
     };
 
     struct CompilationStats
@@ -59,7 +60,7 @@ public:
         double programKernelsTotalTime = 0.0;
     };
 
-    Program::Desc applyForcedCompilerFlags(Program::Desc desc) const;
+    ProgramDesc applyForcedCompilerFlags(ProgramDesc desc) const;
     void registerProgramForReload(Program* program);
     void unregisterProgramForReload(Program* program);
 
@@ -73,9 +74,15 @@ public:
     ) const;
 
     ref<const EntryPointGroupKernels> createEntryPointGroupKernels(
-        const std::vector<ref<Shader>>& shaders,
+        const std::vector<ref<EntryPointKernel>>& kernels,
         const ref<EntryPointBaseReflection>& pReflector
     ) const;
+
+    /// Get the global HLSL language prelude.
+    std::string getHlslLanguagePrelude() const;
+
+    /// Set the global HLSL language prelude.
+    void setHlslLanguagePrelude(const std::string& prelude);
 
     /**
      * Reload and relink all programs.
@@ -88,13 +95,25 @@ public:
      * Add a list of defines applied to all programs.
      * @param[in] defineList List of macro definitions.
      */
-    void addGlobalDefines(const Program::DefineList& defineList);
+    void addGlobalDefines(const DefineList& defineList);
 
     /**
      * Remove a list of defines applied to all programs.
      * @param[in] defineList List of macro definitions.
      */
-    void removeGlobalDefines(const Program::DefineList& defineList);
+    void removeGlobalDefines(const DefineList& defineList);
+
+    /**
+     * Set compiler arguments applied to all programs.
+     * @param[in] args Compiler arguments.
+     */
+    void setGlobalCompilerArguments(const std::vector<std::string>& args) { mGlobalCompilerArguments = args; }
+
+    /**
+     * Get compiler arguments applied to all programs.
+     * @return List of compiler arguments.
+     */
+    const std::vector<std::string>& getGlobalCompilerArguments() const { return mGlobalCompilerArguments; }
 
     /**
      * Enable/disable global generation of shader debug info.
@@ -133,7 +152,8 @@ private:
     std::vector<Program*> mLoadedPrograms;
     mutable CompilationStats mCompilationStats;
 
-    Program::DefineList mGlobalDefineList;
+    DefineList mGlobalDefineList;
+    std::vector<std::string> mGlobalCompilerArguments;
     bool mGenerateDebugInfo = false;
     ForcedCompilerFlags mForcedCompilerFlags;
 

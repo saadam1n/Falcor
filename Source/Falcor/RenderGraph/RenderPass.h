@@ -34,8 +34,8 @@
 #include "Core/API/Resource.h"
 #include "Core/API/Texture.h"
 #include "Scene/Scene.h"
-#include "Utils/InternalDictionary.h"
-#include "Utils/Scripting/Dictionary.h"
+#include "Utils/Properties.h"
+#include "Utils/Dictionary.h"
 #include "Utils/Scripting/ScriptBindings.h"
 #include "Utils/UI/Gui.h"
 #include <functional>
@@ -75,7 +75,7 @@ public:
     /**
      * Get the global dictionary. You can use it to pass data between different passes
      */
-    InternalDictionary& getDictionary() const { return mDictionary; }
+    Dictionary& getDictionary() const { return mDictionary; }
 
     /**
      * Get the default dimensions used for Texture2Ds (when `0` is specified as the dimensions in `RenderPassReflection`)
@@ -91,14 +91,14 @@ protected:
     RenderData(
         const std::string& passName,
         ResourceCache& resources,
-        InternalDictionary& dictionary,
+        Dictionary& dictionary,
         const uint2& defaultTexDims,
         ResourceFormat defaultTexFormat
     );
 
     const std::string& mName;
     ResourceCache& mResources;
-    InternalDictionary& mDictionary;
+    Dictionary& mDictionary;
     uint2 mDefaultTexDims;
     ResourceFormat mDefaultTexFormat;
 
@@ -118,8 +118,9 @@ protected:
  */
 class FALCOR_API RenderPass : public Object
 {
+    FALCOR_OBJECT(RenderPass)
 public:
-    using PluginCreate = std::function<ref<RenderPass>(ref<Device> pDevice, const Dictionary& dict)>;
+    using PluginCreate = std::function<ref<RenderPass>(ref<Device> pDevice, const Properties& props)>;
     struct PluginInfo
     {
         std::string desc; ///< Brief textual description of what the render pass does.
@@ -143,7 +144,7 @@ public:
     static ref<RenderPass> create(
         std::string_view type,
         ref<Device> pDevice,
-        const Dictionary& dict = {},
+        const Properties& props = {},
         PluginManager& pm = PluginManager::instance()
     );
 
@@ -178,9 +179,14 @@ public:
     virtual void execute(RenderContext* pRenderContext, const RenderData& renderData) = 0;
 
     /**
-     * Get a dictionary that can be used to reconstruct the object
+     * Set the render pass properties.
      */
-    virtual Dictionary getScriptingDictionary() { return {}; }
+    virtual void setProperties(const Properties& props) {}
+
+    /**
+     * Get the render pass properties.
+     */
+    virtual Properties getProperties() const { return {}; }
 
     /**
      * Render the pass's UI
@@ -227,11 +233,6 @@ public:
      * @param[in] reloaded Resources that have been reloaded.
      */
     virtual void onHotReload(HotReloadFlags reloaded) {}
-
-    /**
-     * Applies graph presets to this render pass.
-     */
-    virtual void applySettings(const Dictionary& dict) {}
 
     /**
      * Get the current pass' name as defined in the graph

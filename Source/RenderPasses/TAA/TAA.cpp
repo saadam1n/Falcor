@@ -29,16 +29,16 @@
 
 namespace
 {
-    const std::string kMotionVec = "motionVecs";
-    const std::string kColorIn = "colorIn";
-    const std::string kColorOut = "colorOut";
+const std::string kMotionVec = "motionVecs";
+const std::string kColorIn = "colorIn";
+const std::string kColorOut = "colorOut";
 
-    const std::string kAlpha = "alpha";
-    const std::string kColorBoxSigma = "colorBoxSigma";
-    const std::string kAntiFlicker = "antiFlicker";
+const std::string kAlpha = "alpha";
+const std::string kColorBoxSigma = "colorBoxSigma";
+const std::string kAntiFlicker = "antiFlicker";
 
-    const std::string kShaderFilename = "RenderPasses/TAA/TAA.ps.slang";
-}
+const std::string kShaderFilename = "RenderPasses/TAA/TAA.ps.slang";
+} // namespace
 
 static void regTAA(pybind11::module& m)
 {
@@ -54,31 +54,34 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
     ScriptBindings::registerBinding(regTAA);
 }
 
-TAA::TAA(ref<Device> pDevice, const Dictionary& dict)
-    : RenderPass(pDevice)
+TAA::TAA(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
     mpPass = FullScreenPass::create(mpDevice, kShaderFilename);
     mpFbo = Fbo::create(mpDevice);
     Sampler::Desc samplerDesc;
-    samplerDesc.setFilterMode(Sampler::Filter::Linear, Sampler::Filter::Linear, Sampler::Filter::Linear);
-    mpLinearSampler = Sampler::create(mpDevice, samplerDesc);
+    samplerDesc.setFilterMode(TextureFilteringMode::Linear, TextureFilteringMode::Linear, TextureFilteringMode::Linear);
+    mpLinearSampler = mpDevice->createSampler(samplerDesc);
 
-    for (const auto& [key, value] : dict)
+    for (const auto& [key, value] : props)
     {
-        if (key == kAlpha) mControls.alpha = value;
-        else if (key == kColorBoxSigma) mControls.colorBoxSigma = value;
-        else if (key == kAntiFlicker) mControls.antiFlicker = value;
-        else logWarning("Unknown field '{}' in a TemporalAA dictionary.", key);
+        if (key == kAlpha)
+            mControls.alpha = value;
+        else if (key == kColorBoxSigma)
+            mControls.colorBoxSigma = value;
+        else if (key == kAntiFlicker)
+            mControls.antiFlicker = value;
+        else
+            logWarning("Unknown property '{}' in a TemporalAA properties.", key);
     }
 }
 
-Dictionary TAA::getScriptingDictionary()
+Properties TAA::getProperties() const
 {
-    Dictionary dict;
-    dict[kAlpha] = mControls.alpha;
-    dict[kColorBoxSigma] = mControls.colorBoxSigma;
-    dict[kAntiFlicker] = mControls.antiFlicker;
-    return dict;
+    Properties props;
+    props[kAlpha] = mControls.alpha;
+    props[kColorBoxSigma] = mControls.colorBoxSigma;
+    props[kAntiFlicker] = mControls.antiFlicker;
+    return props;
 }
 
 RenderPassReflection TAA::reflect(const CompileData& compileData)
@@ -125,7 +128,16 @@ void TAA::allocatePrevColor(const Texture* pColorOut)
     allocate = allocate || (mpPrevColor->getFormat() != pColorOut->getFormat());
     FALCOR_ASSERT(pColorOut->getSampleCount() == 1);
 
-    if (allocate) mpPrevColor = Texture::create2D(mpDevice, pColorOut->getWidth(), pColorOut->getHeight(), pColorOut->getFormat(), 1, 1, nullptr, Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource);
+    if (allocate)
+        mpPrevColor = mpDevice->createTexture2D(
+            pColorOut->getWidth(),
+            pColorOut->getHeight(),
+            pColorOut->getFormat(),
+            1,
+            1,
+            nullptr,
+            ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource
+        );
 }
 
 void TAA::renderUI(Gui::Widgets& widget)

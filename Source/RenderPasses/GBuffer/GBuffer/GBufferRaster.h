@@ -32,17 +32,18 @@
 
 using namespace Falcor;
 
-/** Raster G-buffer pass.
-    This pass renders a fixed set of G-buffer channels using rasterization.
-*/
+/**
+ * Raster G-buffer pass.
+ * This pass renders a fixed set of G-buffer channels using rasterization.
+ */
 class GBufferRaster : public GBuffer
 {
 public:
     FALCOR_PLUGIN_CLASS(GBufferRaster, "GBufferRaster", "Rasterized G-buffer generation pass.");
 
-    static ref<GBufferRaster> create(ref<Device> pDevice, const Dictionary& dict) { return make_ref<GBufferRaster>(pDevice, dict); }
+    static ref<GBufferRaster> create(ref<Device> pDevice, const Properties& props) { return make_ref<GBufferRaster>(pDevice, props); }
 
-    GBufferRaster(ref<Device> pDevice, const Dictionary& dict);
+    GBufferRaster(ref<Device> pDevice, const Properties& props);
 
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
@@ -51,21 +52,23 @@ public:
     virtual void compile(RenderContext* pRenderContext, const CompileData& compileData) override;
 
 private:
+    void recreatePrograms();
+
     // Internal state
     ref<Fbo> mpFbo;
 
     struct
     {
         ref<GraphicsState> pState;
-        ref<GraphicsProgram> pProgram;
-        ref<GraphicsVars> pVars;
+        ref<Program> pProgram;
+        ref<ProgramVars> pVars;
     } mDepthPass;
 
     // Rasterization resources
     struct
     {
         ref<GraphicsState> pState;
-        ref<GraphicsProgram> pProgram;
-        ref<GraphicsVars> pVars;
+        ref<Program> pProgram;
+        ref<ProgramVars> pVars;
     } mGBufferPass;
 };

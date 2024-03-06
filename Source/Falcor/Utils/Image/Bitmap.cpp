@@ -30,6 +30,7 @@
 #include "Core/API/Texture.h"
 #include "Core/Platform/MemoryMappedFile.h"
 #include "Utils/Math/ScalarMath.h"
+#include "Utils/Math/Float16.h"
 #include "Utils/Logger.h"
 #include "Utils/StringUtils.h"
 
@@ -190,27 +191,67 @@ static FIBITMAP* convertToRGBAF(FIBITMAP* pDib)
     return pNew;
 }
 
+/**
+ * Converts 96/128bpp to 64bpp RGBA floating-point image.
+ * Note that FreeImage doesn't support 16-bit float formats.
+ */
+static FIBITMAP* convertToRGBA16Float(FIBITMAP* pDib)
+{
+    const auto type = FreeImage_GetImageType(pDib);
+    const uint32_t bpp = FreeImage_GetBPP(pDib);
+    FALCOR_CHECK(type == FIT_RGBF || type == FIT_RGBAF, "Image type must be RGB/RGBA with 32-bit float per channel.");
+    FALCOR_CHECK(bpp == 96 || bpp == 128, "Image must be 96 or 128bpp.");
+
+    const uint32_t width = FreeImage_GetWidth(pDib);
+    const uint32_t height = FreeImage_GetHeight(pDib);
+
+    auto pNew = FreeImage_AllocateT(FIT_RGBA16, width, height);
+    FreeImage_CloneMetadata(pNew, pDib);
+
+    const uint32_t src_pitch = FreeImage_GetPitch(pDib);
+    const uint32_t dst_pitch = FreeImage_GetPitch(pNew);
+
+    const BYTE* src_bits = (BYTE*)FreeImage_GetBits(pDib);
+    BYTE* dst_bits = (BYTE*)FreeImage_GetBits(pNew);
+
+    for (uint32_t y = 0; y < height; y++)
+    {
+        const FIRGBAF* src_pixel = (FIRGBAF*)src_bits;
+        FIRGBA16* dst_pixel = (tagFIRGBA16*)dst_bits;
+
+        for (uint32_t x = 0; x < width; x++)
+        {
+            // Convert pixels to float16_t directly, while adding a "dummy" alpha of 1.0 if source format doesn't have alpha.
+            dst_pixel[x].red = float16_t(src_pixel[x].red).toBits();
+            dst_pixel[x].green = float16_t(src_pixel[x].green).toBits();
+            dst_pixel[x].blue = float16_t(src_pixel[x].blue).toBits();
+            dst_pixel[x].alpha = float16_t(type == FIT_RGBAF ? src_pixel[x].alpha : 1.0f).toBits();
+        }
+        src_bits += src_pitch;
+        dst_bits += dst_pitch;
+    }
+    return pNew;
+}
 Bitmap::UniqueConstPtr Bitmap::create(uint32_t width, uint32_t height, ResourceFormat format, const uint8_t* pData)
 {
     return Bitmap::UniqueConstPtr(new Bitmap(width, height, format, pData));
 }
 
-Bitmap::UniqueConstPtr Bitmap::createFromFile(const std::filesystem::path& path, bool isTopDown)
+Bitmap::UniqueConstPtr Bitmap::createFromFile(const std::filesystem::path& path, bool isTopDown, ImportFlags importFlags)
 {
-    std::filesystem::path fullPath;
-    if (!findFileInDataDirectories(path, fullPath))
+    if (!std::filesystem::exists(path))
     {
-        logWarning("Error when loading image file. Can't find image file '{}'.", path);
+        logWarning("Error when loading image file. File '{}' does not exist.", path);
         return nullptr;
     }
 
     FREE_IMAGE_FORMAT fifFormat = FIF_UNKNOWN;
 
-    fifFormat = FreeImage_GetFileType(fullPath.string().c_str(), 0);
+    fifFormat = FreeImage_GetFileType(path.string().c_str(), 0);
     if (fifFormat == FIF_UNKNOWN)
     {
         // Can't get the format from the file. Use file extension
-        fifFormat = FreeImage_GetFIFFromFilename(fullPath.string().c_str());
+        fifFormat = FreeImage_GetFIFFromFilename(path.string().c_str());
 
         if (fifFormat == FIF_UNKNOWN)
         {
@@ -227,7 +268,7 @@ Bitmap::UniqueConstPtr Bitmap::createFromFile(const std::filesystem::path& path,
     }
 
     // Read file using memory mapped access which is much faster than regular file IO.
-    MemoryMappedFile file(fullPath, MemoryMappedFile::kWholeFile, MemoryMappedFile::AccessHint::SequentialScan);
+    MemoryMappedFile file(path, MemoryMappedFile::kWholeFile, MemoryMappedFile::AccessHint::SequentialScan);
     if (!file.isOpen())
     {
         genWarning("Can't open image file {}", path);
@@ -269,6 +310,7 @@ Bitmap::UniqueConstPtr Bitmap::createFromFile(const std::filesystem::path& path,
         }
     }
 
+    // Identify resource format based on bit depth.
     ResourceFormat format = ResourceFormat::Unknown;
     uint32_t bpp = FreeImage_GetBPP(pDib);
     switch (bpp)
@@ -304,6 +346,14 @@ Bitmap::UniqueConstPtr Bitmap::createFromFile(const std::filesystem::path& path,
     {
         bpp = 32;
         auto pNew = FreeImage_ConvertTo32Bits(pDib);
+        FreeImage_Unload(pDib);
+        pDib = pNew;
+    }
+    else if ((bpp == 96 || bpp == 128) && is_set(importFlags, ImportFlags::ConvertToFloat16))
+    {
+        bpp = 64;
+        format = ResourceFormat::RGBA16Float;
+        auto pNew = convertToRGBA16Float(pDib);
         FreeImage_Unload(pDib);
         pDib = pNew;
     }
@@ -405,8 +455,7 @@ Bitmap::FileFormat Bitmap::getFormatFromFileExtension(const std::string& ext)
         if (kExtensions[i] == ext)
             return Bitmap::FileFormat(i);
     }
-    reportError("Can't find a matching format for file extension '" + ext + "'");
-    return Bitmap::FileFormat(-1);
+    FALCOR_THROW("Can't find a matching format for file extension '{}'.", ext);
 }
 
 FileDialogFilterVec Bitmap::getFileDialogFilters(ResourceFormat format)
@@ -478,23 +527,10 @@ void Bitmap::saveImage(
     void* pData
 )
 {
-    if (pData == nullptr)
-    {
-        reportError("Bitmap::saveImage provided no data to save.");
-        return;
-    }
-
+    FALCOR_CHECK(pData, "Provided data must not be nullptr.");
+    FALCOR_CHECK(fileFormat != FileFormat::DdsFile, "Cannot save DDS files. Use ImageIO instead.");
     if (is_set(exportFlags, ExportFlags::Uncompressed) && is_set(exportFlags, ExportFlags::Lossy))
-    {
-        reportError("Bitmap::saveImage incompatible flags: lossy cannot be combined with uncompressed.");
-        return;
-    }
-
-    if (fileFormat == FileFormat::DdsFile)
-    {
-        reportError("Bitmap::saveImage cannot save DDS files. Use ImageIO instead.");
-        return;
-    }
+        FALCOR_THROW("Incompatible flags: lossy cannot be combined with uncompressed.");
 
     int flags = 0;
     FIBITMAP* pImage = nullptr;
@@ -530,31 +566,19 @@ void Bitmap::saveImage(
         }
         else if (bytesPerPixel != 16 && bytesPerPixel != 12)
         {
-            reportError("Bitmap::saveImage supports only 32-bit/channel RGB/RGBA or 16-bit RGBA images as PFM/EXR files.");
-            return;
+            FALCOR_THROW("Only support for 32-bit/channel RGB/RGBA or 16-bit RGBA images as PFM/EXR files.");
         }
 
         const bool exportAlpha = is_set(exportFlags, ExportFlags::ExportAlpha);
 
         if (fileFormat == Bitmap::FileFormat::PfmFile)
         {
-            if (is_set(exportFlags, ExportFlags::Lossy))
-            {
-                reportError("Bitmap::saveImage: PFM does not support lossy compression mode.");
-                return;
-            }
-            if (exportAlpha)
-            {
-                reportError("Bitmap::saveImage: PFM does not support alpha channel.");
-                return;
-            }
+            FALCOR_CHECK(!is_set(exportFlags, ExportFlags::Lossy), "PFM does not support lossy compression mode.");
+            FALCOR_CHECK(!exportAlpha, "PFM does not support alpha channel.");
         }
 
         if (exportAlpha && bytesPerPixel != 16)
-        {
-            reportError("Bitmap::saveImage requesting to export alpha-channel to EXR file, but the resource doesn't have an alpha-channel");
-            return;
-        }
+            FALCOR_THROW("Requesting to export alpha-channel to EXR file, but the resource doesn't have an alpha-channel");
 
         // Upload the image manually and flip it vertically
         bool scanlineCopy = exportAlpha ? bytesPerPixel == 16 : bytesPerPixel == 12;
@@ -597,7 +621,14 @@ void Bitmap::saveImage(
     else
     {
         FIBITMAP* pTemp = FreeImage_ConvertFromRawBits(
-            (BYTE*)pData, width, height, bytesPerPixel * width, bytesPerPixel * 8, FI_RGBA_RED_MASK, FI_RGBA_GREEN_MASK, FI_RGBA_BLUE_MASK,
+            (BYTE*)pData,
+            width,
+            height,
+            bytesPerPixel * width,
+            bytesPerPixel * 8,
+            FI_RGBA_RED_MASK,
+            FI_RGBA_GREEN_MASK,
+            FI_RGBA_BLUE_MASK,
             isTopDown
         );
         if (is_set(exportFlags, ExportFlags::ExportAlpha) == false || fileFormat == Bitmap::FileFormat::JpegFile)
@@ -663,9 +694,8 @@ void Bitmap::saveImage(
     }
 
     if (!FreeImage_Save(toFreeImageFormat(fileFormat), pImage, path.string().c_str(), flags))
-    {
-        reportError("Bitmap::saveImage: FreeImage failed to save image");
-    }
+        FALCOR_THROW("FreeImage failed to save image");
+
     FreeImage_Unload(pImage);
 }
 } // namespace Falcor

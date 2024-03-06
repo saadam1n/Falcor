@@ -43,14 +43,15 @@ namespace Falcor
 
     class FALCOR_API LightProfile : public Object
     {
+        FALCOR_OBJECT(LightProfile)
     public:
-        static ref<LightProfile> createFromIesProfile(ref<Device> pDevice, const std::filesystem::path& filename, bool normalize);
+        static ref<LightProfile> createFromIesProfile(ref<Device> pDevice, const std::filesystem::path& path, bool normalize);
 
         void bake(RenderContext* pRenderContext);
 
         /** Set the light profile into a shader var.
         */
-        void setShaderData(const ShaderVar& var) const;
+        void bindShaderData(const ShaderVar& var) const;
 
         /** Render the UI.
         */

@@ -82,9 +82,9 @@ void runBBoxTestComputeShader(GPUUnitTestContext& ctx, const BBoxTestCase* testC
 {
     ref<Device> pDevice = ctx.getDevice();
 
-    ref<Buffer> pOriginBuffer = Buffer::createTyped<float3>(pDevice, nTests);
-    ref<Buffer> pAABBMinBuffer = Buffer::createTyped<float3>(pDevice, nTests);
-    ref<Buffer> pAABBMaxBuffer = Buffer::createTyped<float3>(pDevice, nTests);
+    ref<Buffer> pOriginBuffer = pDevice->createTypedBuffer<float3>(nTests);
+    ref<Buffer> pAABBMinBuffer = pDevice->createTypedBuffer<float3>(nTests);
+    ref<Buffer> pAABBMaxBuffer = pDevice->createTypedBuffer<float3>(nTests);
 
     for (int i = 0; i < nTests; ++i)
     {
@@ -120,8 +120,8 @@ void testKnownBBoxes(GPUUnitTestContext& ctx, const char* entrypoint)
 
     runBBoxTestComputeShader(ctx, testCases, nTests, entrypoint);
 
-    const float* sinTheta = ctx.mapBuffer<const float>("sinTheta");
-    const float* cosTheta = ctx.mapBuffer<const float>("cosTheta");
+    std::vector<float> sinTheta = ctx.readBuffer<float>("sinTheta");
+    std::vector<float> cosTheta = ctx.readBuffer<float>("cosTheta");
 
     for (int i = 0; i < nTests; ++i)
     {
@@ -141,9 +141,6 @@ void testKnownBBoxes(GPUUnitTestContext& ctx, const char* entrypoint)
                 << "BBoxTestCase " << i << ", expected cos(theta) = " << std::cos(testCases[i].angle) << ", got " << cosTheta[i];
         }
     }
-
-    ctx.unmapBuffer("cosTheta");
-    ctx.unmapBuffer("sinTheta");
 }
 
 void testRandomBBoxes(GPUUnitTestContext& ctx, const char* entrypoint)
@@ -168,9 +165,9 @@ void testRandomBBoxes(GPUUnitTestContext& ctx, const char* entrypoint)
 
     runBBoxTestComputeShader(ctx, testCases.data(), static_cast<int>(testCases.size()), entrypoint);
 
-    const float* sinTheta = ctx.mapBuffer<const float>("sinTheta");
-    const float* cosTheta = ctx.mapBuffer<const float>("cosTheta");
-    const float3* coneDir = ctx.mapBuffer<const float3>("coneDir");
+    std::vector<float> sinTheta = ctx.readBuffer<float>("sinTheta");
+    std::vector<float> cosTheta = ctx.readBuffer<float>("cosTheta");
+    std::vector<float3> coneDir = ctx.readBuffer<float3>("coneDir");
 
     for (size_t i = 0; i < testCases.size(); ++i)
     {
@@ -205,15 +202,12 @@ void testRandomBBoxes(GPUUnitTestContext& ctx, const char* entrypoint)
             EXPECT_LT(minCosTheta, (cosTheta[i] > 0 ? (1.01f * cosTheta[i]) : (0.99f * cosTheta[i])));
         }
     }
-
-    ctx.unmapBuffer("cosTheta");
-    ctx.unmapBuffer("sinTheta");
 }
 } // namespace
 
-// This test is currently disabled for Vulkan as the float precision is not exact (Shader::CompilerFlags::FloatingPointModePrecise not
+// This test is currently disabled for Vulkan as the float precision is not exact (SlangCompilerFlags::FloatingPointModePrecise not
 // supported?).
-GPU_TEST_D3D12(ComputeRayOrigin)
+GPU_TEST(ComputeRayOrigin, Device::Type::D3D12)
 {
     const uint32_t nTests = 1 << 16;
 
@@ -232,7 +226,7 @@ GPU_TEST_D3D12(ComputeRayOrigin)
     }
 
     // Setup and run GPU test.
-    ctx.createProgram(kShaderFilename, "testComputeRayOrigin", Program::DefineList(), Shader::CompilerFlags::FloatingPointModePrecise);
+    ctx.createProgram(kShaderFilename, "testComputeRayOrigin", DefineList(), SlangCompilerFlags::FloatingPointModePrecise);
     ctx.allocateStructuredBuffer("result", nTests);
     ctx.allocateStructuredBuffer("pos", nTests, testPositions.data(), testPositions.size() * sizeof(float3));
     ctx.allocateStructuredBuffer("normal", nTests, testNormals.data(), testNormals.size() * sizeof(float3));
@@ -240,13 +234,12 @@ GPU_TEST_D3D12(ComputeRayOrigin)
     ctx.runProgram(nTests);
 
     // Verify results.
-    const float3* result = ctx.mapBuffer<const float3>("result");
+    std::vector<float3> result = ctx.readBuffer<float3>("result");
     for (uint32_t i = 0; i < nTests; i++)
     {
         float3 ref = offset_ray(testPositions[i], testNormals[i]);
         EXPECT_EQ(result[i], ref) << "i = " << i;
     }
-    ctx.unmapBuffer("result");
 }
 
 GPU_TEST(BoxSubtendedConeAngleCenter)
@@ -295,7 +288,7 @@ GPU_TEST(SphereSubtendedAngle)
     };
     int nTests = sizeof(testCases) / sizeof(testCases[0]);
 
-    ref<Buffer> pTestCaseBuffer = Buffer::createTyped<float4>(pDevice, nTests);
+    ref<Buffer> pTestCaseBuffer = pDevice->createTypedBuffer<float4>(nTests);
 
     for (int i = 0; i < nTests; ++i)
     {
@@ -310,8 +303,8 @@ GPU_TEST(SphereSubtendedAngle)
     ctx.allocateStructuredBuffer("cosTheta", nTests);
     ctx.runProgram(nTests);
 
-    const float* sinTheta = ctx.mapBuffer<const float>("sinTheta");
-    const float* cosTheta = ctx.mapBuffer<const float>("cosTheta");
+    std::vector<float> sinTheta = ctx.readBuffer<float>("sinTheta");
+    std::vector<float> cosTheta = ctx.readBuffer<float>("cosTheta");
 
     for (int i = 0; i < nTests; ++i)
     {
@@ -333,9 +326,6 @@ GPU_TEST(SphereSubtendedAngle)
                 << ", " << tc.origin.y << ", " << tc.origin.z << "), radius " << tc.radius;
         }
     }
-
-    ctx.unmapBuffer("cosTheta");
-    ctx.unmapBuffer("sinTheta");
 }
 
 GPU_TEST(ComputeClippedTriangleArea2D)
@@ -469,15 +459,15 @@ GPU_TEST(ComputeClippedTriangleArea2D)
             pos.push_back(float3(tests[i].p[2], 0.f));
         }
         FALCOR_ASSERT(pos.size() == 3 * tests.size());
-        return Buffer::createStructured(
-            pDevice, sizeof(float3), (uint32_t)pos.size(), ResourceBindFlags::ShaderResource, Buffer::CpuAccess::None, pos.data(), false
+        return pDevice->createStructuredBuffer(
+            sizeof(float3), (uint32_t)pos.size(), ResourceBindFlags::ShaderResource, MemoryType::DeviceLocal, pos.data(), false
         );
     };
 
     auto createAABBBuffer = [pDevice](const std::vector<AABB2D>& aabb)
     {
-        return Buffer::createStructured(
-            pDevice, sizeof(AABB2D), (uint32_t)aabb.size(), ResourceBindFlags::ShaderResource, Buffer::CpuAccess::None, aabb.data(), false
+        return pDevice->createStructuredBuffer(
+            sizeof(AABB2D), (uint32_t)aabb.size(), ResourceBindFlags::ShaderResource, MemoryType::DeviceLocal, aabb.data(), false
         );
     };
 
@@ -499,7 +489,7 @@ GPU_TEST(ComputeClippedTriangleArea2D)
     // Verify results.
     auto verify = [&ctx](const std::vector<AABB2D>& aabb, const std::vector<TestCase>& tests, float threshold, const std::string& desc)
     {
-        const float3* result = ctx.mapBuffer<const float3>("result");
+        std::vector<float3> result = ctx.readBuffer<float3>("result");
         for (size_t i = 0; i < tests.size(); i++)
         {
             float expectedArea = tests[i].area;
@@ -510,7 +500,6 @@ GPU_TEST(ComputeClippedTriangleArea2D)
             float maxErr = aabb[i].area() * threshold;
             EXPECT_LE(absErr, maxErr) << "returned " << returnedArea << ", expected " << expectedArea << " (" << desc << " i=" << i << ")";
         }
-        ctx.unmapBuffer("result");
     };
 
     verify(aabb, testsFixed, 1e-6f, "Fixed test");

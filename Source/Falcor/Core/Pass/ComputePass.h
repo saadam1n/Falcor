@@ -29,7 +29,6 @@
 #include "Core/Macros.h"
 #include "Core/Object.h"
 #include "Core/State/ComputeState.h"
-#include "Core/Program/ComputeProgram.h"
 #include "Core/Program/Program.h"
 #include "Core/Program/ProgramVars.h"
 #include "Core/Program/ShaderVar.h"
@@ -40,6 +39,7 @@ namespace Falcor
 {
 class FALCOR_API ComputePass : public Object
 {
+    FALCOR_OBJECT(ComputePass)
 public:
     /**
      * Create a new compute pass from file.
@@ -54,7 +54,7 @@ public:
         ref<Device> pDevice,
         const std::filesystem::path& path,
         const std::string& csEntry = "main",
-        const Program::DefineList& defines = Program::DefineList(),
+        const DefineList& defines = DefineList(),
         bool createVars = true
     );
 
@@ -68,8 +68,8 @@ public:
      */
     static ref<ComputePass> create(
         ref<Device> pDevice,
-        const Program::Desc& desc,
-        const Program::DefineList& defines = Program::DefineList(),
+        const ProgramDesc& desc,
+        const DefineList& defines = DefineList(),
         bool createVars = true
     );
 
@@ -106,7 +106,7 @@ public:
     /**
      * Get the vars.
      */
-    const ref<ComputeVars>& getVars() const
+    const ref<ProgramVars>& getVars() const
     {
         FALCOR_ASSERT(mpVars);
         return mpVars;
@@ -127,25 +127,27 @@ public:
     /**
      * Get the program
      */
-    ref<ComputeProgram> getProgram() const { return mpState->getProgram(); }
+    ref<Program> getProgram() const { return mpState->getProgram(); }
 
     /**
      * Set a vars object. Allows the user to override the internal vars, for example when one wants to share a vars object between
      * different passes. The function throws an exception on error.
-     * @param[in] pVars The new GraphicsVars object. If this is nullptr, then the pass will automatically create a new vars object.
+     * @param[in] pVars The new ProgramVars object. If this is nullptr, then the pass will automatically create a new vars object.
      */
-    void setVars(const ref<ComputeVars>& pVars);
+    void setVars(const ref<ProgramVars>& pVars);
 
     /**
      * Get the thread group size from the program
      */
     uint3 getThreadGroupSize() const { return mpState->getProgram()->getReflector()->getThreadGroupSize(); }
 
+    const ref<Device>& getDevice() const { return mpDevice; }
+
 protected:
-    ComputePass(ref<Device> pDevice, const Program::Desc& desc, const Program::DefineList& defines, bool createVars);
+    ComputePass(ref<Device> pDevice, const ProgramDesc& desc, const DefineList& defines, bool createVars);
 
     ref<Device> mpDevice;
-    ref<ComputeVars> mpVars;
+    ref<ProgramVars> mpVars;
     ref<ComputeState> mpState;
 };
 } // namespace Falcor

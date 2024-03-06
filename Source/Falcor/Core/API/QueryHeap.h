@@ -28,8 +28,8 @@
 #pragma once
 #include "fwd.h"
 #include "Handles.h"
-#include "Core/Assert.h"
 #include "Core/Macros.h"
+#include "Core/Error.h"
 #include "Core/Object.h"
 #include <deque>
 
@@ -37,6 +37,7 @@ namespace Falcor
 {
 class FALCOR_API QueryHeap : public Object
 {
+    FALCOR_OBJECT(QueryHeap)
 public:
     enum class Type
     {

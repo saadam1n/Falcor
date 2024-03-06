@@ -28,6 +28,8 @@
 #pragma once
 #include "GridVolumeSamplerParams.slang"
 #include "Core/Macros.h"
+#include "Core/Program/DefineList.h"
+#include "Utils/Properties.h"
 #include "Utils/UI/Gui.h"
 #include "Scene/Scene.h"
 
@@ -52,6 +54,14 @@ namespace Falcor
 
             // Note: Empty constructor needed for clang due to the use of the nested struct constructor in the parent constructor.
             Options() {}
+
+            template<typename Archive>
+            void serialize(Archive& ar)
+            {
+                ar("transmittanceEstimator", transmittanceEstimator);
+                ar("distanceSampler", distanceSampler);
+                ar("useBrickedGrid", useBrickedGrid);
+            }
         };
 
         /** Create a new object.
@@ -65,12 +75,12 @@ namespace Falcor
         /** Get a list of shader defines for using the grid volume sampler.
             \return Returns a list of defines.
         */
-        Program::DefineList getDefines() const;
+        DefineList getDefines() const;
 
         /** Bind the grid volume sampler to a given shader variable.
             \param[in] var Shader variable.
         */
-        void setShaderData(const ShaderVar& var) const;
+        void bindShaderData(const ShaderVar& var) const;
 
         /** Render the GUI.
             \return True if options were changed, false otherwise.
@@ -80,6 +90,8 @@ namespace Falcor
         /** Returns the current configuration.
         */
         const Options& getOptions() const { return mOptions; }
+
+        void setOptions(const Options& options) { mOptions = options; }
 
     protected:
         ref<Scene>              mpScene;            ///< Scene.

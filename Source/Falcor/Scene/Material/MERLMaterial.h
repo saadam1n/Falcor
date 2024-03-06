@@ -42,6 +42,7 @@ namespace Falcor
     */
     class FALCOR_API MERLMaterial : public Material
     {
+        FALCOR_OBJECT(MERLMaterial)
     public:
         static ref<MERLMaterial> create(ref<Device> pDevice, const std::string& name, const std::filesystem::path& path) { return make_ref<MERLMaterial>(pDevice, name, path); }
 
@@ -52,10 +53,10 @@ namespace Falcor
         Material::UpdateFlags update(MaterialSystem* pOwner) override;
         bool isEqual(const ref<Material>& pOther) const override;
         MaterialDataBlob getDataBlob() const override { return prepareDataBlob(mData); }
-        Program::ShaderModuleList getShaderModules() const override;
-        Program::TypeConformanceList getTypeConformances() const override;
+        ProgramDesc::ShaderModuleList getShaderModules() const override;
+        TypeConformanceList getTypeConformances() const override;
 
-        int getBufferCount() const override { return 1; }
+        size_t getMaxBufferCount() const override { return 1; }
 
     protected:
         void init(const MERLFile& merlFile);

@@ -41,7 +41,8 @@ struct PBRTDielectricMaterial : MaterialBase, IMaterial
         SamplerState s = ms.getTextureSampler(header.getDefaultTextureSamplerID());
 
         const float2 roughness = ms.sampleTexture(data.texSpecular, s, sd.uv, data.specular, lod).rg;
-        float eta = !sd.frontFacing ? 1.0f / data.IoR : data.IoR;
+        float16_t IoR = header.getIoR();
+        float eta = !sd.frontFacing ? 1.0f / IoR : IoR;
 
         // Compute final shading frame.
         // Do not flip the shading normal for backfacing hits. The BSDF handles transmission from both sides.
@@ -61,9 +62,10 @@ struct PBRTDielectricMaterial : MaterialBase, IMaterial
         return mi;
     }
 
-    float evalOpacity(const MaterialSystem ms, const VertexData v, const ITextureSampler lod)
+    [Differentiable]
+    PBRTDielectricMaterialInstance setupDiffMaterialInstance(out DiffMaterialData diffData, const MaterialSystem ms, const ShadingData sd, const ITextureSampler lod, const uint hints)
     {
-        SamplerState s = ms.getTextureSampler(header.getDefaultTextureSamplerID());
-        return ms.sampleTexture(data.texBaseColor, s, v.texC, data.baseColor, lod).a;
+        diffData = DiffMaterialData();
+        return no_diff setupMaterialInstance(ms, sd, lod, hints);
     }
 };

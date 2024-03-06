@@ -56,7 +56,7 @@ void testGpuSort(GPUUnitTestContext& ctx, BitonicSort& bitonicSort, const uint32
         it = r();
 
     ref<Buffer> pTestDataBuffer =
-        Buffer::create(pDevice, n * sizeof(uint32_t), Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, testData.data());
+        pDevice->createBuffer(n * sizeof(uint32_t), ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, testData.data());
 
     // Execute sort on the GPU.
     uint32_t groupSize = std::max(chunkSize, 256u);
@@ -67,20 +67,18 @@ void testGpuSort(GPUUnitTestContext& ctx, BitonicSort& bitonicSort, const uint32
     bitonicSortRef(testData, chunkSize);
 
     // Compare results.
-    const uint32_t* result = (const uint32_t*)pTestDataBuffer->map(Buffer::MapType::Read);
-    FALCOR_ASSERT(result);
+    std::vector<uint32_t> result = pTestDataBuffer->getElements<uint32_t>(0);
     for (uint32_t i = 0; i < n; i++)
     {
         EXPECT_EQ(testData[i], result[i]) << "i = " << i;
     }
-    pTestDataBuffer->unmap();
 }
 } // namespace
 
 #if FALCOR_NVAPI_AVAILABLE
-GPU_TEST_D3D12(BitonicSort)
+GPU_TEST(BitonicSort, Device::Type::D3D12)
 #else
-GPU_TEST_D3D12(BitonicSort, "Requires NVAPI")
+GPU_TEST(BitonicSort, Device::Type::D3D12, "Requires NVAPI")
 #endif
 {
     // Create utility class for sorting.

@@ -33,20 +33,21 @@
 
 using namespace Falcor;
 
-/** Scene debugger render pass.
-
-    This pass helps identify asset issues such as incorrect normals.
-*/
+/**
+ * Scene debugger render pass.
+ *
+ * This pass helps identify asset issues such as incorrect normals.
+ */
 class SceneDebugger : public RenderPass
 {
 public:
     FALCOR_PLUGIN_CLASS(SceneDebugger, "SceneDebugger", "Scene debugger for identifying asset issues.");
 
-    static ref<SceneDebugger> create(ref<Device> pDevice, const Dictionary& dict) { return make_ref<SceneDebugger>(pDevice, dict); }
+    static ref<SceneDebugger> create(ref<Device> pDevice, const Properties& props) { return make_ref<SceneDebugger>(pDevice, props); }
 
-    SceneDebugger(ref<Device> pDevice, const Dictionary& dict);
+    SceneDebugger(ref<Device> pDevice, const Properties& props);
 
-    Dictionary getScriptingDictionary() override;
+    Properties getProperties() const override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void compile(RenderContext* pRenderContext, const CompileData& compileData) override;
     void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override;
@@ -64,13 +65,16 @@ private:
     void initInstanceInfo();
 
     // Internal state
-    ref<Scene>              mpScene;
-    SceneDebuggerParams     mParams;
-    ref<ComputePass>        mpDebugPass;
-    ref<GpuFence>           mpFence;
-    ref<Buffer>             mpPixelData;            ///< Buffer for recording pixel data at the selected pixel.
-    ref<Buffer>             mpPixelDataStaging;     ///< Readback buffer.
-    ref<Buffer>             mpMeshToBlasID;
-    ref<Buffer>             mpInstanceInfo;
-    bool                    mPixelDataAvailable = false;
+
+    ref<Scene> mpScene;
+    SceneDebuggerParams mParams;
+    ref<ComputePass> mpDebugPass;
+    ref<Fence> mpFence;
+    /// Buffer for recording pixel data at the selected pixel.
+    ref<Buffer> mpPixelData;
+    /// Readback buffer.
+    ref<Buffer> mpPixelDataStaging;
+    ref<Buffer> mpMeshToBlasID;
+    ref<Buffer> mpInstanceInfo;
+    bool mPixelDataAvailable = false;
 };

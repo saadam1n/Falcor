@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2015-21, NVIDIA CORPORATION. All rights reserved.
+ # Copyright (c) 2015-23, NVIDIA CORPORATION. All rights reserved.
  #
  # Redistribution and use in source and binary forms, with or without
  # modification, are permitted provided that the following conditions
@@ -31,7 +31,7 @@ import Utils.Color.ColorHelpers;
 {
     uint w, h;
     tex.GetDimensions(w, h);
-    return int2(w,h);
+    return int2(w, h);
 }
 
 [BackwardDifferentiable]
@@ -52,11 +52,11 @@ float computeWeight(
 
 struct FullScreenPassVsOut
 {
-    float2 texC       : TEXCOORD;
+    float2 texC : TEXCOORD;
 #ifndef _VIEWPORT_MASK
-    float4 posH       : SV_POSITION;
+    float4 posH : SV_POSITION;
 #else
-    float4 posH       : POSITION;
+    float4 posH : POSITION;
 #endif
 };
 

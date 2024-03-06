@@ -69,6 +69,7 @@ namespace Falcor
     */
     class FALCOR_API SDFGrid : public Object
     {
+        FALCOR_OBJECT(SDFGrid)
     public:
         enum class Type
         {
@@ -143,10 +144,9 @@ namespace Falcor
         /** Reads primitives from file and initializes the SDF grid.
             \param[in] path The path to the input file.
             \param[in] gridWidth The targeted width of the SDF grid, the resulting grid may have a larger width.
-            \param[in] dir A directory path, if this is empty, the file will be searched for in data directories.
             \return The number of primitives loaded.
         */
-        uint32_t loadPrimitivesFromFile(const std::filesystem::path& path, uint32_t gridWidth, const std::filesystem::path& dir);
+        uint32_t loadPrimitivesFromFile(const std::filesystem::path& path, uint32_t gridWidth);
 
         /** Write the primitives to file.
             \param[in] path The path to the output file.
@@ -207,7 +207,7 @@ namespace Falcor
 
         /** Binds the SDF grid into a given shader var.
         */
-        virtual void setShaderData(const ShaderVar& var) const = 0;
+        virtual void bindShaderData(const ShaderVar& var) const = 0;
 
         /** Return the scaling factor that represent how the grid resolution has changed from when it was loaded. The resolution can change if loaded by the SBS grid and then edited by the SDFEditor.
         */
@@ -259,6 +259,8 @@ namespace Falcor
 
         ref<Texture>            mpSDFGridTexture;                   ///< A texture on the GPU holding the value representation.
         ref<ComputePass>        mpEvaluatePrimitivesPass;
+
+        friend class Scene;
     };
 
     FALCOR_ENUM_CLASS_OPERATORS(SDFGrid::UpdateFlags);

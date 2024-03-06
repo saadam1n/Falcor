@@ -40,7 +40,9 @@ namespace Falcor
 // that wish to use the raw D3D12DescriptorSet API.
 class FALCOR_API D3D12ConstantBufferView : public Object
 {
+    FALCOR_OBJECT(D3D12ConstantBufferView)
 public:
+    static ref<D3D12ConstantBufferView> create(ref<Device> pDevice, uint64_t gpuAddress, uint32_t byteSize);
     static ref<D3D12ConstantBufferView> create(ref<Device> pDevice, ref<Buffer> pBuffer);
     static ref<D3D12ConstantBufferView> create(ref<Device> pDevice);
 

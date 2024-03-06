@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_FALCOR
 
 enum class SceneDebuggerMode : uint32_t
 {
+    FlatShaded,
     // Geometry
     HitType,
     InstanceID,
@@ -49,10 +50,63 @@ enum class SceneDebuggerMode : uint32_t
     BackfacingShadingNormal,
     TexCoords,
     // Material properties
-    GuideNormal,
-    Roughness,
-    FlatShaded,
+    BSDFProperties,
 };
+
+FALCOR_ENUM_INFO(
+    SceneDebuggerMode,
+    {
+        { SceneDebuggerMode::FlatShaded, "FlatShaded" },
+        // Geometry
+        { SceneDebuggerMode::HitType, "HitType" },
+        { SceneDebuggerMode::InstanceID, "InstanceID" },
+        { SceneDebuggerMode::MaterialID, "MaterialID" },
+        { SceneDebuggerMode::GeometryID, "GeometryID" },
+        { SceneDebuggerMode::BlasID, "BlasID" },
+        { SceneDebuggerMode::InstancedGeometry, "InstancedGeometry" },
+        { SceneDebuggerMode::PrimitiveID, "PrimitiveID" },
+        // Shading data
+        { SceneDebuggerMode::FaceNormal, "FaceNormal" },
+        { SceneDebuggerMode::ShadingNormal, "ShadingNormal" },
+        { SceneDebuggerMode::ShadingTangent, "ShadingTangent" },
+        { SceneDebuggerMode::ShadingBitangent, "ShadingBitangent" },
+        { SceneDebuggerMode::FrontFacingFlag, "FrontFacingFlag" },
+        { SceneDebuggerMode::BackfacingShadingNormal, "BackfacingShadingNormal" },
+        { SceneDebuggerMode::TexCoords, "TexCoords" },
+        // Material properties
+        { SceneDebuggerMode::BSDFProperties, "BSDFProperties" },
+    }
+);
+FALCOR_ENUM_REGISTER(SceneDebuggerMode);
+
+enum class SceneDebuggerBSDFProperty : uint32_t
+{
+    Emission,
+    Roughness,
+    GuideNormal,
+    DiffuseReflectionAlbedo,
+    DiffuseTransmissionAlbedo,
+    SpecularReflectionAlbedo,
+    SpecularTransmissionAlbedo,
+    SpecularReflectance,
+    IsTransmissive,
+};
+
+FALCOR_ENUM_INFO(
+    SceneDebuggerBSDFProperty,
+    {
+        { SceneDebuggerBSDFProperty::Emission, "Emission" },
+        { SceneDebuggerBSDFProperty::Roughness, "Roughness" },
+        { SceneDebuggerBSDFProperty::GuideNormal, "GuideNormal" },
+        { SceneDebuggerBSDFProperty::DiffuseReflectionAlbedo, "DiffuseReflectionAlbedo" },
+        { SceneDebuggerBSDFProperty::DiffuseTransmissionAlbedo, "DiffuseTransmissionAlbedo" },
+        { SceneDebuggerBSDFProperty::SpecularReflectionAlbedo, "SpecularReflectionAlbedo" },
+        { SceneDebuggerBSDFProperty::SpecularTransmissionAlbedo, "SpecularTransmissionAlbedo" },
+        { SceneDebuggerBSDFProperty::SpecularReflectance, "SpecularReflectance" },
+        { SceneDebuggerBSDFProperty::IsTransmissive, "IsTransmissive" },
+    }
+);
+FALCOR_ENUM_REGISTER(SceneDebuggerBSDFProperty);
 
 struct SceneDebuggerParams
 {
@@ -60,13 +114,16 @@ struct SceneDebuggerParams
     uint2 frameDim = { 0, 0 };
     uint frameCount = 0;
 
+    uint bsdfProperty = 0; ///< Current BSDF property. See SceneDebuggerBSDFProperty.
+    uint bsdfIndex = 0;    ///< Current BSDF layer index.
+
     uint2 selectedPixel = { 0, 0 }; ///< The currently selected pixel for readback.
     int flipSign = false;           ///< Flip sign before visualization.
     int remapRange = true;          ///< Remap valid range to [0,1] before output.
     int clamp = true;               ///< Clamp pixel values to [0,1] before output.
 
-    int showVolumes = true;         ///< Show volumes.
-    float densityScale = 1.f;       ///< Volume density scale factor.
+    int showVolumes = true;   ///< Show volumes.
+    float densityScale = 1.f; ///< Volume density scale factor.
 };
 
 struct PixelData
@@ -100,7 +157,7 @@ enum class InstanceInfoFlags : uint32_t
 
 struct InstanceInfo
 {
-    uint flags = 0;                 ///< Flags as a combination of 'InstanceInfoFlags' flags.
+    uint flags = 0; ///< Flags as a combination of 'InstanceInfoFlags' flags.
 };
 
 END_NAMESPACE_FALCOR

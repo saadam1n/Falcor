@@ -38,16 +38,16 @@ bool isNaN(float f)
 
 cbuffer PerImageCB
 {
-    Texture2D   gMotion;
-    Texture2D   gPositionNormalFwidth;
-    Texture2D   gColor;
-    Texture2D   gAlbedo;
-    Texture2D   gEmission;
-    Texture2D   gPrevIllum;
-    Texture2D   gPrevMoments;
-    Texture2D   gLinearZAndNormal;
-    Texture2D   gPrevLinearZAndNormal;
-    Texture2D   gPrevHistoryLength;
+    Texture2D gMotion;
+    Texture2D gPositionNormalFwidth;
+    Texture2D gColor;
+    Texture2D gAlbedo;
+    Texture2D gEmission;
+    Texture2D gPrevIllum;
+    Texture2D gPrevMoments;
+    Texture2D gLinearZAndNormal;
+    Texture2D gPrevLinearZAndNormal;
+    Texture2D gPrevHistoryLength;
 
     RWByteAddressBuffer d_gColor;
     RWByteAddressBuffer d_gAlbedo;
@@ -104,7 +104,8 @@ bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal
     const int2 imageDim = getTextureDims(gColor, 0);
 
     // check whether reprojected pixel is inside of the screen
-    if (any(coord < int2(1,1)) || any(coord > imageDim - int2(1,1))) return false;
+    if (any(coord < int2(1, 1)) || any(coord > imageDim - int2(1, 1)))
+        return false;
 
     // check if deviation of depths is acceptable
     if (abs(Zprev - Z) / (fwidthZ + 1e-2f) > reprojectionParamters[2]) return false;
@@ -125,13 +126,13 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out
     const float normalFwidth = gPositionNormalFwidth[ipos].y;
 
     // +0.5 to account for texel center offset
-    const int2 iposPrev = int2(float2(ipos) + motion.xy * imageDim + float2(0.5,0.5));
+    const int2 iposPrev = int2(float2(ipos) + motion.xy * imageDim + float2(0.5, 0.5));
 
     float2 depth = gLinearZAndNormal[ipos].xy;
     float3 normal = oct_to_ndir_snorm(gLinearZAndNormal[ipos].zw);
 
-    prevIllum   = float4(0,0,0,0);
-    prevMoments = float2(0,0);
+    prevIllum = float4(0, 0, 0, 0);
+    prevMoments = float2(0, 0);
 
     bool v[4];
     const float2 posPrev = floor(posH.xy) + motion.xy * imageDim;
@@ -157,10 +158,7 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out
         float y = frac(posPrev.y);
 
         // bilinear weights
-        const float w[4] = { (1 - x) * (1 - y),
-                                  x  * (1 - y),
-                             (1 - x) *      y,
-                                  x  *      y };
+        const float w[4] = { (1 - x) * (1 - y), x * (1 - y), (1 - x) * y, x * y };
 
         // perform the actual bilinear interpolation
         for (int sampleIdx = 0; sampleIdx < 4; sampleIdx++)
@@ -168,15 +166,15 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out
             const int2 loc = int2(posPrev) + offset[sampleIdx];
             if (v[sampleIdx])
             {
-                prevIllum   += w[sampleIdx] * gPrevIllum[loc];
+                prevIllum += w[sampleIdx] * gPrevIllum[loc];
                 prevMoments += w[sampleIdx] * gPrevMoments[loc].xy;
-                sumw        += w[sampleIdx];
-             }
+                sumw += w[sampleIdx];
+            }
         }
 
         // redistribute weights in case not all taps were used
         valid = (sumw >= 0.01);
-        prevIllum   = valid ? prevIllum / sumw   : float4(0, 0, 0, 0);
+        prevIllum = valid ? prevIllum / sumw : float4(0, 0, 0, 0);
         prevMoments = valid ? prevMoments / sumw : float2(0, 0);
     }
 
@@ -220,8 +218,8 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out
     }
     else
     {
-        prevIllum   = float4(0,0,0,0);
-        prevMoments = float2(0,0);
+        prevIllum = float4(0, 0, 0, 0);
+        prevMoments = float2(0, 0);
         historyLength = 0;
     }
 
@@ -290,11 +288,11 @@ REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4]
 
     float variance = max(0.f, moments.g - moments.r * moments.r);
 
-    //variance *= computeVarianceScale(16, 16, alpha);
+    // variance *= computeVarianceScale(16, 16, alpha);
 
     REPROJ_OUT psOut;
     // temporal integration of illumination
-    psOut.OutIllumination = lerp(prevIllumination,   float4(illumination,   0), alpha);
+    psOut.OutIllumination = lerp(prevIllumination, float4(illumination, 0), alpha);
     // variance is propagated through the alpha channel
     psOut.OutIllumination.a = variance;
     psOut.OutMoments = moments;

@@ -42,12 +42,12 @@ public:
 
     using PyTorchTensor = pybind11::ndarray<pybind11::pytorch, float>;
 
-    static ref<TestPyTorchPass> create(ref<Device> pDevice, const Dictionary& dict) { return make_ref<TestPyTorchPass>(pDevice, dict); }
+    static ref<TestPyTorchPass> create(ref<Device> pDevice, const Properties& props) { return make_ref<TestPyTorchPass>(pDevice, props); }
 
-    TestPyTorchPass(ref<Device> pDevice, const Dictionary& dict);
+    TestPyTorchPass(ref<Device> pDevice, const Properties& props);
     virtual ~TestPyTorchPass();
 
-    virtual Dictionary getScriptingDictionary() override;
+    virtual Properties getProperties() const override;
     virtual RenderPassReflection reflect(const CompileData& compileData) override;
     virtual void compile(RenderContext* pRenderContext, const CompileData& compileData) override {}
     virtual void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override {}
@@ -62,14 +62,17 @@ public:
     bool verifyData(const uint3 dim, const uint32_t offset, PyTorchTensor data);
 
 private:
-    ref<Buffer> mpBuffer;               ///< GPU buffer for generated data.
+    /// GPU buffer for generated data.
+    ref<Buffer> mpBuffer;
     ref<Buffer> mpCounterBuffer;
     ref<Buffer> mpCounterStagingBuffer;
 #if FALCOR_HAS_CUDA
-    InteropBuffer mSharedWriteBuffer;   ///< Shared CUDA/DX buffer for passing data from Falcor to PyTorch asynchronously.
-    InteropBuffer mSharedReadBuffer;    ///< Shared CUDA/DX buffer for passing data from PyTorch to Falcor asynchronously.
+    /// Shared CUDA/Falcor buffer for passing data from Falcor to PyTorch asynchronously.
+    InteropBuffer mSharedWriteBuffer;
+    /// Shared CUDA/Falcor buffer for passing data from PyTorch to Falcor asynchronously.
+    InteropBuffer mSharedReadBuffer;
 #endif
     ref<ComputePass> mpWritePass;
     ref<ComputePass> mpReadPass;
-    ref<GpuFence> mpFence;
+    ref<Fence> mpFence;
 };

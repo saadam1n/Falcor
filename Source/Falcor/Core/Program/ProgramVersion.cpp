@@ -29,6 +29,7 @@
 #include "Program.h"
 #include "ProgramManager.h"
 #include "ProgramVars.h"
+#include "Core/Error.h"
 #include "Core/API/Device.h"
 #include "Core/API/ParameterBlock.h"
 #include "Utils/Logger.h"
@@ -46,23 +47,23 @@ namespace Falcor
 
 ref<const EntryPointGroupKernels> EntryPointGroupKernels::create(
     EntryPointGroupKernels::Type type,
-    const EntryPointGroupKernels::Shaders& shaders,
+    const std::vector<ref<EntryPointKernel>>& kernels,
     const std::string& exportName
 )
 {
-    return ref<EntryPointGroupKernels>(new EntryPointGroupKernels(type, shaders, exportName));
+    return ref<EntryPointGroupKernels>(new EntryPointGroupKernels(type, kernels, exportName));
 }
 
-EntryPointGroupKernels::EntryPointGroupKernels(Type type, const Shaders& shaders, const std::string& exportName)
-    : mType(type), mShaders(shaders), mExportName(exportName)
+EntryPointGroupKernels::EntryPointGroupKernels(Type type, const std::vector<ref<EntryPointKernel>>& kernels, const std::string& exportName)
+    : mType(type), mKernels(kernels), mExportName(exportName)
 {}
 
-const Shader* EntryPointGroupKernels::getShader(ShaderType type) const
+const EntryPointKernel* EntryPointGroupKernels::getKernel(ShaderType type) const
 {
-    for (auto& pShader : mShaders)
+    for (auto& pKernel : mKernels)
     {
-        if (pShader->getType() == type)
-            return pShader.get();
+        if (pKernel->getType() == type)
+            return pKernel.get();
     }
     return nullptr;
 }
@@ -152,11 +153,11 @@ ref<ProgramKernels> ProgramKernels::create(
     return pProgram;
 }
 
-const Shader* ProgramKernels::getShader(ShaderType type) const
+const EntryPointKernel* ProgramKernels::getKernel(ShaderType type) const
 {
     for (auto& pEntryPointGroup : mUniqueEntryPointGroups)
     {
-        if (auto pShader = pEntryPointGroup->getShader(type))
+        if (auto pShader = pEntryPointGroup->getKernel(type))
             return pShader;
     }
     return nullptr;
@@ -232,8 +233,7 @@ ref<const ProgramKernels> ProgramVersion::getKernels(Device* pDevice, ProgramVar
 
             if (!log.empty())
             {
-                std::string warn = "Warnings in program:\n" + getName() + "\n" + log;
-                logWarning(warn);
+                logWarning("Warnings in program:\n{}\n{}", getName(), log);
             }
 
             mpKernels[specializationKey] = pKernels;
@@ -242,11 +242,11 @@ ref<const ProgramKernels> ProgramVersion::getKernels(Device* pDevice, ProgramVar
         else
         {
             // Failure
-
-            std::string error = "Failed to link program:\n" + getName() + "\n\n" + log;
-            reportErrorAndAllowRetry(error);
-
-            // Continue loop to keep trying...
+            std::string msg = fmt::format("Failed to link program:\n{}\n\n{}", getName(), log);
+            bool showMessageBox = is_set(getErrorDiagnosticFlags(), ErrorDiagnosticFlags::ShowMessageBoxOnError);
+            if (showMessageBox && reportErrorAndAllowRetry(msg))
+                continue;
+            FALCOR_THROW(msg);
         }
     }
 }

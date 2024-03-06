@@ -67,6 +67,7 @@ namespace Falcor
     */
     class FALCOR_API StandardMaterial : public BasicMaterial
     {
+        FALCOR_OBJECT(StandardMaterial)
     public:
         static ref<StandardMaterial> create(ref<Device> pDevice, const std::string& name = "", ShadingModel shadingModel = ShadingModel::MetalRough)
         {
@@ -80,8 +81,8 @@ namespace Falcor
         */
         bool renderUI(Gui::Widgets& widget) override;
 
-        Program::ShaderModuleList getShaderModules() const override;
-        Program::TypeConformanceList getTypeConformances() const override;
+        ProgramDesc::ShaderModuleList getShaderModules() const override;
+        TypeConformanceList getTypeConformances() const override;
 
         /** Get the shading model.
         */
@@ -128,6 +129,16 @@ namespace Falcor
         {
             mHeader.setEnableLightProfile( enabled );
         }
+
+        void setHasEntryPointVolumeProperties(bool hasEntryPointVolumeProperties);
+
+        bool getHasEntryPointVolumeProperties() const;
+
+        DefineList getDefines() const override;
+
+        const MaterialParamLayout& getParamLayout() const override;
+        SerializedMaterialParams serializeParams() const override;
+        void deserializeParams(const SerializedMaterialParams& params) override;
 
     protected:
         void updateDeltaSpecularFlag() override;

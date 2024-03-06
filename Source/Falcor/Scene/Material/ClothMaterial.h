@@ -49,13 +49,14 @@ namespace Falcor
     */
     class FALCOR_API ClothMaterial : public BasicMaterial
     {
+        FALCOR_OBJECT(ClothMaterial)
     public:
         static ref<ClothMaterial> create(ref<Device> pDevice, const std::string& name) { return make_ref<ClothMaterial>(pDevice, name); };
 
         ClothMaterial(ref<Device> pDevice, const std::string& name);
 
-        Program::ShaderModuleList getShaderModules() const override;
-        Program::TypeConformanceList getTypeConformances() const override;
+        ProgramDesc::ShaderModuleList getShaderModules() const override;
+        TypeConformanceList getTypeConformances() const override;
 
         /** Set the roughness.
         */

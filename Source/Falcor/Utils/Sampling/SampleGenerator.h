@@ -29,7 +29,7 @@
 #include "SampleGeneratorType.slangh"
 #include "Core/Macros.h"
 #include "Core/Object.h"
-#include "Core/API/Shader.h"
+#include "Core/Program/DefineList.h"
 #include "Core/Program/ShaderVar.h"
 #include "Utils/UI/Gui.h"
 #include <functional>
@@ -48,6 +48,7 @@ class RenderContext;
  */
 class FALCOR_API SampleGenerator : public Object
 {
+    FALCOR_OBJECT(SampleGenerator)
 public:
     virtual ~SampleGenerator() = default;
 
@@ -63,13 +64,13 @@ public:
      * Get macro definitions for this sample generator.
      * @return Macro definitions that must be set on the shader program that uses this sampler.
      */
-    virtual Shader::DefineList getDefines() const;
+    virtual DefineList getDefines() const;
 
     /**
      * Binds the data to a program vars object.
      * @param[in] pVars ProgramVars of the program to set data into.
      */
-    virtual void setShaderData(const ShaderVar& var) const {}
+    virtual void bindShaderData(const ShaderVar& var) const {}
 
     /**
      * Render the sampler's UI.
@@ -81,7 +82,7 @@ public:
      * This should be called at the beginning of each frame for samplers that do extra setup for each frame.
      * @param[in] pRenderContext Render context.
      * @param[in] frameDim Current frame dimension.
-     * @return Returns true if internal state has changed and setShaderData() should be called before using the sampler.
+     * @return Returns true if internal state has changed and bindShaderData() should be called before using the sampler.
      */
     virtual bool beginFrame(RenderContext* pRenderContext, const uint2& frameDim) { return false; }
 

@@ -45,6 +45,7 @@ namespace Falcor
     */
     class FALCOR_API MERLMixMaterial : public Material
     {
+        FALCOR_OBJECT(MERLMixMaterial)
     public:
         static ref<MERLMixMaterial> create(ref<Device> pDevice, const std::string& name, const std::vector<std::filesystem::path>& paths) { return make_ref<MERLMixMaterial>(pDevice, name, paths); }
 
@@ -54,9 +55,9 @@ namespace Falcor
         Material::UpdateFlags update(MaterialSystem* pOwner) override;
         bool isEqual(const ref<Material>& pOther) const override;
         MaterialDataBlob getDataBlob() const override { return prepareDataBlob(mData); }
-        Program::ShaderModuleList getShaderModules() const override;
-        Program::TypeConformanceList getTypeConformances() const override;
-        int getBufferCount() const override { return 1; }
+        ProgramDesc::ShaderModuleList getShaderModules() const override;
+        TypeConformanceList getTypeConformances() const override;
+        size_t getMaxBufferCount() const override { return 1; }
 
         bool setTexture(const TextureSlot slot, const ref<Texture>& pTexture) override;
         void setDefaultTextureSampler(const ref<Sampler>& pSampler) override;

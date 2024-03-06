@@ -26,11 +26,9 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #include "LightBVHBuilder.h"
-#include "Core/Assert.h"
-#include "Core/Errors.h"
+#include "Core/Error.h"
 #include "Utils/Logger.h"
 #include "Utils/Timing/Profiler.h"
-#include "Utils/Scripting/ScriptBindings.h"
 #include "Utils/Math/MathConstants.slangh"
 #include <algorithm>
 
@@ -195,7 +193,7 @@ namespace
                                                delta + theta <= oTheta + 1e-3f);
                                if (!dInCone)
                                {
-                                   throw RuntimeError("Error in coneUnion(): angle diff {} > spread {}", delta + theta, oTheta);
+                                   FALCOR_THROW("Error in coneUnion(): angle diff {} > spread {}", delta + theta, oTheta);
                                }
                            };
         checkInside(aDir, aTheta);
@@ -217,13 +215,6 @@ namespace
         const float3 dims = max(float3(epsilon), bb.extent());
         return dims.x * dims.y * dims.z;
     }
-
-    const Gui::DropdownList kSplitHeuristicList =
-    {
-        { (uint32_t)LightBVHBuilder::SplitHeuristic::Equal, "Equal" },
-        { (uint32_t)LightBVHBuilder::SplitHeuristic::BinnedSAH, "Binned SAH" },
-        { (uint32_t)LightBVHBuilder::SplitHeuristic::BinnedSAOH, "Binned SAOH" }
-    };
 }
 
 namespace Falcor
@@ -276,11 +267,11 @@ namespace Falcor
         // Validate options.
         if (mOptions.maxTriangleCountPerLeaf > kMaxLeafTriangleCount)
         {
-            throw RuntimeError("Max triangle count per leaf exceeds the maximum supported ({})", kMaxLeafTriangleCount);
+            FALCOR_THROW("Max triangle count per leaf exceeds the maximum supported ({})", kMaxLeafTriangleCount);
         }
         if (data.trianglesData.size() > kMaxLeafTriangleOffset + kMaxLeafTriangleCount)
         {
-            throw RuntimeError("Emissive triangle count exceeds the maximum supported ({})", kMaxLeafTriangleOffset + kMaxLeafTriangleCount);
+            FALCOR_THROW("Emissive triangle count exceeds the maximum supported ({})", kMaxLeafTriangleOffset + kMaxLeafTriangleCount);
         }
 
         // Allocate temporary memory for the BVH build.
@@ -329,7 +320,7 @@ namespace Falcor
 
         optionsChanged |= widget.checkbox("Allow refitting", options.allowRefitting);
         optionsChanged |= widget.var("Max triangle count per leaf", options.maxTriangleCountPerLeaf, 1u, kMaxLeafTriangleCount);
-        optionsChanged |= widget.dropdown("Split heuristic", kSplitHeuristicList, (uint32_t&)options.splitHeuristicSelection);
+        optionsChanged |= widget.dropdown("Split heuristic", options.splitHeuristicSelection);
 
         if (auto splitGroup = widget.group("Split Options", true))
         {
@@ -400,7 +391,7 @@ namespace Falcor
             {
                 // This is an unrecoverable error since we use bit masks to represent the traversal path from
                 // the root node to each leaf node in the tree, which is necessary for pdf computation with MIS.
-                throw RuntimeError("BVH depth of {} reached. Maximum of {} allowed.", depth + 1, kMaxBVHDepth);
+                FALCOR_THROW("BVH depth of {} reached. Maximum of {} allowed.", depth + 1, kMaxBVHDepth);
             }
 
             uint32_t leftIndex = buildInternal(options, splitHeuristic, bitmask | (0ull << depth), depth + 1, Range(triangleRange.begin, splitResult.triangleIndex), data);
@@ -885,31 +876,7 @@ namespace Falcor
         case SplitHeuristic::BinnedSAOH:
             return computeSplitWithBinnedSAOH;
         default:
-            throw RuntimeError("Unsupported SplitHeuristic: {}", static_cast<uint32_t>(heuristic));
+            FALCOR_THROW("Unsupported SplitHeuristic: {}", static_cast<uint32_t>(heuristic));
         }
-    }
-
-    FALCOR_SCRIPT_BINDING(LightBVHBuilder)
-    {
-        pybind11::enum_<LightBVHBuilder::SplitHeuristic> splitHeuristic(m, "SplitHeuristic");
-        splitHeuristic.value("Equal", LightBVHBuilder::SplitHeuristic::Equal);
-        splitHeuristic.value("BinnedSAH", LightBVHBuilder::SplitHeuristic::BinnedSAH);
-        splitHeuristic.value("BinnedSAOH", LightBVHBuilder::SplitHeuristic::BinnedSAOH);
-
-        // TODO use a nested class in the bindings when supported.
-        ScriptBindings::SerializableStruct<LightBVHBuilder::Options> options(m, "LightBVHBuilderOptions");
-#define field(f_) field(#f_, &LightBVHBuilder::Options::f_)
-        options.field(splitHeuristicSelection);
-        options.field(maxTriangleCountPerLeaf);
-        options.field(binCount);
-        options.field(volumeEpsilon);
-        options.field(splitAlongLargest);
-        options.field(useVolumeOverSA);
-        options.field(useLeafCreationCost);
-        options.field(createLeavesASAP);
-        options.field(allowRefitting);
-        options.field(usePreintegration);
-        options.field(useLightingCones);
-#undef field
     }
 }

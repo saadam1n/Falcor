@@ -31,58 +31,40 @@
 
 namespace
 {
-    const char kShaderFile[] = "RenderPasses/WhittedRayTracer/WhittedRayTracer.rt.slang";
+const char kShaderFile[] = "RenderPasses/WhittedRayTracer/WhittedRayTracer.rt.slang";
 
-    const char kMaxBounces[] = "maxBounces";
-    const char kTexLODMode[] = "texLODMode";
-    const char kRayConeMode[] = "rayConeMode";
-    const char kRayConeFilterMode[] = "rayConeFilterMode";
-    const char kRayDiffFilterMode[] = "rayDiffFilterMode";
-    const char kUseRoughnessToVariance[] = "useRoughnessToVariance";
+const char kMaxBounces[] = "maxBounces";
+const char kTexLODMode[] = "texLODMode";
+const char kRayConeMode[] = "rayConeMode";
+const char kRayConeFilterMode[] = "rayConeFilterMode";
+const char kRayDiffFilterMode[] = "rayDiffFilterMode";
+const char kUseRoughnessToVariance[] = "useRoughnessToVariance";
 
-    const Gui::DropdownList kTexLODModeList =
-    {
-        { uint32_t(TexLODMode::Mip0), "Mip0" },
-        { uint32_t(TexLODMode::RayCones), "Ray cones" },
-        { uint32_t(TexLODMode::RayDiffs), "Ray diffs" },
-    };
+// Ray tracing settings that affect the traversal stack size.
+// These should be set as small as possible.
+const uint32_t kMaxPayloadSizeBytes = 164;
+const uint32_t kMaxAttributeSizeBytes = 8;
+const uint32_t kMaxRecursionDepth = 2;
 
-    const Gui::DropdownList kRayFootprintFilterModeList =
-    {
-        { uint32_t(RayFootprintFilterMode::Isotropic), "Isotropic" },
-        { uint32_t(RayFootprintFilterMode::Anisotropic), "Anisotropic" },
-        { uint32_t(RayFootprintFilterMode::AnisotropicWhenRefraction), "Anisotropic only for refraction" },
-    };
-
-    const Gui::DropdownList kRayConeModeList =
-    {
-        { uint32_t(RayConeMode::Combo), "Combo" },
-        { uint32_t(RayConeMode::Unified), "Unified" },
-    };
-
-    // Ray tracing settings that affect the traversal stack size.
-    // These should be set as small as possible.
-    const uint32_t kMaxPayloadSizeBytes = 164;
-    const uint32_t kMaxAttributeSizeBytes = 8;
-    const uint32_t kMaxRecursionDepth = 2;
-
-    const ChannelList kOutputChannels =
-    {
-        { "color",          "gOutputColor",               "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
-    };
-
-    const ChannelList kInputChannels =
-    {
-        { "posW",           "gWorldPosition",             "World-space position (xyz) and foreground flag (w)"       },
-        { "normalW",        "gWorldShadingNormal",        "World-space shading normal (xyz)"                         },
-        { "tangentW",       "gWorldShadingTangent",       "World-space shading tangent (xyz) and sign (w)"           },
-        { "faceNormalW",    "gWorldFaceNormal",           "Face normal in world space (xyz)",                        },
-        { "texC",           "gTextureCoord",              "Texture coordinate",                                      },
-        { "texGrads",       "gTextureGrads",              "Texture gradients", true /* optional */                   },
-        { "mtlData",        "gMaterialData",              "Material data"                                            },
-        { "vbuffer",        "gVBuffer",                   "V-buffer buffer in packed format"                         },
-    };
+const ChannelList kOutputChannels = {
+    // clang-format off
+    { "color",          "gOutputColor",               "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
+    // clang-format on
 };
+
+const ChannelList kInputChannels = {
+    // clang-format off
+    { "posW",           "gWorldPosition",             "World-space position (xyz) and foreground flag (w)"       },
+    { "normalW",        "gWorldShadingNormal",        "World-space shading normal (xyz)"                         },
+    { "tangentW",       "gWorldShadingTangent",       "World-space shading tangent (xyz) and sign (w)"           },
+    { "faceNormalW",    "gWorldFaceNormal",           "Face normal in world space (xyz)",                        },
+    { "texC",           "gTextureCoord",              "Texture coordinate",                                      },
+    { "texGrads",       "gTextureGrads",              "Texture gradients", true /* optional */                   },
+    { "mtlData",        "gMaterialData",              "Material data"                                            },
+    { "vbuffer",        "gVBuffer",                   "V-buffer buffer in packed format"                         },
+    // clang-format on
+};
+}; // namespace
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
@@ -93,30 +75,27 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 void WhittedRayTracer::registerBindings(pybind11::module& m)
 {
     pybind11::class_<WhittedRayTracer, RenderPass, ref<WhittedRayTracer>> pass(m, "WhittedRayTracer");
-
-    pybind11::enum_<RayConeMode> rayConeMode(m, "RayConeMode");
-    rayConeMode.value("Combo", RayConeMode::Combo);
-    rayConeMode.value("Unified", RayConeMode::Unified);
-
-    pybind11::enum_<RayFootprintFilterMode> rayConeFilterMode(m, "RayFootprintFilterMode");
-    rayConeFilterMode.value("Isotropic", RayFootprintFilterMode::Isotropic);
-    rayConeFilterMode.value("Anisotropic", RayFootprintFilterMode::Anisotropic);
-    rayConeFilterMode.value("AnisotropicWhenRefraction", RayFootprintFilterMode::AnisotropicWhenRefraction);
 }
 
-WhittedRayTracer::WhittedRayTracer(ref<Device> pDevice, const Dictionary& dict)
-    : RenderPass(pDevice)
+WhittedRayTracer::WhittedRayTracer(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
     // Parse dictionary.
-    for (const auto& [key, value] : dict)
+    for (const auto& [key, value] : props)
     {
-        if (key == kMaxBounces) mMaxBounces = (uint32_t)value;
-        else if (key == kTexLODMode)  mTexLODMode = value;
-        else if (key == kRayConeMode) mRayConeMode = value;
-        else if (key == kRayConeFilterMode) mRayConeFilterMode = value;
-        else if (key == kRayDiffFilterMode) mRayDiffFilterMode = value;
-        else if (key == kUseRoughnessToVariance)  mUseRoughnessToVariance = value;
-        else logWarning("Unknown field '{}' in a WhittedRayTracer dictionary.", key);
+        if (key == kMaxBounces)
+            mMaxBounces = (uint32_t)value;
+        else if (key == kTexLODMode)
+            mTexLODMode = value;
+        else if (key == kRayConeMode)
+            mRayConeMode = value;
+        else if (key == kRayConeFilterMode)
+            mRayConeFilterMode = value;
+        else if (key == kRayDiffFilterMode)
+            mRayDiffFilterMode = value;
+        else if (key == kUseRoughnessToVariance)
+            mUseRoughnessToVariance = value;
+        else
+            logWarning("Unknown property '{}' in a WhittedRayTracer properties.", key);
     }
 
     // Create a sample generator.
@@ -124,16 +103,16 @@ WhittedRayTracer::WhittedRayTracer(ref<Device> pDevice, const Dictionary& dict)
     FALCOR_ASSERT(mpSampleGenerator);
 }
 
-Dictionary WhittedRayTracer::getScriptingDictionary()
+Properties WhittedRayTracer::getProperties() const
 {
-    Dictionary d;
-    d[kMaxBounces] = mMaxBounces;
-    d[kTexLODMode] = mTexLODMode;
-    d[kRayConeMode] = mRayConeMode;
-    d[kRayConeFilterMode] = mRayConeFilterMode;
-    d[kRayDiffFilterMode] = mRayDiffFilterMode;
-    d[kUseRoughnessToVariance] = mUseRoughnessToVariance;
-    return d;
+    Properties props;
+    props[kMaxBounces] = mMaxBounces;
+    props[kTexLODMode] = mTexLODMode;
+    props[kRayConeMode] = mRayConeMode;
+    props[kRayConeFilterMode] = mRayConeFilterMode;
+    props[kRayDiffFilterMode] = mRayDiffFilterMode;
+    props[kUseRoughnessToVariance] = mUseRoughnessToVariance;
+    return props;
 }
 
 RenderPassReflection WhittedRayTracer::reflect(const CompileData& compileData)
@@ -163,14 +142,17 @@ void WhittedRayTracer::execute(RenderContext* pRenderContext, const RenderData& 
         for (auto it : kOutputChannels)
         {
             Texture* pDst = renderData.getTexture(it.name).get();
-            if (pDst) pRenderContext->clearTexture(pDst);
+            if (pDst)
+                pRenderContext->clearTexture(pDst);
         }
         return;
     }
 
-    if (is_set(mpScene->getUpdates(), Scene::UpdateFlags::GeometryChanged))
+    // Check for scene changes that require shader recompilation.
+    if (is_set(mpScene->getUpdates(), Scene::UpdateFlags::RecompileNeeded) ||
+        is_set(mpScene->getUpdates(), Scene::UpdateFlags::GeometryChanged))
     {
-        throw RuntimeError("WhittedRayTracer: This render pass does not support scene geometry changes.");
+        FALCOR_THROW("This render pass does not support scene changes that require shader recompilation.");
     }
 
     setStaticParams(mTracer.pProgram.get());
@@ -182,7 +164,8 @@ void WhittedRayTracer::execute(RenderContext* pRenderContext, const RenderData& 
 
     // Prepare program vars. This may trigger shader compilation.
     // The program should have all necessary defines set at this point.
-    if (!mTracer.pVars) prepareVars();
+    if (!mTracer.pVars)
+        prepareVars();
     FALCOR_ASSERT(mTracer.pVars);
 
     // Get dimensions of ray dispatch.
@@ -204,8 +187,10 @@ void WhittedRayTracer::execute(RenderContext* pRenderContext, const RenderData& 
             var[desc.texname] = renderData.getTexture(desc.name);
         }
     };
-    for (auto channel : kInputChannels) bind(channel);
-    for (auto channel : kOutputChannels) bind(channel);
+    for (auto channel : kInputChannels)
+        bind(channel);
+    for (auto channel : kOutputChannels)
+        bind(channel);
 
     // Spawn the rays.
     mpScene->raytrace(pRenderContext, mTracer.pProgram.get(), mTracer.pVars, uint3(targetDim, 1));
@@ -220,27 +205,24 @@ void WhittedRayTracer::renderUI(Gui::Widgets& widget)
     dirty |= widget.var("Max bounces", mMaxBounces, 0u, 10u);
     widget.tooltip("Maximum path length for indirect illumination.\n0 = direct only\n1 = one indirect bounce etc.", true);
 
-    uint32_t texLODModeIndex = static_cast<uint32_t>(mTexLODMode);
-    if (widget.dropdown("Texture LOD mode", kTexLODModeList, texLODModeIndex))
+    if (auto mode = mTexLODMode; widget.dropdown("Texture LOD mode", mode))
     {
-        setTexLODMode(TexLODMode(texLODModeIndex));
+        setTexLODMode(mode);
         dirty = true;
     }
     widget.tooltip("The texture level-of-detail mode to use.");
     if (mTexLODMode == TexLODMode::RayCones)
     {
-        uint32_t rayConeModeIndex = static_cast<uint32_t>(mRayConeMode);
-        if (widget.dropdown("Ray cone mode", kRayConeModeList, rayConeModeIndex))
+        if (auto mode = mRayConeMode; widget.dropdown("Ray cone mode", mode))
         {
-            setRayConeMode(RayConeMode(rayConeModeIndex));
+            setRayConeMode(mode);
             dirty = true;
         }
         widget.tooltip("The variant of ray cones to use.");
 
-        uint32_t rayConeFilterModeIndex = static_cast<uint32_t>(mRayConeFilterMode);
-        if (widget.dropdown("Ray cone filter mode", kRayFootprintFilterModeList, rayConeFilterModeIndex))
+        if (auto mode = mRayConeFilterMode; widget.dropdown("Ray cone filter mode", mode))
         {
-            setRayConeFilterMode(RayFootprintFilterMode(rayConeFilterModeIndex));
+            setRayConeFilterMode(mode);
             dirty = true;
         }
         widget.tooltip("What type of ray cone filter method to use beyond the first hit");
@@ -254,10 +236,9 @@ void WhittedRayTracer::renderUI(Gui::Widgets& widget)
 
     if (mTexLODMode == TexLODMode::RayDiffs)
     {
-        uint32_t rayDiffFilterModeIndex = static_cast<uint32_t>(mRayDiffFilterMode);
-        if (widget.dropdown("Ray diff filter mode", kRayFootprintFilterModeList, rayDiffFilterModeIndex))
+        if (auto mode = mRayDiffFilterMode; widget.dropdown("Ray diff filter mode", mode))
         {
-            setRayDiffFilterMode(RayFootprintFilterMode(rayDiffFilterModeIndex));
+            setRayDiffFilterMode(mode);
             dirty = true;
         }
         widget.tooltip("What type of ray diff filter method to use beyond the first hit");
@@ -292,7 +273,7 @@ void WhittedRayTracer::setScene(RenderContext* pRenderContext, const ref<Scene>&
         }
 
         // Create ray tracing program.
-        RtProgram::Desc desc;
+        ProgramDesc desc;
         desc.addShaderModules(mpScene->getShaderModules());
         desc.addShaderLibrary(kShaderFile);
         desc.addTypeConformances(mpScene->getTypeConformances());
@@ -305,10 +286,12 @@ void WhittedRayTracer::setScene(RenderContext* pRenderContext, const ref<Scene>&
         sbt->setRayGen(desc.addRayGen("rayGen"));
         sbt->setMiss(0, desc.addMiss("scatterMiss"));
         sbt->setMiss(1, desc.addMiss("shadowMiss"));
-        sbt->setHitGroup(0, mpScene->getGeometryIDs(Scene::GeometryType::TriangleMesh), desc.addHitGroup("scatterClosestHit", "scatterAnyHit"));
+        sbt->setHitGroup(
+            0, mpScene->getGeometryIDs(Scene::GeometryType::TriangleMesh), desc.addHitGroup("scatterClosestHit", "scatterAnyHit")
+        );
         sbt->setHitGroup(1, mpScene->getGeometryIDs(Scene::GeometryType::TriangleMesh), desc.addHitGroup("", "shadowAnyHit"));
 
-        mTracer.pProgram = RtProgram::create(mpDevice, desc, mpScene->getSceneDefines());
+        mTracer.pProgram = Program::create(mpDevice, desc, mpScene->getSceneDefines());
     }
 }
 
@@ -325,12 +308,12 @@ void WhittedRayTracer::prepareVars()
 
     // Bind utility classes into shared data.
     auto var = mTracer.pVars->getRootVar();
-    mpSampleGenerator->setShaderData(var);
+    mpSampleGenerator->bindShaderData(var);
 }
 
-void WhittedRayTracer::setStaticParams(RtProgram* pProgram) const
+void WhittedRayTracer::setStaticParams(Program* pProgram) const
 {
-    Program::DefineList defines;
+    DefineList defines;
     defines.add("MAX_BOUNCES", std::to_string(mMaxBounces));
     defines.add("TEX_LOD_MODE", std::to_string(static_cast<uint32_t>(mTexLODMode)));
     defines.add("RAY_CONE_MODE", std::to_string(static_cast<uint32_t>(mRayConeMode)));

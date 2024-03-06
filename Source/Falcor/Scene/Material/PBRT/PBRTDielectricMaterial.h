@@ -51,13 +51,14 @@ namespace Falcor
     */
     class FALCOR_API PBRTDielectricMaterial : public BasicMaterial
     {
+        FALCOR_OBJECT(PBRTDielectricMaterial)
     public:
         static ref<PBRTDielectricMaterial> create(ref<Device> pDevice, const std::string& name) { return make_ref<PBRTDielectricMaterial>(pDevice, name); }
 
         PBRTDielectricMaterial(ref<Device> pDevice, const std::string& name);
 
-        Program::ShaderModuleList getShaderModules() const override;
-        Program::TypeConformanceList getTypeConformances() const override;
+        ProgramDesc::ShaderModuleList getShaderModules() const override;
+        TypeConformanceList getTypeConformances() const override;
 
         /** Set the roughness.
         */

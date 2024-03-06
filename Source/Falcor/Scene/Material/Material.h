@@ -29,8 +29,10 @@
 #include "MaterialData.slang"
 #include "TextureHandle.slang"
 #include "MaterialTypeRegistry.h"
+#include "MaterialParamLayout.h"
+#include "SerializedMaterialParams.h"
 #include "Core/Macros.h"
-#include "Core/Errors.h"
+#include "Core/Error.h"
 #include "Core/Object.h"
 #include "Core/API/Formats.h"
 #include "Core/API/Texture.h"
@@ -54,6 +56,7 @@ namespace Falcor
     */
     class FALCOR_API Material : public Object
     {
+        FALCOR_OBJECT(Material)
     public:
         /** Flags indicating if and what was updated in the material.
         */
@@ -64,6 +67,7 @@ namespace Falcor
             DataChanged         = 0x2,  ///< Material data (parameters) changed.
             ResourcesChanged    = 0x4,  ///< Material resources (textures, buffers, samplers) changed.
             DisplacementChanged = 0x8,  ///< Displacement mapping parameters changed (only for materials that support displacement).
+            EmissiveChanged     = 0x10, ///< Material emissive properties changed.
         };
 
         /** Texture slots available for use.
@@ -148,6 +152,11 @@ namespace Falcor
         */
         virtual bool isEmissive() const { return mHeader.isEmissive(); }
 
+        /** Returns true if the material is dynamic.
+            Dynamic materials are updated every frame, otherwise `update()` is called reactively upon changes.
+        */
+        virtual bool isDynamic() const { return false; }
+
         /** Compares material to another material.
             \param[in] pOther Other material.
             \return true if all materials properties *except* the name are identical.
@@ -186,6 +195,10 @@ namespace Falcor
         */
         virtual float getAlphaThreshold() const { return (float)mHeader.getAlphaThreshold(); }
 
+        /** Get the alpha mask texture handle.
+        */
+        virtual TextureHandle getAlphaTextureHandle() const { return mHeader.getAlphaTextureHandle(); }
+
         /** Set the nested priority used for nested dielectrics.
         */
         virtual void setNestedPriority(uint32_t priority);
@@ -194,6 +207,14 @@ namespace Falcor
             \return Nested priority, with 0 reserved for the highest possible priority.
         */
         virtual uint32_t getNestedPriority() const { return mHeader.getNestedPriority(); }
+
+        /** Set the index of refraction.
+        */
+        virtual void setIndexOfRefraction(float IoR);
+
+        /** Get the index of refraction.
+        */
+        virtual float getIndexOfRefraction() const { return (float)mHeader.getIoR(); }
 
         /** Get information about a texture slot.
             \param[in] slot The texture slot.
@@ -280,21 +301,21 @@ namespace Falcor
             The shader modules must be added to any program using the material.
             \return List of shader modules.
         */
-        virtual Program::ShaderModuleList getShaderModules() const = 0;
+        virtual ProgramDesc::ShaderModuleList getShaderModules() const = 0;
 
         /** Get type conformances for the material.
             The type conformances must be set on any program using the material.
         */
-        virtual Program::TypeConformanceList getTypeConformances() const = 0;
+        virtual TypeConformanceList getTypeConformances() const = 0;
 
         /** Get shader defines for the material.
             The defines must be set on any program using the material.
         */
-        virtual Program::DefineList getDefines() const { return {}; }
+        virtual DefineList getDefines() const { return {}; }
 
         /** Get the number of buffers used by this material.
         */
-        virtual int getBufferCount() const { return 0; }
+        virtual size_t getMaxBufferCount() const { return 0; }
 
         /** Returns the maximum number of textures this material will use.
             By default we use the number of texture slots. The reason for this is that,
@@ -302,6 +323,10 @@ namespace Falcor
             it is not possible to allocate more. This limitation will be lifted in the future.
         */
         virtual size_t getMaxTextureCount() const { return (size_t)Material::TextureSlot::Count; }
+
+        /** Get the number of 3D textures used by this material.
+        */
+        virtual size_t getMaxTexture3DCount() const { return 0; }
 
         // Temporary convenience function to downcast Material to BasicMaterial.
         // This is because a large portion of the interface hasn't been ported to the Material base class yet.
@@ -312,7 +337,11 @@ namespace Falcor
             Used to set `anyValueSize` on `IMaterialInstance` above the default (128B), for exceptionally large materials.
             Large material instances can have a singificant performance impact.
         */
-        virtual size_t getMaterialInstanceByteSize() { return 128; }
+        virtual size_t getMaterialInstanceByteSize() const { return 128; }
+
+        virtual const MaterialParamLayout& getParamLayout() const { FALCOR_THROW("Material does not have a parameter layout."); }
+        virtual SerializedMaterialParams serializeParams() const { FALCOR_THROW("Material does not support serializing parameters."); }
+        virtual void deserializeParams(const SerializedMaterialParams& params) { FALCOR_THROW("Material does not support deserializing parameters."); }
 
     protected:
         Material(ref<Device> pDevice, const std::string& name, MaterialType type);
@@ -369,7 +398,7 @@ namespace Falcor
             tostr(Index);
 #undef tostr
         default:
-            throw ArgumentError("Invalid texture slot");
+            FALCOR_THROW("Invalid texture slot");
         }
     }
 

@@ -26,7 +26,7 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #include "Testing/UnitTest.h"
-#include "Utils/Settings.h"
+#include "Utils/Settings/Settings.h"
 #include "Utils/Scripting/ScriptBindings.h"
 #include "Utils/Scripting/Scripting.h"
 
@@ -103,7 +103,7 @@ CPU_TEST(Settings_OptionsIntBool)
 
     Settings settings;
     settings.addOptions(pyDict);
-    SettingsProperties options = settings.getOptions();
+    Settings::Options options = settings.getOptions();
 
     EXPECT_EQ(options.get("TrueAsBool", false), true);
     EXPECT_EQ(options.get("TrueAsBool", 0), 1);
@@ -124,24 +124,7 @@ CPU_TEST(Settings_OptionsNesting)
 
     Settings settings;
     settings.addOptions(pyDict);
-    SettingsProperties options = settings.getOptions();
-
-    {
-        SettingsProperties mogwai = options.get("mogwai", SettingsProperties());
-        EXPECT_EQ(mogwai.get("value", 0), 17);
-    }
-
-    EXPECT(options.get<SettingsProperties>("mogwai"));
-    EXPECT(!options.get<SettingsProperties>("user"));
-
-    if (auto local = options.get<SettingsProperties>("mogwai"))
-    {
-        EXPECT_EQ(local->get("value", 0), 17);
-    }
-    else
-    {
-        EXPECT(false); // never get here
-    }
+    const Settings::Options& options = settings.getOptions();
 
     EXPECT_EQ(options.get("mogwai:value", 0), 17);
 }
@@ -157,7 +140,7 @@ CPU_TEST(Settings_OptionsTypes)
 
     Settings settings;
     settings.addOptions(pyDict);
-    SettingsProperties options = settings.getOptions();
+    const Settings::Options& options = settings.getOptions();
 
     EXPECT_EQ(options.get("string", std::string()), "string");
     EXPECT_EQ(options.get("float", 0.f), 1.f);
@@ -172,38 +155,9 @@ CPU_TEST(Settings_OptionsTypes)
     EXPECT_EQ(result[0], validTuple[0]);
     EXPECT_EQ(result[1], validTuple[1]);
 
-    bool wrongTypeString = false;
-    try
-    {
-        options.get("string", int(3));
-    }
-    catch (const Falcor::SettingsProperties::TypeError&)
-    {
-        wrongTypeString = true;
-    }
-    EXPECT(wrongTypeString);
-
-    bool wrongTypeInt = false;
-    try
-    {
-        options.get("int", std::string("test"));
-    }
-    catch (const Falcor::SettingsProperties::TypeError&)
-    {
-        wrongTypeInt = true;
-    }
-    EXPECT(wrongTypeInt);
-
-    bool wrongTypeArray = false;
-    try
-    {
-        options.get("int[2]", float(0.f));
-    }
-    catch (const Falcor::SettingsProperties::TypeError&)
-    {
-        wrongTypeArray = true;
-    }
-    EXPECT(wrongTypeArray);
+    EXPECT_THROW_AS(options.get("string", int(3)), Falcor::Settings::TypeError);
+    EXPECT_THROW_AS(options.get("int", std::string("test")), Falcor::Settings::TypeError);
+    EXPECT_THROW_AS(options.get("int[2]", float(0.f)), Falcor::Settings::TypeError);
 }
 
 CPU_TEST(Settings_OptionsOverride)
@@ -217,7 +171,7 @@ CPU_TEST(Settings_OptionsOverride)
         settings.addOptions(pyDict);
     }
 
-    SettingsProperties options = settings.getOptions();
+    Settings::Options options = settings.getOptions();
 
     EXPECT_EQ(options.get("mogwai:value", 0), 17);
 
@@ -350,6 +304,33 @@ CPU_TEST(Settings_AttributeAssign)
     EXPECT_EQ(shapes[3].multiplyEmission, 3);
 }
 
+CPU_TEST(Settings_AttributeFilters)
+{
+    pybind11::list pyList;
+    {
+        pybind11::dict pyDict;
+        pyDict["regex"] = ".*";
+        pyDict["attributes"] = pybind11::dict();
+        pyDict["attributes"]["curves"] = pybind11::dict();
+        pyDict["attributes"]["curves"]["ShadingRate"] = 5.f;
+        pyList.append(pyDict);
+    }
+    {
+        pybind11::dict pyDict;
+        pyDict["regex"] = "/World/Tiger_Fur.*";
+        pyDict["attributes"] = pybind11::dict();
+        pyDict["attributes"]["curves"] = pybind11::dict();
+        pyDict["attributes"]["curves"]["ShadingRate"] = 0.1f;
+        pyList.append(pyDict);
+    }
+
+    Settings settings;
+    settings.addFilteredAttributes(pyList);
+
+    EXPECT_EQ(settings.getAttribute<float>("/World/Tiger_Mane/top", "curves:ShadingRate", 1.f), 5.f);
+    EXPECT_EQ(settings.getAttribute<float>("/World/Tiger_Fur/back", "curves:ShadingRate", 1.f), 0.1f);
+}
+
 CPU_TEST(Settings_UpdatePathsColon)
 {
     Settings settings;
@@ -357,44 +338,44 @@ CPU_TEST(Settings_UpdatePathsColon)
         pybind11::dict pyDict;
         pyDict["standardsearchpath:media"] = C_DRIVE "/media";
         settings.addOptions(pyDict);
-        ASSERT_EQ(settings.getSearchDirectories("media").get().size(), 1);
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[0], std::filesystem::weakly_canonical(C_DRIVE "/media"));
+        ASSERT_EQ(settings.getSearchDirectories("media").size(), 1);
+        EXPECT_EQ(settings.getSearchDirectories("media")[0], std::filesystem::weakly_canonical(C_DRIVE "/media"));
     }
 
     {
         pybind11::dict pyDict;
         pyDict["standardsearchpath:media"] = C_DRIVE "/media/different";
         settings.addOptions(pyDict);
-        ASSERT_EQ(settings.getSearchDirectories("media").get().size(), 1);
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[0], std::filesystem::weakly_canonical(C_DRIVE "/media/different"));
+        ASSERT_EQ(settings.getSearchDirectories("media").size(), 1);
+        EXPECT_EQ(settings.getSearchDirectories("media")[0], std::filesystem::weakly_canonical(C_DRIVE "/media/different"));
     }
 
     {
         pybind11::dict pyDict;
         pyDict["standardsearchpath:media"] = "&;" C_DRIVE "/media/two";
         settings.addOptions(pyDict);
-        ASSERT_EQ(settings.getSearchDirectories("media").get().size(), 2);
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[0], std::filesystem::weakly_canonical(C_DRIVE "/media/different"));
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[1], std::filesystem::weakly_canonical(C_DRIVE "/media/two"));
+        ASSERT_EQ(settings.getSearchDirectories("media").size(), 2);
+        EXPECT_EQ(settings.getSearchDirectories("media")[0], std::filesystem::weakly_canonical(C_DRIVE "/media/different"));
+        EXPECT_EQ(settings.getSearchDirectories("media")[1], std::filesystem::weakly_canonical(C_DRIVE "/media/two"));
     }
 
     {
         pybind11::dict pyDict;
         pyDict["searchpath:media"] = "&;" C_DRIVE "/media/three";
         settings.addOptions(pyDict);
-        ASSERT_EQ(settings.getSearchDirectories("media").get().size(), 1);
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[0], std::filesystem::weakly_canonical(C_DRIVE "/media/three"));
+        ASSERT_EQ(settings.getSearchDirectories("media").size(), 1);
+        EXPECT_EQ(settings.getSearchDirectories("media")[0], std::filesystem::weakly_canonical(C_DRIVE "/media/three"));
     }
 
     {
         pybind11::dict pyDict;
         pyDict["searchpath:media"] = "&;@;" C_DRIVE "/media/four";
         settings.addOptions(pyDict);
-        ASSERT_EQ(settings.getSearchDirectories("media").get().size(), 4);
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[0], std::filesystem::weakly_canonical(C_DRIVE "/media/three"));
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[1], std::filesystem::weakly_canonical(C_DRIVE "/media/different"));
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[2], std::filesystem::weakly_canonical(C_DRIVE "/media/two"));
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[3], std::filesystem::weakly_canonical(C_DRIVE "/media/four"));
+        ASSERT_EQ(settings.getSearchDirectories("media").size(), 4);
+        EXPECT_EQ(settings.getSearchDirectories("media")[0], std::filesystem::weakly_canonical(C_DRIVE "/media/three"));
+        EXPECT_EQ(settings.getSearchDirectories("media")[1], std::filesystem::weakly_canonical(C_DRIVE "/media/different"));
+        EXPECT_EQ(settings.getSearchDirectories("media")[2], std::filesystem::weakly_canonical(C_DRIVE "/media/two"));
+        EXPECT_EQ(settings.getSearchDirectories("media")[3], std::filesystem::weakly_canonical(C_DRIVE "/media/four"));
     }
 }
 
@@ -406,8 +387,8 @@ CPU_TEST(Settings_UpdatePathsSeparate)
         pyDict["standardsearchpath"] = pybind11::dict();
         pyDict["standardsearchpath"]["media"] = C_DRIVE "/media";
         settings.addOptions(pyDict);
-        ASSERT_EQ(settings.getSearchDirectories("media").get().size(), 1);
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[0], std::filesystem::weakly_canonical(C_DRIVE "/media"));
+        ASSERT_EQ(settings.getSearchDirectories("media").size(), 1);
+        EXPECT_EQ(settings.getSearchDirectories("media")[0], std::filesystem::weakly_canonical(C_DRIVE "/media"));
     }
 
     {
@@ -415,8 +396,8 @@ CPU_TEST(Settings_UpdatePathsSeparate)
         pyDict["standardsearchpath"] = pybind11::dict();
         pyDict["standardsearchpath"]["media"] = C_DRIVE "/media/different";
         settings.addOptions(pyDict);
-        ASSERT_EQ(settings.getSearchDirectories("media").get().size(), 1);
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[0], std::filesystem::weakly_canonical(C_DRIVE "/media/different"));
+        ASSERT_EQ(settings.getSearchDirectories("media").size(), 1);
+        EXPECT_EQ(settings.getSearchDirectories("media")[0], std::filesystem::weakly_canonical(C_DRIVE "/media/different"));
     }
 
     {
@@ -424,9 +405,9 @@ CPU_TEST(Settings_UpdatePathsSeparate)
         pyDict["standardsearchpath"] = pybind11::dict();
         pyDict["standardsearchpath"]["media"] = "&;" C_DRIVE "/media/two";
         settings.addOptions(pyDict);
-        ASSERT_EQ(settings.getSearchDirectories("media").get().size(), 2);
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[0], std::filesystem::weakly_canonical(C_DRIVE "/media/different"));
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[1], std::filesystem::weakly_canonical(C_DRIVE "/media/two"));
+        ASSERT_EQ(settings.getSearchDirectories("media").size(), 2);
+        EXPECT_EQ(settings.getSearchDirectories("media")[0], std::filesystem::weakly_canonical(C_DRIVE "/media/different"));
+        EXPECT_EQ(settings.getSearchDirectories("media")[1], std::filesystem::weakly_canonical(C_DRIVE "/media/two"));
     }
 
     {
@@ -434,8 +415,8 @@ CPU_TEST(Settings_UpdatePathsSeparate)
         pyDict["searchpath"] = pybind11::dict();
         pyDict["searchpath"]["media"] = "&;" C_DRIVE "/media/three";
         settings.addOptions(pyDict);
-        ASSERT_EQ(settings.getSearchDirectories("media").get().size(), 1);
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[0], std::filesystem::weakly_canonical(C_DRIVE "/media/three"));
+        ASSERT_EQ(settings.getSearchDirectories("media").size(), 1);
+        EXPECT_EQ(settings.getSearchDirectories("media")[0], std::filesystem::weakly_canonical(C_DRIVE "/media/three"));
     }
 
     {
@@ -443,11 +424,11 @@ CPU_TEST(Settings_UpdatePathsSeparate)
         pyDict["searchpath"] = pybind11::dict();
         pyDict["searchpath"]["media"] = "&;@;" C_DRIVE "/media/four";
         settings.addOptions(pyDict);
-        ASSERT_EQ(settings.getSearchDirectories("media").get().size(), 4);
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[0], std::filesystem::weakly_canonical(C_DRIVE "/media/three"));
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[1], std::filesystem::weakly_canonical(C_DRIVE "/media/different"));
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[2], std::filesystem::weakly_canonical(C_DRIVE "/media/two"));
-        EXPECT_EQ(settings.getSearchDirectories("media").get()[3], std::filesystem::weakly_canonical(C_DRIVE "/media/four"));
+        ASSERT_EQ(settings.getSearchDirectories("media").size(), 4);
+        EXPECT_EQ(settings.getSearchDirectories("media")[0], std::filesystem::weakly_canonical(C_DRIVE "/media/three"));
+        EXPECT_EQ(settings.getSearchDirectories("media")[1], std::filesystem::weakly_canonical(C_DRIVE "/media/different"));
+        EXPECT_EQ(settings.getSearchDirectories("media")[2], std::filesystem::weakly_canonical(C_DRIVE "/media/two"));
+        EXPECT_EQ(settings.getSearchDirectories("media")[3], std::filesystem::weakly_canonical(C_DRIVE "/media/four"));
     }
 }
 } // namespace Falcor

@@ -47,12 +47,17 @@ namespace Falcor
     */
     class FALCOR_API PBRTDiffuseMaterial : public BasicMaterial
     {
+        FALCOR_OBJECT(PBRTDiffuseMaterial)
     public:
         static ref<PBRTDiffuseMaterial> create(ref<Device> pDevice, const std::string& name) { return make_ref<PBRTDiffuseMaterial>(pDevice, name); }
 
         PBRTDiffuseMaterial(ref<Device> pDevice, const std::string& name);
 
-        Program::ShaderModuleList getShaderModules() const override;
-        Program::TypeConformanceList getTypeConformances() const override;
+        ProgramDesc::ShaderModuleList getShaderModules() const override;
+        TypeConformanceList getTypeConformances() const override;
+
+        const MaterialParamLayout& getParamLayout() const override;
+        SerializedMaterialParams serializeParams() const override;
+        void deserializeParams(const SerializedMaterialParams& params) override;
     };
 }

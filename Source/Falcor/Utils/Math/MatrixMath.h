@@ -38,7 +38,7 @@
 #include "Vector.h"
 #include "Quaternion.h"
 
-#include "Core/Assert.h"
+#include "Core/Error.h"
 
 #include <fmt/core.h>
 
@@ -59,6 +59,17 @@ template<typename T, int R, int C>
     for (int r = 0; r < R; ++r)
         for (int c = 0; c < C; ++c)
             result[r][c] = lhs[r][c] * rhs;
+    return result;
+}
+
+/// Binary * operator
+template<typename T, int R, int C>
+[[nodiscard]] matrix<T, R, C> operator+(const matrix<T, R, C>& lhs, const matrix<T, R, C>& rhs)
+{
+    matrix<T, R, C> result;
+    for (int r = 0; r < R; ++r)
+        for (int c = 0; c < C; ++c)
+            result[r][c] = lhs[r][c] + rhs[r][c];
     return result;
 }
 
@@ -230,8 +241,10 @@ template<typename T>
 {
     T oneOverDet = T(1) / determinant(m);
     return matrix<T, 2, 2>{
-        +m[1][1] * oneOverDet, -m[0][1] * oneOverDet, // row 0
-        -m[1][0] * oneOverDet, +m[0][0] * oneOverDet  // row 1
+        +m[1][1] * oneOverDet, // 0,0
+        -m[0][1] * oneOverDet, // 0,1
+        -m[1][0] * oneOverDet, // 1,0
+        +m[0][0] * oneOverDet, // 1,1
     };
 }
 
@@ -776,7 +789,7 @@ struct fmt::formatter<Falcor::math::matrix<T, R, C>> : formatter<typename Falcor
             out = ::fmt::format_to(out, "{}", (r == 0) ? "{" : ", ");
             out = formatter<MatrixRowType>::format(matrix.getRow(r), ctx);
         }
-        out = ::fmt::format_to(out, "}}");
+        out = fmt::format_to(out, "}}");
         return out;
     }
 };

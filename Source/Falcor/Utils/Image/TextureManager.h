@@ -32,16 +32,18 @@
 #include "Core/API/Resource.h"
 #include "Core/API/Texture.h"
 #include "Core/Program/ShaderVar.h"
+#include "Scene/Material/TextureHandle.slang"
 #include <condition_variable>
 #include <limits>
 #include <map>
+#include <set>
 #include <memory>
 #include <mutex>
 #include <thread>
 
 namespace Falcor
 {
-class SearchDirectories;
+class AssetResolver;
 
 /**
  * Multi-threaded texture manager.
@@ -74,18 +76,27 @@ public:
     };
 
     /**
-     * Handle to a managed texture.
+     * Handle to a managed texture on the CPU side.
      */
-    class TextureHandle
+    class CpuTextureHandle
     {
     public:
         static constexpr uint32_t kInvalidID = std::numeric_limits<uint32_t>::max();
 
     public:
-        TextureHandle() = default;
-        explicit TextureHandle(uint32_t id) : mID(id) {}
+        CpuTextureHandle() = default;
+        explicit CpuTextureHandle(uint32_t id) : mID(id) {}
 
-        explicit TextureHandle(uint32_t id, bool isUdim) : mID(id), mIsUdim(isUdim) {}
+        explicit CpuTextureHandle(uint32_t id, bool isUdim) : mID(id), mIsUdim(isUdim) {}
+
+        explicit CpuTextureHandle(const TextureHandle& gpuHandle)
+        {
+            if (gpuHandle.getMode() == TextureHandle::Mode::Texture)
+            {
+                mID = gpuHandle.getTextureID();
+                mIsUdim = gpuHandle.getUdimEnabled();
+            }
+        }
 
         bool isValid() const { return mID != kInvalidID; }
         explicit operator bool() const { return isValid(); }
@@ -93,7 +104,25 @@ public:
         uint32_t getID() const { return mID; }
         bool isUdim() const { return mIsUdim; }
 
-        bool operator==(const TextureHandle& other) const { return mID == other.mID && mIsUdim == other.mIsUdim; }
+        bool operator<(const CpuTextureHandle& other) const { return mID < other.mID; }
+        bool operator==(const CpuTextureHandle& other) const { return mID == other.mID && mIsUdim == other.mIsUdim; }
+
+        TextureHandle toGpuHandle() const
+        {
+            TextureHandle gpuHandle;
+            if (isValid())
+            {
+                gpuHandle.setTextureID(this->getID());
+                gpuHandle.setMode(TextureHandle::Mode::Texture);
+                gpuHandle.setUdimEnabled(this->isUdim());
+            }
+            else
+            {
+                gpuHandle.setMode(TextureHandle::Mode::Uniform);
+                gpuHandle.setUdimEnabled(false);
+            }
+            return gpuHandle;
+        }
 
     private:
         uint32_t mID{kInvalidID};
@@ -125,7 +154,7 @@ public:
      * @param[in] pTexture The texture resource.
      * @return Unique handle to the texture.
      */
-    TextureHandle addTexture(const ref<Texture>& pTexture);
+    CpuTextureHandle addTexture(const ref<Texture>& pTexture);
 
     /**
      * Requst loading a texture from file.
@@ -137,32 +166,21 @@ public:
      * @param[in] loadAsSRGB Load the texture as sRGB format if supported, otherwise linear color.
      * @param[in] bindFlags The bind flags for the texture resource.
      * @param[in] async Load asynchronously, otherwise the function blocks until the texture data is loaded.
-     * @param[in] searchDirectories Optionally can pass in search directories, will be used instead of the global data directories.
+     * @param[in] importFlags Optional flags for the file import.
+     * @param[in] assetResolver Optional asset resolver for resolving file paths.
      * @param[out] loadedTextureCount Optionally can provided the number of actually loaded textures (2+ can happen with UDIMs)
      * @return Unique handle to the texture, or an invalid handle if the texture can't be found.
      */
-    TextureHandle loadTexture(
+    CpuTextureHandle loadTexture(
         const std::filesystem::path& path,
         bool generateMipLevels,
         bool loadAsSRGB,
-        Resource::BindFlags bindFlags = Resource::BindFlags::ShaderResource,
+        ResourceBindFlags bindFlags = ResourceBindFlags::ShaderResource,
         bool async = true,
-        const SearchDirectories* searchDirectories = nullptr,
-        size_t* loadedTextureCount = nullptr
-    );
-
-    /**
-     * Same as loadTexture, but explicitly handles Udim textures. If the texture isn't Udim, it falls back to loadTexture.
-     * Also, loadTexture will detect UDIM and call loadUdimTexture if needed.
-     */
-    TextureHandle loadUdimTexture(
-        const std::filesystem::path& path,
-        bool generateMipLevels,
-        bool loadAsSRGB,
-        Resource::BindFlags bindFlags = Resource::BindFlags::ShaderResource,
-        bool async = true,
-        const SearchDirectories* searchDirectories = nullptr,
-        size_t* loadedTextureCount = nullptr
+        Bitmap::ImportFlags importFlags = Bitmap::ImportFlags::None,
+        const AssetResolver* assetResolver = nullptr,
+        size_t* loadedTextureCount = nullptr,
+        const Object* owner = nullptr
     );
 
     /**
@@ -170,7 +188,7 @@ public:
      * If the handle is valid, the call blocks until the texture is loaded (or failed to load).
      * @param[in] handle Texture handle.
      */
-    void waitForTextureLoading(const TextureHandle& handle);
+    void waitForTextureLoading(const CpuTextureHandle& handle);
 
     /**
      * Waits for all currently requested textures to be loaded.
@@ -191,21 +209,45 @@ public:
      * Remove a texture.
      * @param[in] handle Texture handle.
      */
-    void removeTexture(const TextureHandle& handle);
+    void removeTexture(const CpuTextureHandle& handle);
+
+    /**
+     * Remove all textures loaded by the given object.
+     * @param[in] object The object for which to remove textures.
+     */
+    void removeTextures(const Object* object);
 
     /**
      * Get a loaded texture. Call getTextureDesc() for more info.
+     * This function handles non-UDIM textures. If UDIMs are expected, supply UDIM ID or uv coordinate.
      * @param[in] handle Texture handle.
      * @return Texture if loaded, or nullptr if handle doesn't exist or texture isn't yet loaded.
      */
-    ref<Texture> getTexture(const TextureHandle& handle) const { return getTextureDesc(handle).pTexture; }
+    ref<Texture> getTexture(const CpuTextureHandle& handle) const { return getTextureDesc(handle).pTexture; }
+    ref<Texture> getTexture(const CpuTextureHandle& handle, const float2& uv) const { return getTextureDesc(handle, uv).pTexture; }
+    ref<Texture> getTexture(const CpuTextureHandle& handle, const uint32_t udimID) const { return getTextureDesc(handle, udimID).pTexture; }
 
     /**
      * Get a texture desc.
+     * This function handles non-UDIM textures. If UDIMs are expected, supply UDIM ID or uv coordinate.
      * @param[in] handle Texture handle.
      * @return Texture desc, or invalid desc if handle is invalid.
      */
-    TextureDesc getTextureDesc(const TextureHandle& handle) const;
+    TextureDesc getTextureDesc(const CpuTextureHandle& handle) const;
+    TextureDesc getTextureDesc(const CpuTextureHandle& handle, const float2& uv) const
+    {
+        return getTextureDesc(resolveUdimTexture(handle, uv));
+    }
+    TextureDesc getTextureDesc(const CpuTextureHandle& handle, const uint32_t udimID) const
+    {
+        return getTextureDesc(resolveUdimTexture(handle, udimID));
+    }
+
+    /**
+     * Get list of UDIM IDs for a texture.
+     * If the texture is not using UDIMs, an empty list is returned.
+     */
+    std::vector<uint32_t> getUdimIDs(const CpuTextureHandle& handle) const;
 
     /**
      * Get texture desc count.
@@ -230,7 +272,7 @@ public:
      * @param[in] var Shader var for descriptor array.
      * @param[in] descCount Size of descriptor array.
      */
-    void setShaderData(const ShaderVar& texturesVar, const size_t descCount, const ShaderVar& udimsVar) const;
+    void bindShaderData(const ShaderVar& texturesVar, const size_t descCount, const ShaderVar& udimsVar) const;
 
     /**
      * Returns stats for the textures
@@ -240,9 +282,26 @@ public:
 private:
     size_t getUdimRange(size_t requiredSize);
     void freeUdimRange(size_t rangeStart);
-    void removeUdimTexture(const TextureHandle& handle);
-    TextureHandle resolveUdimTexture(const TextureHandle& handle) const;
-    TextureHandle resolveUdimTexture(const TextureHandle& handle, const float2& uv) const;
+    void removeTextureInternal(const CpuTextureHandle& handle);
+    void removeUdimTexture(const CpuTextureHandle& handle);
+    void removeNonUdimTexture(const CpuTextureHandle& handle);
+    CpuTextureHandle resolveUdimTexture(const CpuTextureHandle& handle, const float2& uv) const;
+    CpuTextureHandle resolveUdimTexture(const CpuTextureHandle& handle, const uint32_t udimID) const;
+
+    /**
+     * Same as loadTexture, but explicitly handles Udim textures. If the texture isn't Udim, it falls back to loadTexture.
+     * Also, loadTexture will detect UDIM and call loadUdimTexture if needed.
+     */
+    CpuTextureHandle loadUdimTexture(
+        const std::filesystem::path& path,
+        bool generateMipLevels,
+        bool loadAsSRGB,
+        ResourceBindFlags bindFlags = ResourceBindFlags::ShaderResource,
+        bool async = true,
+        Bitmap::ImportFlags importFlags = Bitmap::ImportFlags::None,
+        const AssetResolver* assetResolver = nullptr,
+        size_t* loadedTextureCount = nullptr
+    );
 
     /**
      * Key to uniquely identify a managed texture.
@@ -252,10 +311,17 @@ private:
         std::vector<std::filesystem::path> fullPaths;
         bool generateMipLevels;
         bool loadAsSRGB;
-        Resource::BindFlags bindFlags;
+        ResourceBindFlags bindFlags;
+        Bitmap::ImportFlags importFlags;
 
-        TextureKey(const std::vector<std::filesystem::path>& paths, bool mips, bool srgb, Resource::BindFlags flags)
-            : fullPaths(paths), generateMipLevels(mips), loadAsSRGB(srgb), bindFlags(flags)
+        TextureKey(
+            const std::vector<std::filesystem::path>& paths,
+            bool mips,
+            bool srgb,
+            ResourceBindFlags flags,
+            Bitmap::ImportFlags importFlags
+        )
+            : fullPaths(paths), generateMipLevels(mips), loadAsSRGB(srgb), bindFlags(flags), importFlags(importFlags)
         {}
 
         bool operator<(const TextureKey& rhs) const
@@ -266,13 +332,16 @@ private:
                 return generateMipLevels < rhs.generateMipLevels;
             else if (loadAsSRGB != rhs.loadAsSRGB)
                 return loadAsSRGB < rhs.loadAsSRGB;
+            else if (importFlags != rhs.importFlags)
+                return importFlags < rhs.importFlags;
             else
                 return bindFlags < rhs.bindFlags;
         }
     };
 
-    TextureHandle addDesc(const TextureDesc& desc);
-    TextureDesc& getDesc(const TextureHandle& handle);
+    CpuTextureHandle addDesc(const TextureDesc& desc);
+    TextureDesc& getDesc(const CpuTextureHandle& handle);
+    void registerOwner(const CpuTextureHandle& handle, const Object* owner);
 
     ref<Device> mpDevice;
 
@@ -280,10 +349,10 @@ private:
     std::condition_variable mCondition; ///< Condition variable to wait on for loading to finish.
 
     // Internal state. Do not access outside of critical section.
-    std::vector<TextureDesc> mTextureDescs;                   ///< Array of all texture descs, indexed by handle ID.
-    std::vector<TextureHandle> mFreeList;                     ///< List of unused handles.
-    std::map<TextureKey, TextureHandle> mKeyToHandle;         ///< Map from texture key to handle.
-    std::map<const Texture*, TextureHandle> mTextureToHandle; ///< Map from texture ptr to handle.
+    std::vector<TextureDesc> mTextureDescs;                      ///< Array of all texture descs, indexed by handle ID.
+    std::vector<CpuTextureHandle> mFreeList;                     ///< List of unused handles.
+    std::map<TextureKey, CpuTextureHandle> mKeyToHandle;         ///< Map from texture key to handle.
+    std::map<const Texture*, CpuTextureHandle> mTextureToHandle; ///< Map from texture ptr to handle.
     /// Map from UDIM-1001 to an actual textureID, -1 if the texture does not exist (e.g., there is 1001 and 1003, so 1002 [1] == -1)
     std::vector<int32_t> mUdimIndirection;
     /// For each udim indirection range, writes (at the first element), how long that range is (there is 0 everywhere else)
@@ -293,6 +362,11 @@ private:
 
     mutable bool mUdimIndirectionDirty = true;
     mutable ref<Buffer> mpUdimIndirection;
+
+    using Objects = std::set<const Object*>;
+    using Handles = std::set<CpuTextureHandle>;
+    std::map<CpuTextureHandle, Objects> mHandleToObjects; ///< Map from texture handle to set of objects using the handle.
+    std::map<const Object*, Handles> mObjectToHandles;    ///< Map from object to set of texture handles used by the object.
 
     bool mUseDeferredLoading = false;
 

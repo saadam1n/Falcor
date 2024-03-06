@@ -44,8 +44,9 @@ struct HairMaterial : MaterialBase, IMaterial
 
         HairChiang16Data d = {};
 
-        d.IoR = data.IoR;
-        d.eta = sd.frontFacing ? (sd.IoR / data.IoR) : (data.IoR / sd.IoR);
+        float16_t IoR = header.getIoR();
+        d.IoR = IoR;
+        d.eta = sd.frontFacing ? (sd.IoR / IoR) : (IoR / sd.IoR);
 
         // Sample base color.
         const float3 baseColor = ms.sampleTexture(data.texBaseColor, s, sd.uv, data.baseColor, lod).rgb;
@@ -69,6 +70,10 @@ struct HairMaterial : MaterialBase, IMaterial
         return HairMaterialInstance(sf, d);
     }
 
-    // Alpha testing is not supported by this material.
-    float evalOpacity(const MaterialSystem ms, const VertexData v, const ITextureSampler lod) { return 1.f; }
+    [Differentiable]
+    HairMaterialInstance setupDiffMaterialInstance(out DiffMaterialData diffData, const MaterialSystem ms, const ShadingData sd, const ITextureSampler lod, const uint hints)
+    {
+        diffData = DiffMaterialData();
+        return no_diff setupMaterialInstance(ms, sd, lod, hints);
+    }
 };

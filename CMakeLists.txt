@@ -16,9 +16,12 @@ project(Falcor
 # Configuration options
 # -----------------------------------------------------------------------------
 
-# Enable/disable reporting Falcor exceptions as fatal errors before actually throwing them.
-# This allows to break into the debugger at the location where an exception is thrown.
-set(FALCOR_REPORT_EXCEPTION_AS_ERROR OFF CACHE BOOL "Report Falcor exceptions as fatal errors (and break into debugger)")
+# Enable/disable asserts. AUTO enables asserts in debug builds.
+set(FALCOR_ENABLE_ASSERTS "AUTO" CACHE STRING "Enable asserts")
+set_property(CACHE FALCOR_ENABLE_ASSERTS PROPERTY STRINGS AUTO ON OFF)
+
+# Enable/disable the profiler.
+set(FALCOR_ENABLE_PROFILER ON CACHE BOOL "Enable profiler")
 
 # Enable/disable using system Python distribution. This requires Python 3.7 to be available.
 set(FALCOR_USE_SYSTEM_PYTHON OFF CACHE BOOL "Use system Python distribution")
@@ -26,6 +29,9 @@ set(FALCOR_USE_SYSTEM_PYTHON OFF CACHE BOOL "Use system Python distribution")
 # Enable/disable USD.
 set(FALCOR_ENABLE_USD ON CACHE BOOL "Enable USD")
 
+
+# Enable/disable Address Sanitizer.
+set(FALCOR_ENABLE_ASAN OFF CACHE BOOL "Enable Address Sanitizer")
 
 # Header validation.
 # If enabled, additional targets are generated to validate that headers are self sufficient.
@@ -200,6 +206,7 @@ add_subdirectory(external)
 message(STATUS "Feature flags:")
 message(STATUS "FALCOR_HAS_D3D12: ${FALCOR_HAS_D3D12}")
 message(STATUS "FALCOR_HAS_VULKAN: ${FALCOR_HAS_VULKAN}")
+message(STATUS "FALCOR_HAS_AFTERMATH: ${FALCOR_HAS_AFTERMATH}")
 message(STATUS "FALCOR_HAS_NVAPI: ${FALCOR_HAS_NVAPI}")
 message(STATUS "FALCOR_HAS_PIX: ${FALCOR_HAS_PIX}")
 message(STATUS "FALCOR_HAS_CUDA: ${FALCOR_HAS_CUDA}")
@@ -425,6 +432,7 @@ endif()
 # -----------------------------------------------------------------------------
 
 add_subdirectory(Source/Falcor)
+add_subdirectory(Source/Modules)
 add_subdirectory(Source/Mogwai)
 add_subdirectory(Source/plugins)
 add_subdirectory(Source/RenderPasses)
@@ -451,7 +459,7 @@ if(plugin_targets)
 endif()
 
 # Generate settings.toml file.
-file(GENERATE OUTPUT ${FALCOR_OUTPUT_DIRECTORY}/settings.json CONTENT "{ \"standardsearchpath\" : { \"media\" : \"\${FALCOR_MEDIA_FOLDERS}\"}}")
+file(GENERATE OUTPUT ${FALCOR_OUTPUT_DIRECTORY}/settings.json CONTENT "{ \"standardsearchpath\" : { \"media\" : \"\${FALCOR_MEDIA_FOLDERS}\", \"mdl\" : \"\${FALCOR_MDL_PATHS}\" }}")
 
 # Make Mogwai and FalcorPython depend on all plugins.
 if(plugin_targets)

@@ -26,21 +26,28 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #include "Object.h"
-#include "Assert.h"
-#include "ErrorHandling.h"
+#include "Error.h"
 #include <set>
+#include <mutex>
 
 namespace Falcor
 {
 
-#if FALCOR_ENABLE_REF_TRACKING
+#if FALCOR_ENABLE_OBJECT_TRACKING
 static std::mutex sTrackedObjectsMutex;
 static std::set<const Object*> sTrackedObjects;
 #endif
 
 void Object::incRef() const
 {
-    ++mRefCount;
+    uint32_t refCount = mRefCount.fetch_add(1);
+#if FALCOR_ENABLE_OBJECT_TRACKING
+    if (refCount == 0)
+    {
+        std::lock_guard<std::mutex> lock(sTrackedObjectsMutex);
+        sTrackedObjects.insert(this);
+    }
+#endif
 }
 
 void Object::decRef(bool dealloc) const noexcept
@@ -48,20 +55,44 @@ void Object::decRef(bool dealloc) const noexcept
     uint32_t refCount = mRefCount.fetch_sub(1);
     if (refCount <= 0)
     {
-        reportFatalError("Internal error: Object reference count < 0!");
+        reportFatalErrorAndTerminate("Internal error: Object reference count < 0!");
     }
-    else if (refCount == 1 && dealloc)
+    else if (refCount == 1)
     {
-#if FALCOR_ENABLE_REF_TRACKING
-        if (mEnableRefTracking)
+#if FALCOR_ENABLE_OBJECT_TRACKING
         {
             std::lock_guard<std::mutex> lock(sTrackedObjectsMutex);
             sTrackedObjects.erase(this);
         }
 #endif
-        delete this;
+        if (dealloc)
+            delete this;
     }
 }
+
+#if FALCOR_ENABLE_OBJECT_TRACKING
+
+void Object::dumpAliveObjects()
+{
+    std::lock_guard<std::mutex> lock(sTrackedObjectsMutex);
+    logInfo("Alive objects:");
+    for (const Object* object : sTrackedObjects)
+        object->dumpRefs();
+}
+
+void Object::dumpRefs() const
+{
+    logInfo("Object (class={} address={}) has {} reference(s)", getClassName(), fmt::ptr(this), refCount());
+#if FALCOR_ENABLE_REF_TRACKING
+    std::lock_guard<std::mutex> lock(mRefTrackerMutex);
+    for (const auto& it : mRefTrackers)
+    {
+        logInfo("ref={} count={}\n{}\n", it.first, it.second.count, it.second.origin);
+    }
+#endif
+}
+
+#endif // FALCOR_ENABLE_OBJECT_TRACKING
 
 #if FALCOR_ENABLE_REF_TRACKING
 
@@ -102,32 +133,7 @@ void Object::decRef(uint64_t refId, bool dealloc) const noexcept
 
 void Object::setEnableRefTracking(bool enable)
 {
-    if (enable != mEnableRefTracking)
-    {
-        std::lock_guard<std::mutex> lock(sTrackedObjectsMutex);
-        if (enable)
-            sTrackedObjects.insert(this);
-        else
-            sTrackedObjects.erase(this);
-        mEnableRefTracking = enable;
-    }
-}
-
-void Object::dumpRefs() const
-{
-    std::lock_guard<std::mutex> lock(mRefTrackerMutex);
-    logInfo("Object {} has {} references:", fmt::ptr(this), mRefTrackers.size());
-    for (const auto& it : mRefTrackers)
-    {
-        logInfo("ref={} count={}\n{}\n", it.first, it.second.count, it.second.origin);
-    }
-}
-
-void Object::dumpAllRefs()
-{
-    std::lock_guard<std::mutex> lock(sTrackedObjectsMutex);
-    for (const Object* object : sTrackedObjects)
-        object->dumpRefs();
+    mEnableRefTracking = enable;
 }
 
 #endif // FALCOR_ENABLE_REF_TRACKING

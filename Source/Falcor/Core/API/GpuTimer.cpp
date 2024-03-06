@@ -32,7 +32,7 @@
 #include "RenderContext.h"
 #include "GFXAPI.h"
 
-#include "Core/Assert.h"
+#include "Core/Error.h"
 #include "Core/ObjectPython.h"
 #include "Utils/Logger.h"
 #include "Utils/Scripting/ScriptBindings.h"
@@ -49,15 +49,17 @@ GpuTimer::GpuTimer(ref<Device> pDevice) : mpDevice(pDevice)
 {
     FALCOR_ASSERT(mpDevice);
 
-    mpResolveBuffer = Buffer::create(mpDevice, sizeof(uint64_t) * 2, Buffer::BindFlags::None, Buffer::CpuAccess::None, nullptr);
-    mpResolveStagingBuffer = Buffer::create(mpDevice, sizeof(uint64_t) * 2, Buffer::BindFlags::None, Buffer::CpuAccess::Read, nullptr);
+    mpResolveBuffer = mpDevice->createBuffer(sizeof(uint64_t) * 2, ResourceBindFlags::None, MemoryType::DeviceLocal, nullptr);
+    mpResolveBuffer->breakStrongReferenceToDevice();
+    mpResolveStagingBuffer = mpDevice->createBuffer(sizeof(uint64_t) * 2, ResourceBindFlags::None, MemoryType::ReadBack, nullptr);
+    mpResolveStagingBuffer->breakStrongReferenceToDevice();
 
     // Create timestamp query heap upon first use.
     mStart = mpDevice->getTimestampQueryHeap()->allocate();
     mEnd = mpDevice->getTimestampQueryHeap()->allocate();
     if (mStart == QueryHeap::kInvalidIndex || mEnd == QueryHeap::kInvalidIndex)
     {
-        throw RuntimeError("Can't create GPU timer, no available timestamp queries.");
+        FALCOR_THROW("Can't create GPU timer, no available timestamp queries.");
     }
     FALCOR_ASSERT(mEnd == (mStart + 1));
 }
@@ -115,7 +117,7 @@ void GpuTimer::resolve()
 
     if (mStatus == Status::Begin)
     {
-        throw RuntimeError("GpuTimer::resolve() was called but the GpuTimer::end() wasn't called.");
+        FALCOR_THROW("GpuTimer::resolve() was called but the GpuTimer::end() wasn't called.");
     }
 
     FALCOR_ASSERT(mStatus == Status::End);
@@ -152,7 +154,7 @@ double GpuTimer::getElapsedTime()
     if (mDataPending)
     {
         uint64_t result[2];
-        uint64_t* pRes = (uint64_t*)mpResolveStagingBuffer->map(Buffer::MapType::Read);
+        uint64_t* pRes = (uint64_t*)mpResolveStagingBuffer->map();
         result[0] = pRes[0];
         result[1] = pRes[1];
         mpResolveStagingBuffer->unmap();

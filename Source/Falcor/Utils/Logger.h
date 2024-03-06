@@ -27,7 +27,6 @@
  **************************************************************************/
 #pragma once
 #include "Core/Macros.h"
-#include "Core/FalcorConfig.h"
 #include "Utils/StringFormatters.h"
 #include <fmt/core.h>
 #include <string_view>
@@ -37,7 +36,6 @@ namespace Falcor
 {
 /**
  * Container class for logging messages.
- * To enable log messages, make sure FALCOR_ENABLE_LOGGER is set to `1` in FalcorConfig.h.
  * Messages are only printed to the selected outputs if they match the verbosity level.
  */
 class FALCOR_API Logger
@@ -55,9 +53,16 @@ public:
         Count,    ///< Keep this last.
     };
 
+    enum class Frequency
+    {
+        Always, ///< Reports the message always
+        Once,   ///< Reports the message only first time the exact string appears
+    };
+
     /// Log output.
     enum class OutputFlags
     {
+        None = 0x0,        ///< No output.
         Console = 0x2,     ///< Output to console (stdout/stderr).
         File = 0x1,        ///< Output to log file.
         DebugWindow = 0x4, ///< Output to debug window (if debugger is attached).
@@ -94,29 +99,22 @@ public:
 
     /**
      * Set the path of the logfile.
-     * Note: This only works if the logfile has not been opened for writing yet.
      * @param[in] path Logfile path
-     * @return Returns true if path was set, false otherwise.
      */
-    static bool setLogFilePath(const std::filesystem::path& path);
+    static void setLogFilePath(const std::filesystem::path& path);
 
     /**
      * Get the path of the logfile.
      * @return Returns the path of the logfile.
      */
-    static const std::filesystem::path& getLogFilePath();
-
-    /**
-     * Check if the logger is enabled.
-     */
-    static constexpr bool enabled() { return FALCOR_ENABLE_LOGGER != 0; }
+    static std::filesystem::path getLogFilePath();
 
     /**
      * Log a message.
      * @param[in] level Log level.
      * @param[in] msg Log message.
      */
-    static void log(Level level, const std::string_view msg);
+    static void log(Level level, const std::string_view msg, Frequency frequency = Frequency::Always);
 
 private:
     Logger() = delete;
@@ -161,6 +159,17 @@ inline void logWarning(fmt::format_string<Args...> format, Args&&... args)
     Logger::log(Logger::Level::Warning, fmt::format(format, std::forward<Args>(args)...));
 }
 
+inline void logWarningOnce(const std::string_view msg)
+{
+    Logger::log(Logger::Level::Warning, msg, Logger::Frequency::Once);
+}
+
+template<typename... Args>
+inline void logWarningOnce(fmt::format_string<Args...> format, Args&&... args)
+{
+    Logger::log(Logger::Level::Warning, fmt::format(format, std::forward<Args>(args)...), Logger::Frequency::Once);
+}
+
 inline void logError(const std::string_view msg)
 {
     Logger::log(Logger::Level::Error, msg);
@@ -170,6 +179,17 @@ template<typename... Args>
 inline void logError(fmt::format_string<Args...> format, Args&&... args)
 {
     Logger::log(Logger::Level::Error, fmt::format(format, std::forward<Args>(args)...));
+}
+
+inline void logErrorOnce(const std::string_view msg)
+{
+    Logger::log(Logger::Level::Error, msg, Logger::Frequency::Once);
+}
+
+template<typename... Args>
+inline void logErrorOnce(fmt::format_string<Args...> format, Args&&... args)
+{
+    Logger::log(Logger::Level::Error, fmt::format(format, std::forward<Args>(args)...), Logger::Frequency::Once);
 }
 
 inline void logFatal(const std::string_view msg)
@@ -182,4 +202,11 @@ inline void logFatal(fmt::format_string<Args...> format, Args&&... args)
 {
     Logger::log(Logger::Level::Fatal, fmt::format(format, std::forward<Args>(args)...));
 }
+
 } // namespace Falcor
+
+#define FALCOR_PRINT(x)                      \
+    do                                       \
+    {                                        \
+        ::Falcor::logInfo("{} = {}", #x, x); \
+    } while (0)

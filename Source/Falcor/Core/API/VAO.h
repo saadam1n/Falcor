@@ -29,7 +29,7 @@
 #include "VertexLayout.h"
 #include "Buffer.h"
 #include "Core/Macros.h"
-#include "Core/Assert.h"
+#include "Core/Error.h"
 #include "Core/Object.h"
 #include <vector>
 
@@ -42,6 +42,7 @@ namespace Falcor
  */
 class FALCOR_API Vao : public Object
 {
+    FALCOR_OBJECT(Vao)
 public:
     ~Vao() = default;
 

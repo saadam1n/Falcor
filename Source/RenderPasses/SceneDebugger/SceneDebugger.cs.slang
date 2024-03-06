@@ -43,11 +43,13 @@ struct SceneDebugger
     RWTexture2D<float4> output;
     RWStructuredBuffer<PixelData> pixelData;
 
-    /** Run scene debugger for the given pixel.
-    */
+    /**
+     * Run scene debugger for the given pixel.
+     */
     void execute(const uint2 pixel)
     {
-        if (any(pixel >= params.frameDim)) return;
+        if (any(pixel >= params.frameDim))
+            return;
 
         // Initialize pixel data for the selected pixel.
         if (all(pixel == params.selectedPixel))
@@ -86,7 +88,8 @@ struct SceneDebugger
         }
 
         // Clamp pixel values if necessary.
-        if (params.clamp) color = saturate(color);
+        if (params.clamp)
+            color = saturate(color);
 
         // Write output.
         output[pixel] = float4(color, 1.f);
@@ -94,15 +97,14 @@ struct SceneDebugger
 
     float3 remapVector(float3 v)
     {
-        if (params.flipSign) v = -v;
-        if (params.remapRange) v = 0.5f * v + 0.5f;
+        if (params.flipSign)
+            v = -v;
+        if (params.remapRange)
+            v = 0.5f * v + 0.5f;
         return v;
     }
 
-    float2 remapVector(float2 v)
-    {
-        return remapVector(float3(v, 0)).xy;
-    }
+    float2 remapVector(float2 v) { return remapVector(float3(v, 0)).xy; }
 
     float3 pseudocolor(uint value)
     {
@@ -179,10 +181,6 @@ struct SceneDebugger
         // Load shading data.
         const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -dir, lod);
 
-        // Create material instance and query its properties.
-        let mi = gScene.materials.getMaterialInstance(sd, lod);
-        let bsdfProperties = mi.getProperties(sd);
-
         // Write pixel data for the selected pixel.
         if (all(pixel == params.selectedPixel))
         {
@@ -215,6 +213,14 @@ struct SceneDebugger
 
         switch ((SceneDebuggerMode)params.mode)
         {
+        case SceneDebuggerMode::FlatShaded:
+        {
+            // DEMO21:
+            // FIXME: Parameterize this
+            const float3 frontN = faceforward(sd.faceN, dir, sd.faceN);
+            const float v = 0.8f * saturate(dot(-frontN, dir)) + 0.2;
+            return float3(v, v, v);
+        }
         // Geometry
         case SceneDebuggerMode::HitType:
             return pseudocolor(uint(hit.getType()));
@@ -265,18 +271,34 @@ struct SceneDebugger
         case SceneDebuggerMode::TexCoords:
             return float3(frac(remapVector(sd.uv)), 0.f);
         // Material properties
-        case SceneDebuggerMode::GuideNormal:
-            return remapVector(bsdfProperties.guideNormal);
-        case SceneDebuggerMode::Roughness:
-            return float3(bsdfProperties.roughness);
-        case SceneDebuggerMode::FlatShaded:
+        case SceneDebuggerMode::BSDFProperties:
         {
-            // DEMO21:
-            // FIXME: Parameterize this
-            const float3 frontN = faceforward(sd.faceN, dir, sd.faceN);
-            const float v = 0.8f * saturate(dot(-frontN, dir)) + 0.2;
-            return float3(v, v, v);
+            // Create material instance and query its properties.
+            let mi = gScene.materials.getMaterialInstance(sd, lod);
+            let bsdfProperties = mi.getProperties(sd);
+            switch ((SceneDebuggerBSDFProperty)params.bsdfProperty)
+            {
+            case SceneDebuggerBSDFProperty::Emission:
+                return bsdfProperties.emission;
+            case SceneDebuggerBSDFProperty::Roughness:
+                return float3(bsdfProperties.roughness);
+            case SceneDebuggerBSDFProperty::GuideNormal:
+                return remapVector(bsdfProperties.guideNormal);
+            case SceneDebuggerBSDFProperty::DiffuseReflectionAlbedo:
+                return bsdfProperties.diffuseReflectionAlbedo;
+            case SceneDebuggerBSDFProperty::DiffuseTransmissionAlbedo:
+                return bsdfProperties.diffuseTransmissionAlbedo;
+            case SceneDebuggerBSDFProperty::SpecularReflectionAlbedo:
+                return bsdfProperties.specularReflectionAlbedo;
+            case SceneDebuggerBSDFProperty::SpecularTransmissionAlbedo:
+                return bsdfProperties.specularTransmissionAlbedo;
+            case SceneDebuggerBSDFProperty::SpecularReflectance:
+                return bsdfProperties.specularReflectance;
+            case SceneDebuggerBSDFProperty::IsTransmissive:
+                return bsdfProperties.isTransmissive ? float3(0, 1, 0) : float3(1, 0, 0);
+            }
         }
+
         default:
             // Should not happen.
             return float3(1, 0, 0);
@@ -303,7 +325,8 @@ struct SceneDebugger
 
     float evalGridVolumeTransmittance(GridVolume gridVolume, const float3 pos, const float3 dir, const float minT, const float maxT)
     {
-        if (!gridVolume.hasDensityGrid()) return 1.f;
+        if (!gridVolume.hasDensityGrid())
+            return 1.f;
 
         // Intersect with volume bounds and get intersection interval along the view ray.
         AABB bounds = gridVolume.getBounds();
@@ -311,7 +334,8 @@ struct SceneDebugger
         bool hit = intersectRayAABB(pos, dir, bounds.minPoint, bounds.maxPoint, nearFar);
         nearFar.x = max(nearFar.x, minT);
         nearFar.y = min(nearFar.y, maxT);
-        if (nearFar.x >= nearFar.y) return 1.f;
+        if (nearFar.x >= nearFar.y)
+            return 1.f;
 
         // Setup access to density grid.
         Grid densityGrid;
@@ -341,10 +365,11 @@ cbuffer CB
     SceneDebugger gSceneDebugger;
 }
 
-/** Compute shader entry point for scene debugger.
-*/
+/**
+ * Compute shader entry point for scene debugger.
+ */
 [numthreads(16, 16, 1)]
-void main(uint3 dispatchThreadId : SV_DispatchThreadID)
+void main(uint3 dispatchThreadId: SV_DispatchThreadID)
 {
     gSceneDebugger.execute(dispatchThreadId.xy);
 }

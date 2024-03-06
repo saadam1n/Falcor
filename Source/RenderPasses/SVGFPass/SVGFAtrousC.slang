@@ -31,10 +31,10 @@ import SVGFCommon;
 
 cbuffer PerImageCB
 {
-    Texture2D   gAlbedo;
-    Texture2D   gHistoryLength;
-    Texture2D   gIllumination;
-    Texture2D   gLinearZAndNormal;
+    Texture2D gAlbedo;
+    Texture2D gHistoryLength;
+    Texture2D gIllumination;
+    Texture2D gLinearZAndNormal;
 
     int         gStepSize;
 

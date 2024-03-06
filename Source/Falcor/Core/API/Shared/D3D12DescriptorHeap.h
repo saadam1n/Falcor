@@ -27,7 +27,7 @@
  **************************************************************************/
 #pragma once
 #include "D3D12Handles.h"
-#include "Core/Assert.h"
+#include "Core/Error.h"
 #include "Core/Object.h"
 #include "Core/API/fwd.h"
 #include <d3d12.h>
@@ -40,6 +40,7 @@ namespace Falcor
 {
 class D3D12DescriptorHeap : public Object
 {
+    FALCOR_OBJECT(D3D12DescriptorHeap)
 public:
     using ApiHandle = ID3D12DescriptorHeapPtr;
     using CpuHandle = D3D12_CPU_DESCRIPTOR_HANDLE;

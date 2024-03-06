@@ -27,7 +27,7 @@
  **************************************************************************/
 #include "RenderPassHelpers.h"
 #include "RenderPass.h"
-#include "Core/Assert.h"
+#include "Core/Error.h"
 #include "Utils/Scripting/ScriptBindings.h"
 
 namespace Falcor
@@ -50,14 +50,4 @@ uint2 RenderPassHelpers::calculateIOSize(const IOSize selection, const uint2 fix
     return sz;
 }
 
-FALCOR_SCRIPT_BINDING(RenderPassHelpers)
-{
-    pybind11::enum_<RenderPassHelpers::IOSize> sz(m, "IOSize");
-    sz.value("Default", RenderPassHelpers::IOSize::Default);
-    sz.value("Fixed", RenderPassHelpers::IOSize::Fixed);
-    sz.value("Full", RenderPassHelpers::IOSize::Full);
-    sz.value("Half", RenderPassHelpers::IOSize::Half);
-    sz.value("Quarter", RenderPassHelpers::IOSize::Quarter);
-    sz.value("Double", RenderPassHelpers::IOSize::Double);
-}
 } // namespace Falcor

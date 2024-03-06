@@ -27,7 +27,6 @@
  **************************************************************************/
 #pragma once
 #include "ScriptBindings.h"
-#include "Dictionary.h"
 #include "Core/Platform/OS.h"
 #include <algorithm>
 #include <filesystem>
@@ -84,10 +83,8 @@ public:
         return var + "." + property + " = " + getArgString(arg) + "\n";
     }
 
-    static std::string getPathString(std::filesystem::path path, bool stripDataDirs = true)
+    static std::string getPathString(const std::filesystem::path& path)
     {
-        if (stripDataDirs)
-            path = stripDataDirectories(path);
         std::string str = path.string();
         std::replace(str.begin(), str.end(), '\\', '/');
         return str;
@@ -101,9 +98,9 @@ std::string ScriptWriter::getArgString(const T& arg)
 }
 
 template<>
-inline std::string ScriptWriter::getArgString(const Dictionary& dictionary)
+inline std::string ScriptWriter::getArgString(const pybind11::dict& dict)
 {
-    return dictionary.toString();
+    return pybind11::str(static_cast<pybind11::dict>(dict));
 }
 
 template<>

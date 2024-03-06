@@ -27,7 +27,8 @@
  **************************************************************************/
 #pragma once
 
-#include <Falcor.h>
+#include "Falcor.h"
+#include "Core/Enum.h"
 #include "Core/API/Shared/D3D12DescriptorSet.h"
 #include "Core/API/Shared/D3D12RootSignature.h"
 #include "Core/API/Shared/D3D12ConstantBufferView.h"
@@ -51,11 +52,22 @@ public:
         SpecularDeltaMv
     };
 
-    static ref<NRDPass> create(ref<Device> pDevice, const Dictionary& dict) { return make_ref<NRDPass>(pDevice, dict); }
+    FALCOR_ENUM_INFO(
+        DenoisingMethod,
+        {
+            {DenoisingMethod::RelaxDiffuseSpecular, "RelaxDiffuseSpecular"},
+            {DenoisingMethod::RelaxDiffuse, "RelaxDiffuse"},
+            {DenoisingMethod::ReblurDiffuseSpecular, "ReblurDiffuseSpecular"},
+            {DenoisingMethod::SpecularReflectionMv, "SpecularReflectionMv"},
+            {DenoisingMethod::SpecularDeltaMv, "SpecularDeltaMv"},
+        }
+    );
 
-    NRDPass(ref<Device> pDevice, const Dictionary& dict);
+    static ref<NRDPass> create(ref<Device> pDevice, const Properties& props) { return make_ref<NRDPass>(pDevice, props); }
 
-    virtual Dictionary getScriptingDictionary() override;
+    NRDPass(ref<Device> pDevice, const Properties& props);
+
+    virtual Properties getProperties() const override;
     virtual RenderPassReflection reflect(const CompileData& compileData) override;
     virtual void compile(RenderContext* pRenderContext, const CompileData& compileData) override;
     virtual void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
@@ -66,7 +78,7 @@ private:
     ref<Scene> mpScene;
     uint2 mScreenSize{};
     uint32_t mFrameIndex = 0;
-    RenderPassHelpers::IOSize  mOutputSizeSelection = RenderPassHelpers::IOSize::Default; ///< Selected output size.
+    RenderPassHelpers::IOSize mOutputSizeSelection = RenderPassHelpers::IOSize::Default;
 
     void reinit();
     void createPipelines();
@@ -96,7 +108,6 @@ private:
     std::vector<ref<ComputeStateObject>> mpCSOs;
     std::vector<ref<Texture>> mpPermanentTextures;
     std::vector<ref<Texture>> mpTransientTextures;
-    ref<Buffer> mpConstantBuffer;
     ref<D3D12ConstantBufferView> mpCBV;
 
     float4x4 mPrevViewMatrix;
@@ -106,3 +117,5 @@ private:
     ref<ComputePass> mpPackRadiancePassRelax;
     ref<ComputePass> mpPackRadiancePassReblur;
 };
+
+FALCOR_ENUM_REGISTER(NRDPass::DenoisingMethod);
