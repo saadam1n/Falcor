@@ -3,9 +3,11 @@ import SVGFReprojectC;
 
 cbuffer PerImageCB_D
 {
-    Texture2D gMoments;
-    Texture2D gIllum;
-    Texture2D gHistoryLen;
+    Texture2D gIllumination;
+
+    RWByteAddressBuffer drMoments;
+    RWByteAddressBuffer drIllumination;
+    RWByteAddressBuffer drHistoryLen;
 };
 
 void main(FullScreenPassVsOut vsOut) {
@@ -19,9 +21,9 @@ void main(FullScreenPassVsOut vsOut) {
 
     const int2 ipos = int2(vsOut.posH.xy);
 
-    diffInput.OutIllumination = gIllum[ipos];
-    diffInput.OutMoments = gMoments[ipos].xy;
-    diffInput.OutHistoryLength = gHistoryLen[ipos].x;
+    diffInput.OutIllumination = readDerivBuf4(drIllumination, ipos, gIllumination);
+    diffInput.OutMoments = readDerivBuf4(drMoments, ipos, gIllumination).xy;
+    diffInput.OutHistoryLength = readDerivBuf4(drHistoryLen, ipos, gIllumination).x;
 
     __bwd_diff(reproject)(vsOut, dpLuminanceParams, dpReprojParams, dpReprojKernel, dpAlpha, dpMomentsAlpha, diffInput);
 }

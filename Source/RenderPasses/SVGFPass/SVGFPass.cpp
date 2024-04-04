@@ -52,6 +52,8 @@ namespace
     const char kFinalModulateShaderS[]        = "RenderPasses/SVGFPass/SVGFFinalModulateS.ps.slang";
     const char kFinalModulateShaderD[]        = "RenderPasses/SVGFPass/SVGFFinalModulateD.ps.slang";
 
+    const char kDerivativeVerifyShader[]        = "RenderPasses/SVGFPass/SVGFDerivativeVerify.ps.slang";
+
     // Names of valid entries in the parameter dictionary.
     const char kEnabled[] = "Enabled";
     const char kIterations[] = "Iterations";
@@ -80,6 +82,7 @@ const char kInternalBufferPreviousMoments[] = "Previous Moments";
     // Output buffer name
     const char kOutputBufferFilteredImage[] = "Filtered image";
     const char kOutputDebugBuffer[] = "DebugBuf";
+    const char kOutputDerivVerifyBuf[] = "DerivVerify";
     }
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
@@ -107,6 +110,8 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mpAtrous = FullScreenPass::create(mpDevice, kAtrousShaderS);
     mpFilterMoments = FullScreenPass::create(mpDevice, kFilterMomentShaderS);
     mpFinalModulate = FullScreenPass::create(mpDevice, kFinalModulateShaderS);
+
+    mpDerivativeVerify = FullScreenPass::create(mpDevice, kDerivativeVerifyShader);
 
     mFinalModulateState.dPass = FullScreenPass::create(mpDevice, kFinalModulateShaderD);
     mAtrousState.dPass = FullScreenPass::create(mpDevice, kAtrousShaderD);
@@ -267,6 +272,7 @@ RenderPassReflection SVGFPass::reflect(const CompileData& compileData)
 
     reflector.addOutput(kOutputBufferFilteredImage, "Filtered image").format(ResourceFormat::RGBA16Float);
     reflector.addOutput(kOutputDebugBuffer, "DebugBuf").format(ResourceFormat::RGBA32Float);
+    reflector.addOutput(kOutputDerivVerifyBuf, "Deriv Verify").format(ResourceFormat::RGBA32Float);
 
     return reflector;
 }
@@ -290,6 +296,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 
     ref<Texture> pOutputTexture = renderData.getTexture(kOutputBufferFilteredImage);
     ref<Texture> pDebugTexture = renderData.getTexture(kOutputDebugBuffer);
+    ref<Texture> pDerivVerifyTexture = renderData.getTexture(kOutputDerivVerifyBuf);
 
     FALCOR_ASSERT(
         mpFilteredIlluminationFbo && mpFilteredIlluminationFbo->getWidth() == pAlbedoTexture->getWidth() &&
@@ -347,6 +354,9 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
                              pPrevLinearZAndNormalTexture->getRTV());
 
         computeDerivatives(pRenderContext, renderData);
+
+        computeDerivVerification(pRenderContext);
+        pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(0)->getSRV(), pDerivVerifyTexture->getRTV());
     }
     else
     {
@@ -389,6 +399,13 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         mpFinalFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
     }
 
+    {
+        Fbo::Desc desc;
+        desc.setSampleCount(0);
+        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
+        mpDerivativeVerifyFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+    }
+
     mBuffersNeedClear = true;
 }
 
@@ -400,7 +417,10 @@ void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const RenderDat
     ref<Texture> pEmissionTexture = renderData.getTexture(kInputBufferEmission);
     ref<Texture> pIllumTexture = mpPingPongFbo[0]->getColorTexture(0);
     ref<Texture> pColorTexture = renderData.getTexture(kInputBufferColor);
-
+    ref<Texture> pPosNormalFwidthTexture = renderData.getTexture(kInputBufferPosNormalFwidth);
+    ref<Texture> pLinearZTexture = renderData.getTexture(kInputBufferLinearZ);
+    ref<Texture> pMotionVectorTexture = renderData.getTexture(kInputBufferMotionVector);
+    ref<Texture> pDebugTexture = renderData.getTexture(kOutputDebugBuffer);
 
     if (mFilterEnabled) {
         computeDerivFinalModulate(pRenderContext, pOutputTexture, pIllumTexture, pAlbedoTexture, pEmissionTexture);
@@ -416,6 +436,8 @@ void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const RenderDat
         computeDerivAtrousDecomposition(pRenderContext, pAlbedoTexture, pOutputTexture);
 
         computeDerivFilteredMoments(pRenderContext);
+
+        computeDerivReprojection(pRenderContext, pAlbedoTexture, pColorTexture, pEmissionTexture, pMotionVectorTexture, pPosNormalFwidthTexture, pLinearZTexture, pDebugTexture);
     }
 }
 
@@ -577,12 +599,22 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
 
     auto perImageCB_D = mReprojectState.dPass->getRootVar()["PerImageCB_D"];
 
-    perImageCB_D["gIllum"] = mReprojectState.ptIllum;
-    perImageCB_D["gHistoryLength"] = mReprojectState.ptHistoryLen;
-    perImageCB_D["gMoments"] = mReprojectState.ptMoments;
+    perImageCB_D["drIllumination"] = mFilterMomentsState.pdaIllumination;
+    perImageCB_D["drHistoryLen"] = mAtrousState.pdaHistoryLen;
+    perImageCB_D["drMoments"] = mAtrousState.pdaHistoryLen;
 
     mReprojectState.dPass->execute(pRenderContext, nullptr);
 }
+
+void SVGFPass::computeDerivVerification(RenderContext* pRenderContext)
+{
+    auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
+
+    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.pdaHistoryLen;
+
+    mpDerivativeVerify->execute(pRenderContext, mpDerivativeVerifyFbo);
+}
+
 
 void SVGFPass::clearBuffers(RenderContext* pRenderContext, const RenderData& renderData)
 {
@@ -597,6 +629,8 @@ void SVGFPass::clearBuffers(RenderContext* pRenderContext, const RenderData& ren
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLinearZAndNormal).get());
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLighting).get());
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousMoments).get());
+
+    pRenderContext->clearFbo(mpDerivativeVerifyFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
 }
 
 // Extracts linear z and its derivative from the linear Z texture and packs

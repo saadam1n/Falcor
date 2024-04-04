@@ -301,6 +301,7 @@ REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4]
     return psOut;
 }
 
+/*
 PS_OUT main(FullScreenPassVsOut vsOut) {
     DifferentialPair<float3> dpLuminanceParams = diffPair(dvLuminanceParams, float3(1.0, 0.0, 0.0));
     DifferentialPair<float[3]> dpReprojKernel = diffPair(dvReprojKernel, {0, 0, 0});
@@ -334,3 +335,4 @@ PS_OUT main(FullScreenPassVsOut vsOut) {
 
     return ret;
 }
+*/

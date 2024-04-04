@@ -77,6 +77,8 @@ private:
                              ref<Texture> pDebugTexture
         );
 
+    void computeDerivVerification(RenderContext* pRenderContext);
+
     bool mBuffersNeedClear = false;
 
     // SVGF parameters
@@ -91,6 +93,9 @@ private:
     ref<FullScreenPass> mpFilterMoments;
     ref<FullScreenPass> mpAtrous;
     ref<FullScreenPass> mpFinalModulate;
+
+    ref<FullScreenPass> mpDerivativeVerify;
+    ref<Fbo> mpDerivativeVerifyFbo;
 
     // Intermediate framebuffers
     ref<Fbo> mpPingPongFbo[2];

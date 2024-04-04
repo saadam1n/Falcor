@@ -22,6 +22,8 @@ target_sources(SVGFPass PRIVATE
     SVGFReprojectC.slang
     SVGFReprojectD.ps.slang
     SVGFReprojectS.ps.slang
+
+    SVGFDerivativeVerify.ps.slang
 )
 
 target_copy_shaders(SVGFPass RenderPasses/SVGFPass)
