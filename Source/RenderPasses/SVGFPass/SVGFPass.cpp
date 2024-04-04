@@ -608,9 +608,24 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
 
 void SVGFPass::computeDerivVerification(RenderContext* pRenderContext)
 {
+    /*
+    std::vector<int4> blob(1920 * 1080);
+
+    for(int i = 0; i < 1080; i++)
+        for (int j = 0; j < 1920; j++) {
+            float2 fpos = 30.0f * float2(i, j) / float2(1080, 1920);
+            float val = sin(fpos.x) + sin(fpos.y);
+            //val = abs(val);
+            val *= 16384;
+            blob[i * 1920 + j] = int4(val);
+        }
+
+    mFinalModulateState.pdaIllumination->setBlob(blob.data(), 0, blob.size() * sizeof(int4));
+    */
+
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.pdaHistoryLen;
+    perImageCB["drBackwardsDiffBuffer"] = mFinalModulateState.pdaIllumination;
 
     mpDerivativeVerify->execute(pRenderContext, mpDerivativeVerifyFbo);
 }

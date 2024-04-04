@@ -12,9 +12,9 @@ cbuffer PerImageCB
 // Read gColor
 void d_getIllum(int2 ipos, float3 val)
 {
-    // this we actually care about, as this feeds into the previous stage's output 
+    // this we actually care about, as this feeds into the previous stage's output
     // add one float of padding because that is what the atrous pipeline uses
-    accumDerivBuf4(daIllumination, ipos, float4(val, 0.0), gAlbedo);
+    // accumDerivBuf4(daIllumination, ipos, float4(val, 0.0), gIllumination);
 }
 
 // Read gAlbedo
@@ -50,5 +50,6 @@ float3 getEmission(int2 ipos)
 [BackwardDifferentiable]
 float4 final_mod(FullScreenPassVsOut vsOut) {
     const int2 ipos = int2(vsOut.posH.xy);
+
     return float4(remodulate(getIllum(ipos), getAlbedo(ipos)) + getEmission(ipos), 0.0);
 }

@@ -31,6 +31,11 @@ import Utils.Color.ColorHelpers;
 {
     uint w, h;
     tex.GetDimensions(w, h);
+
+    // hardcoded because weird stuff happens with GetDimensions 
+    w = 1920;
+    h = 1080;
+
     return int2(w, h);
 }
 

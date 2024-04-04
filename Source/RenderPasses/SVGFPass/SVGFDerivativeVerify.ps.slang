@@ -17,7 +17,7 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 
     float4 col;
 
-    if (ipos.x < texSize.x / 2)
+    if (false && ipos.x < texSize.x / 2)
     {
         col = (gFuncOutputUpper[ipos] - gFuncOutputLower[ipos]) / delta;
     }
@@ -25,8 +25,6 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
     {
         col = readDerivBuf4(drBackwardsDiffBuffer, ipos, gFuncOutputLower);
     }
-
-    col = float4(0.5f);
 
     return col;
 
