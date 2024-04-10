@@ -404,6 +404,10 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         desc.setSampleCount(0);
         desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
         mpDerivativeVerifyFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+
+        // creating an empty fbo creates a nonexistent screen area to run the fullscreen pass for
+        // so yeah, we have to do this instead
+        mpDummyFullscreenFbo = mpDerivativeVerifyFbo;
     }
 
     mBuffersNeedClear = true;
@@ -453,7 +457,7 @@ void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Text
     auto perImageCB_D = mFinalModulateState.dPass->getRootVar()["PerImageCB_D"];
     perImageCB_D["drFilteredImage"] =  mFinalModulateState.pdrFilteredImage; // uh placehold for now
 
-    mFinalModulateState.dPass->execute(pRenderContext, nullptr); // we aren't rendering to anything, so pass in a null fbo
+    mFinalModulateState.dPass->execute(pRenderContext, mpDerivativeVerifyFbo);
 }
 
 void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, ref<Texture> pOutputTexture)
@@ -501,7 +505,7 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
         perImageCB["daIllumination"] = mAtrousState.pdaIllumination[1];
         perImageCB["daHistoryLen"] = mAtrousState.pdaHistoryLen;
 
-        mAtrousState.dPass->execute(pRenderContext, nullptr);
+        mAtrousState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 
         // Swap our ping pong buffers 
         std::swap(mAtrousState.pdaIllumination[0], mAtrousState.pdaIllumination[1]);
@@ -549,7 +553,7 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
 
     perImageCB_D["drIllumination"] = mAtrousState.pdaIllumination[0];
 
-    mFilterMomentsState.dPass->execute(pRenderContext, nullptr);
+    mFilterMomentsState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 }
 
 void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture,
@@ -603,7 +607,7 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
     perImageCB_D["drHistoryLen"] = mAtrousState.pdaHistoryLen;
     perImageCB_D["drMoments"] = mAtrousState.pdaHistoryLen;
 
-    mReprojectState.dPass->execute(pRenderContext, nullptr);
+    mReprojectState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 }
 
 void SVGFPass::computeDerivVerification(RenderContext* pRenderContext)

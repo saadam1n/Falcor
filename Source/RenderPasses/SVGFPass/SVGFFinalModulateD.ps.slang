@@ -14,5 +14,5 @@ void main(FullScreenPassVsOut vsOut) : SV_TARGET0
 
     float3 test_write_val = float3(0.5f);
     accumDerivBuf4(daIllumination, ipos, float4(test_write_val, 0.0), gIllumination);
-    daIllumination.Store4(getBufIdx4(ipos, gIllumination) / 4, quantVal4(test_write_val));
+    //daIllumination.Store4(getBufIdx4(ipos, gIllumination), quantVal4(test_write_val));
 }

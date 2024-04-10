@@ -97,6 +97,8 @@ private:
     ref<FullScreenPass> mpDerivativeVerify;
     ref<Fbo> mpDerivativeVerifyFbo;
 
+    ref<Fbo> mpDummyFullscreenFbo;
+
     // Intermediate framebuffers
     ref<Fbo> mpPingPongFbo[2];
     ref<Fbo> mpLinearZAndNormalFbo;

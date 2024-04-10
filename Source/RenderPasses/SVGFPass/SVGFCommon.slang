@@ -142,15 +142,19 @@ void accumDerivBuf3(RWByteAddressBuffer rwaddrbuff, int2 ipos, float3 val, Textu
     }
 }
 
+// tex is a texture with equal dimensions to rwaddrbuff
 void accumDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Texture2D tex) {
     uint base_addr = getBufIdx4(ipos, tex);
 
     int4 a = quantVal4(val);
+    
     for(int i = 0; i < 4; i++) {
         uint addr = base_addr + 4 * i;
         int dummy;
         rwaddrbuff.InterlockedAdd(addr, a[i], dummy);
     }
+
+    //rwaddrbuff.Store4(base_addr + 10, int4(a));
 }
 
 // TODO: figure out how to properly read from a rwbyteaddressbuf
@@ -170,11 +174,16 @@ float3 readDerivBuf3(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex) {
 float4 readDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex) {
     uint base_addr = getBufIdx4(ipos, tex);
 
+    /*
     int4 temp;
     for(int i = 0; i < 4; i++) {
         uint addr = base_addr + 4 * i;
         rwaddrbuff.InterlockedAdd(addr, 0, temp[i]);
     }
+    */
+
+    uint status;
+    int4 temp = int4(rwaddrbuff.Load4(base_addr, status));
 
     return dequant4(temp);
 }
