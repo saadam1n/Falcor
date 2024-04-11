@@ -17,7 +17,7 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 
     float4 col;
 
-    if (false && ipos.x < texSize.x / 2)
+    if (ipos.x < texSize.x / 2)
     {
         col = (gFuncOutputUpper[ipos] - gFuncOutputLower[ipos]) / delta;
     }

@@ -22,6 +22,11 @@ def render_graph_SVGF():
     g.addEdge("GBufferRaster.mvec", "SVGFPass.MotionVec")
 
     g.addEdge("SVGFPass.Filtered image", "ToneMapper.src")
+
+    # Mark this first so it appears in the list first
+    g.markOutput("SVGFPass.DerivVerify")
+
+
     g.markOutput("ToneMapper.dst")
 
     g.markOutput("ToneMapper.dst")
