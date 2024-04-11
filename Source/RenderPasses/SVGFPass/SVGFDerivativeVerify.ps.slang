@@ -19,7 +19,7 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 
     if (ipos.x < texSize.x / 2)
     {
-        col = (gFuncOutputUpper[ipos] - gFuncOutputLower[ipos]) / delta;
+        col = (gFuncOutputUpper[ipos] - gFuncOutputLower[ipos]) / (2.0f * delta);
 
         col = float4(dot(col, float4(1.0f, 1.0f, 1.0f, 0.0f)));
     }

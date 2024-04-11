@@ -83,6 +83,8 @@ const char kInternalBufferPreviousMoments[] = "Previous Moments";
     const char kOutputBufferFilteredImage[] = "Filtered image";
     const char kOutputDebugBuffer[] = "DebugBuf";
     const char kOutputDerivVerifyBuf[] = "DerivVerify";
+    const char kOutputFuncLower[] = "FuncLower";
+    const char kOutputFuncUpper[] = "FuncUpper";
     }
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
@@ -280,6 +282,8 @@ RenderPassReflection SVGFPass::reflect(const CompileData& compileData)
     reflector.addOutput(kOutputBufferFilteredImage, "Filtered image").format(ResourceFormat::RGBA16Float);
     reflector.addOutput(kOutputDebugBuffer, "DebugBuf").format(ResourceFormat::RGBA32Float);
     reflector.addOutput(kOutputDerivVerifyBuf, "Deriv Verify").format(ResourceFormat::RGBA32Float);
+    reflector.addOutput(kOutputFuncLower, "Func lower").format(ResourceFormat::RGBA32Float);
+    reflector.addOutput(kOutputFuncUpper, "Func upper").format(ResourceFormat::RGBA32Float);
 
     return reflector;
 }
@@ -385,10 +389,13 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
     mAtrousState.dvSigmaL = oldval - mDelta;
     executeWithDerivatives(pRenderContext, renderData, false);
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), mpFuncOutputLower->getRTV());
+    pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), renderData.getTexture(kOutputFuncLower)->getRTV());
+
 
     mAtrousState.dvSigmaL = oldval + mDelta;
     executeWithDerivatives(pRenderContext, renderData, false);
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), mpFuncOutputUpper->getRTV());
+    pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(),  renderData.getTexture(kOutputFuncUpper)->getRTV());
 
     mAtrousState.dvSigmaL = oldval;
     executeWithDerivatives(pRenderContext, renderData, true);

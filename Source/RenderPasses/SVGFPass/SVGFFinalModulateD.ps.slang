@@ -10,7 +10,7 @@ void main(FullScreenPassVsOut vsOut) : SV_TARGET0
 {
     const int2 ipos = int2(vsOut.posH.xy);
 
-    __bwd_diff(final_mod)(vsOut,  float4(1.0f));
+    __bwd_diff(final_mod)(vsOut,  float4(1.0f, 1.0f, 1.0f, 0.0f));
 
     //float3 test_write_val = float3(0.5f);
     //accumDerivBuf4(daIllumination, ipos, float4(test_write_val, 0.0), gIllumination);

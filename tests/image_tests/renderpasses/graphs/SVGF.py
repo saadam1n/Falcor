@@ -25,6 +25,8 @@ def render_graph_SVGF():
 
     # Mark this first so it appears in the list first
     g.markOutput("SVGFPass.DerivVerify")
+    g.markOutput("SVGFPass.FuncLower")
+    g.markOutput("SVGFPass.FuncUpper")
 
 
     g.markOutput("ToneMapper.dst")
