@@ -347,7 +347,7 @@ void SVGFPass::executeWithDerivatives(RenderContext* pRenderContext, const Rende
         // in mpPingPongFbo[0].  Along the way (or at the end, depending on
         // the value of mFeedbackTap), save the filtered illumination for
         // next time into mpFilteredPastFbo.
-        computeAtrousDecomposition(pRenderContext, pAlbedoTexture);
+        computeAtrousDecomposition(pRenderContext, pAlbedoTexture, shouldCalcDerivatives);
 
         // Compute albedo * filtered illumination and add emission back in.
         auto perImageCB = mpFinalModulate->getRootVar()["PerImageCB"];
@@ -383,7 +383,7 @@ void SVGFPass::executeWithDerivatives(RenderContext* pRenderContext, const Rende
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    mDelta = 0.01f;
+    mDelta = 0.5f;
     float oldval = mAtrousState.dvSigmaL;
 
     mAtrousState.dvSigmaL = oldval - mDelta;
@@ -554,13 +554,6 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
 
         // our written results are now in buf 0
         // if we exit the loop now, we can access idx 0 for results from atrous loop 
-    }
-
-    // Since we swapped the buffer we wrote to at the end
-
-    if (mFeedbackTap < 0)
-    {
-        pRenderContext->blit(mpCurReprojFbo->getColorTexture(0)->getSRV(), mpFilteredPastFbo->getRenderTargetView(0));
     }
 }
 
@@ -783,7 +776,7 @@ void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
     mpFilterMoments->execute(pRenderContext, mpPingPongFbo[0]);
 }
 
-void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture)
+void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, bool nonFiniteDiffPass)
 {
     auto perImageCB = mpAtrous->getRootVar()["PerImageCB"];
 
@@ -824,7 +817,7 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
         mpAtrous->execute(pRenderContext, curTargetFbo);
 
         // store the filtered color for the feedback path
-        if (i == std::min(mFeedbackTap, mFilterIterations - 1))
+        if (nonFiniteDiffPass && i == std::min(mFeedbackTap, mFilterIterations - 1))
         {
             pRenderContext->blit(curTargetFbo->getColorTexture(0)->getSRV(), mpFilteredPastFbo->getRenderTargetView(0));
         }
@@ -832,7 +825,7 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
         std::swap(mpPingPongFbo[0], mpPingPongFbo[1]);
     }
 
-    if (mFeedbackTap < 0)
+    if (nonFiniteDiffPass && mFeedbackTap < 0)
     {
         pRenderContext->blit(mpCurReprojFbo->getColorTexture(0)->getSRV(), mpFilteredPastFbo->getRenderTargetView(0));
     }

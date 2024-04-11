@@ -63,7 +63,7 @@ private:
 
 
     void computeFilteredMoments(RenderContext* pRenderContext);
-    void computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture);
+    void computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, bool nonFiniteDiffPass);
 
     void executeWithDerivatives(RenderContext* pRenderContext, const RenderData& renderData, bool shouldCalcDerivatives);
     void computeDerivatives(RenderContext* pRenderContext, const RenderData& renderData);
