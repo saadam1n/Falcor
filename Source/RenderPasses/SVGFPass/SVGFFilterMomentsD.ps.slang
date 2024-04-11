@@ -5,6 +5,8 @@ cbuffer PerImageCB_D
 {
     // Technically the alpha channel also contains variance
     RWByteAddressBuffer drIllumination;
+
+    RWByteAddressBuffer daSigmaL;
 };
 
 // compute moments
@@ -21,4 +23,6 @@ void main(FullScreenPassVsOut vsOut)
 
      __bwd_diff(filter_moments)(vsOut, dpVarianceBoostFactor, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaZ, readDerivBuf4(drIllumination, ipos, gIllumination));
     float bwd = dpVarianceBoostFactor.d;
+
+    accumDerivBuf4(daSigmaL, ipos, float4(dpSigmaL.d), gIllumination);
 }

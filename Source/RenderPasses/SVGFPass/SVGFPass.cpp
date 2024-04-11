@@ -92,6 +92,12 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 
 SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
+
+        // set common stuff first
+    const size_t screenWidth = 1920;
+    const size_t screenHeight = 1080;
+    const size_t numPixels = screenWidth * screenHeight;
+
     for (const auto& [key, value] : props)
     {
         if (key == kEnabled) mFilterEnabled = value;
@@ -112,6 +118,8 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mpFinalModulate = FullScreenPass::create(mpDevice, kFinalModulateShaderS);
 
     mpDerivativeVerify = FullScreenPass::create(mpDevice, kDerivativeVerifyShader);
+    mpFuncOutputLower =  make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
+    mpFuncOutputUpper =  make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
 
     mFinalModulateState.dPass = FullScreenPass::create(mpDevice, kFinalModulateShaderD);
     mAtrousState.dPass = FullScreenPass::create(mpDevice, kAtrousShaderD);
@@ -131,10 +139,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
 
     FALCOR_ASSERT(mpPackLinearZAndNormal && mpReprojection && mpAtrous && mpFilterMoments && mpFinalModulate && mpTempDiffColor && mpTempDiffAlbedo && mpTempDiffEmission);
 
-    // set common stuff first
-    const size_t screenWidth = 1920;
-    const size_t screenHeight = 1080;
-    const size_t numPixels = screenWidth * screenHeight;
+
 
     float3 dvLuminanceParams = float3(0.3333);
 
@@ -207,6 +212,8 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     for (int i = 0; i < 2; i++) {
         mAtrousState.pdaIllumination[i] = make_ref<Buffer>(pDevice, sizeof(int4) * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
     }
+
+    mAtrousState.pdaSigmaL = make_ref<Buffer>(pDevice, sizeof(int4) * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
 
     mAtrousState.pdaHistoryLen = make_ref<Buffer>(pDevice, sizeof(int4) * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
 
@@ -283,7 +290,7 @@ void SVGFPass::compile(RenderContext* pRenderContext, const CompileData& compile
     mBuffersNeedClear = true;
 }
 
-void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
+void SVGFPass::executeWithDerivatives(RenderContext* pRenderContext, const RenderData& renderData, bool shouldCalcDerivatives)
 {
     ref<Texture> pAlbedoTexture = renderData.getTexture(kInputBufferAlbedo);
     ref<Texture> pColorTexture = renderData.getTexture(kInputBufferColor);
@@ -348,20 +355,43 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
         // Blit into the output texture.
         pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), pOutputTexture->getRTV());
 
-        // Swap resources so we're ready for next frame.
-        std::swap(mpCurReprojFbo, mpPrevReprojFbo);
-        pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(),
-                             pPrevLinearZAndNormalTexture->getRTV());
+        if (shouldCalcDerivatives)
+        {
+            // Swap resources so we're ready for next frame.
+            // only do it though if we are calculating derivaitves so we don't screw up our results from the finite diff pass
+            std::swap(mpCurReprojFbo, mpPrevReprojFbo);
+            pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(),
+                                    pPrevLinearZAndNormalTexture->getRTV());
 
-        computeDerivatives(pRenderContext, renderData);
+            computeDerivatives(pRenderContext, renderData);
 
-        computeDerivVerification(pRenderContext);
-        pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(0)->getSRV(), pDerivVerifyTexture->getRTV());
+            computeDerivVerification(pRenderContext);
+            pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(0)->getSRV(), pDerivVerifyTexture->getRTV());
+        }
+
     }
     else
     {
         pRenderContext->blit(pColorTexture->getSRV(), pOutputTexture->getRTV());
     }
+}
+
+
+void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    mDelta = 0.01f;
+    float oldval = mAtrousState.dvSigmaL;
+
+    mAtrousState.dvSigmaL = oldval - mDelta;
+    executeWithDerivatives(pRenderContext, renderData, false);
+    pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), mpFuncOutputLower->getRTV());
+
+    mAtrousState.dvSigmaL = oldval + mDelta;
+    executeWithDerivatives(pRenderContext, renderData, false);
+    pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), mpFuncOutputUpper->getRTV());
+
+    mAtrousState.dvSigmaL = oldval;
+    executeWithDerivatives(pRenderContext, renderData, true);
 }
 
 void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
@@ -462,9 +492,13 @@ void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Text
 
 void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, ref<Texture> pOutputTexture)
 {
+    pRenderContext->clearUAV(mAtrousState.pdaSigmaL->getUAV().get(), Falcor::uint4(0));
+
+
     auto perImageCB = mAtrousState.dPass->getRootVar()["PerImageCB"];
     auto perImageCB_D = mAtrousState.dPass->getRootVar()["PerImageCB_D"];
 
+    perImageCB_D["daSigmaL"] = mAtrousState.pdaSigmaL;
 
     perImageCB["gAlbedo"]        = pAlbedoTexture;
     perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
@@ -492,6 +526,7 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
 
     // here, let's have [0] be the buffer we read from, and [1] be the buffer we write to
     pRenderContext->clearUAV(mAtrousState.pdaHistoryLen->getUAV().get(), Falcor::uint4(0));
+
     for (int i = mFilterIterations - 1; i >= 0; i--)
     {
         // clear our write buffer
@@ -552,6 +587,7 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
     auto perImageCB_D = mFilterMomentsState.dPass->getRootVar()["PerImageCB_D"];
 
     perImageCB_D["drIllumination"] = mAtrousState.pdaIllumination[0];
+    perImageCB_D["daSigmaL"] = mAtrousState.pdaSigmaL;
 
     mFilterMomentsState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 }
@@ -629,7 +665,10 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext)
 
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mFinalModulateState.pdaIllumination;
+    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.pdaSigmaL;
+    perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
+    perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
+    perImageCB["delta"] = mDelta;
 
     mpDerivativeVerify->execute(pRenderContext, mpDerivativeVerifyFbo);
 }

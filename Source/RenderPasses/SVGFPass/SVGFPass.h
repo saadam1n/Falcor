@@ -65,6 +65,7 @@ private:
     void computeFilteredMoments(RenderContext* pRenderContext);
     void computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture);
 
+    void executeWithDerivatives(RenderContext* pRenderContext, const RenderData& renderData, bool shouldCalcDerivatives);
     void computeDerivatives(RenderContext* pRenderContext, const RenderData& renderData);
     void computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pResultantImage, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture);
     void computeDerivAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, ref<Texture> pOutputTexture);
@@ -96,6 +97,9 @@ private:
 
     ref<FullScreenPass> mpDerivativeVerify;
     ref<Fbo> mpDerivativeVerifyFbo;
+    float mDelta;
+    ref<Texture> mpFuncOutputLower;
+    ref<Texture> mpFuncOutputUpper;
 
     ref<Fbo> mpDummyFullscreenFbo;
 

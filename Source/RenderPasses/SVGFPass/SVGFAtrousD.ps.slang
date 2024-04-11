@@ -4,6 +4,8 @@ import SVGFCommon;
 cbuffer PerImageCB_D
 {
     RWByteAddressBuffer drIllumination;
+
+    RWByteAddressBuffer daSigmaL;
 };
 
 void main(FullScreenPassVsOut vsOut)
@@ -18,5 +20,7 @@ void main(FullScreenPassVsOut vsOut)
     
     const int2 ipos = int2(vsOut.posH.xy);
 
-    __bwd_diff(atrous)(vsOut, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, readDerivBuf4(drIllumination, ipos, gAlbedo));    
+    __bwd_diff(atrous)(vsOut, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, readDerivBuf4(drIllumination, ipos, gAlbedo));
+
+    accumDerivBuf4(daSigmaL, ipos, float4(dpSigmaL.d), gAlbedo);
 }
