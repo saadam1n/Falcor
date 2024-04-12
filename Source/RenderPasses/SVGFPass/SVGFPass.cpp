@@ -85,6 +85,9 @@ const char kInternalBufferPreviousMoments[] = "Previous Moments";
     const char kOutputDerivVerifyBuf[] = "DerivVerify";
     const char kOutputFuncLower[] = "FuncLower";
     const char kOutputFuncUpper[] = "FuncUpper";
+    const char kOutputFdCol[] = "FdCol";
+    const char kOutputBdCol[] = "BdCol";
+
     }
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
@@ -284,6 +287,8 @@ RenderPassReflection SVGFPass::reflect(const CompileData& compileData)
     reflector.addOutput(kOutputDerivVerifyBuf, "Deriv Verify").format(ResourceFormat::RGBA32Float);
     reflector.addOutput(kOutputFuncLower, "Func lower").format(ResourceFormat::RGBA32Float);
     reflector.addOutput(kOutputFuncUpper, "Func upper").format(ResourceFormat::RGBA32Float);
+    reflector.addOutput(kOutputFdCol, "FdCol").format(ResourceFormat::RGBA32Float);
+    reflector.addOutput(kOutputBdCol, "BdCol").format(ResourceFormat::RGBA32Float);
 
     return reflector;
 }
@@ -383,7 +388,7 @@ void SVGFPass::executeWithDerivatives(RenderContext* pRenderContext, const Rende
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    mDelta = 0.5f;
+    mDelta = 0.1f;
     float oldval = mAtrousState.dvSigmaL;
 
     mAtrousState.dvSigmaL = oldval - mDelta;
@@ -399,6 +404,9 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 
     mAtrousState.dvSigmaL = oldval;
     executeWithDerivatives(pRenderContext, renderData, true);
+    pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(1)->getSRV(),  renderData.getTexture(kOutputFdCol)->getRTV());
+    pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(2)->getSRV(),  renderData.getTexture(kOutputBdCol)->getRTV());
+
 }
 
 void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
@@ -440,6 +448,8 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         Fbo::Desc desc;
         desc.setSampleCount(0);
         desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(2, Falcor::ResourceFormat::RGBA32Float);
         mpDerivativeVerifyFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
 
         // creating an empty fbo creates a nonexistent screen area to run the fullscreen pass for

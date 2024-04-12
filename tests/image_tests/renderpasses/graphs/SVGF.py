@@ -27,6 +27,8 @@ def render_graph_SVGF():
     g.markOutput("SVGFPass.DerivVerify")
     g.markOutput("SVGFPass.FuncLower")
     g.markOutput("SVGFPass.FuncUpper")
+    g.markOutput("SVGFPass.FdCol")
+    g.markOutput("SVGFPass.BdCol")
 
 
     g.markOutput("ToneMapper.dst")
