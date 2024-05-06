@@ -32,8 +32,16 @@
 
 namespace {
 
-    const std::string kInputReference = "reference";
-    const std::string kInputRealTime = "realtime";
+    const std::string kInputReference = "Reference";
+    const std::string kInputColor = "Color";
+
+    const std::string kInputAlbedo = "Albedo";
+    const std::string kInputEmission = "Emission";
+    const std::string kInputWorldPosition = "WorldPosition";
+    const std::string kInputWorldNormal = "WorldNormal";
+    const std::string kInputPositionNormalFwidth = "PositionNormalFwidth";
+    const std::string kInputLinearZ = "LinearZ";
+    const std::string kInputMotionVec = "MotionVec";
 
     // we need this because falcor will not execute passes that don't have any marked outputs
     const std::string kOutputDummy = "dummyOut";
@@ -79,7 +87,14 @@ RenderPassReflection DatasetSaver::reflect(const CompileData& compileData)
     RenderPassReflection reflector;
 
     reflector.addInput(kInputReference, "ground truth image");
-    reflector.addInput(kInputRealTime, "image generated in real time w/ 1 spp");
+    reflector.addInput(kInputColor, "image generated in real time w/ 1 spp");
+    reflector.addInput(kInputAlbedo, "albedo input from path tracer");
+    reflector.addInput(kInputEmission, "emission input from gbuffer");
+    reflector.addInput(kInputWorldPosition, "world pos input from gbuffer");
+    reflector.addInput(kInputWorldNormal, "world normal input from gbuffer");
+    reflector.addInput(kInputPositionNormalFwidth, "idk something from gbuffer");
+    reflector.addInput(kInputLinearZ, "depth buffer from gbuffer");
+    reflector.addInput(kInputMotionVec, "motion vec from gbuffer");
 
     reflector.addOutput(kOutputDummy, "dummy output");
 
@@ -98,7 +113,14 @@ void DatasetSaver::execute(RenderContext* pRenderContext, const RenderData& rend
         setStorageKey(std::to_string(currentStorageIndex++));
 
         storeImage(pRenderContext, renderData, kInputReference);
-        storeImage(pRenderContext, renderData, kInputRealTime);
+        storeImage(pRenderContext, renderData, kInputColor);
+        storeImage(pRenderContext, renderData, kInputAlbedo);
+        storeImage(pRenderContext, renderData, kInputEmission);
+        storeImage(pRenderContext, renderData, kInputWorldPosition);
+        storeImage(pRenderContext, renderData, kInputWorldNormal);
+        storeImage(pRenderContext, renderData, kInputPositionNormalFwidth);
+        storeImage(pRenderContext, renderData, kInputLinearZ);
+        storeImage(pRenderContext, renderData, kInputMotionVec);
     }
 }
 
