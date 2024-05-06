@@ -49,10 +49,6 @@ cbuffer PerImageCB
     Texture2D gPrevLinearZAndNormal;
     Texture2D gPrevHistoryLength;
 
-    RWByteAddressBuffer d_gColor;
-    RWByteAddressBuffer d_gAlbedo;
-    RWByteAddressBuffer d_gEmission;
-
     float       dvAlpha;
     float       dvMomentsAlpha;
 

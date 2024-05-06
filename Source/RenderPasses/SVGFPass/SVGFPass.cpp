@@ -88,6 +88,11 @@ const char kInternalBufferPreviousMoments[] = "Previous Moments";
     const char kOutputFdCol[] = "FdCol";
     const char kOutputBdCol[] = "BdCol";
 
+        // set common stuff first
+    const size_t screenWidth = 1920;
+    const size_t screenHeight = 1080;
+    const size_t numPixels = screenWidth * screenHeight;
+
     }
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
@@ -97,11 +102,6 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 
 SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
-
-        // set common stuff first
-    const size_t screenWidth = 1920;
-    const size_t screenHeight = 1080;
-    const size_t numPixels = screenWidth * screenHeight;
 
     for (const auto& [key, value] : props)
     {
@@ -138,11 +138,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         mReprojectState.dPass
     );
 
-    mpTempDiffColor = make_ref<Buffer>(pDevice, sizeof(int32_t) * 4 * 1920 * 1080, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
-    mpTempDiffAlbedo = make_ref<Buffer>(pDevice, sizeof(int32_t) * 4 * 1920 * 1080, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
-    mpTempDiffEmission = make_ref<Buffer>(pDevice, sizeof(int32_t) * 4 * 1920 * 1080, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
-
-    FALCOR_ASSERT(mpPackLinearZAndNormal && mpReprojection && mpAtrous && mpFilterMoments && mpFinalModulate && mpTempDiffColor && mpTempDiffAlbedo && mpTempDiffEmission);
+    FALCOR_ASSERT(mpPackLinearZAndNormal && mpReprojection && mpAtrous && mpFilterMoments && mpFinalModulate);
 
 
 
@@ -185,8 +181,8 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     }
 
     mFilterMomentsState.dvVarianceBoostFactor = 4.0;
-    mFilterMomentsState.pdaIllumination = make_ref<Buffer>(pDevice, sizeof(int4) * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
-    mFilterMomentsState.pdaMoments = make_ref<Buffer>(pDevice, sizeof(int4) * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
+    mFilterMomentsState.pdaIllumination = createAccumulationBuffer(pDevice);
+    mFilterMomentsState.pdaMoments = createAccumulationBuffer(pDevice);
 
     // Set atrous state vars
     mAtrousState.dvSigmaL = dvSigmaL;
@@ -215,22 +211,33 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     }
 
     for (int i = 0; i < 2; i++) {
-        mAtrousState.pdaIllumination[i] = make_ref<Buffer>(pDevice, sizeof(int4) * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
+        mAtrousState.pdaIllumination[i] = createAccumulationBuffer(pDevice);
     }
 
-    mAtrousState.pdaSigmaL = make_ref<Buffer>(pDevice, sizeof(int4) * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
+    mAtrousState.pdaSigmaL = createAccumulationBuffer(pDevice);
+    mAtrousState.pdaSigmaZ = createAccumulationBuffer(pDevice);
+    mAtrousState.pdaSigmaN = createAccumulationBuffer(pDevice);
+    mAtrousState.pdaKernel = createAccumulationBuffer(pDevice);
+    mAtrousState.pdaVarianceKernel = createAccumulationBuffer(pDevice);
+    mAtrousState.pdaLuminanceParams = createAccumulationBuffer(pDevice);
+    mAtrousState.pdaWeightFunctionParams = createAccumulationBuffer(pDevice);
 
-    mAtrousState.pdaHistoryLen = make_ref<Buffer>(pDevice, sizeof(int4) * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
+    mAtrousState.pdaHistoryLen = createAccumulationBuffer(pDevice);
 
     // set final modulate state vars
-    mFinalModulateState.pdaIllumination = make_ref<Buffer>(pDevice, sizeof(int4) * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
-    mFinalModulateState.pdrFilteredImage = make_ref<Buffer>(pDevice, sizeof(int4) * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
+    mFinalModulateState.pdaIllumination = createAccumulationBuffer(pDevice);
+    mFinalModulateState.pdrFilteredImage = createAccumulationBuffer(pDevice);
 
 
     FALCOR_ASSERT(mFinalModulateState.pdaIllumination &&  mFinalModulateState.pdrFilteredImage);
 
 
 }
+
+ref<Buffer> SVGFPass::createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem) {
+    return make_ref<Buffer>(pDevice, bytes_per_elem * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
+}
+
 
 Properties SVGFPass::getProperties() const
 {
@@ -516,6 +523,12 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
     auto perImageCB_D = mAtrousState.dPass->getRootVar()["PerImageCB_D"];
 
     perImageCB_D["daSigmaL"] = mAtrousState.pdaSigmaL;
+    perImageCB_D["daSigmaZ"] = mAtrousState.pdaSigmaZ;
+    perImageCB_D["daSigmaN"] = mAtrousState.pdaSigmaN;
+    perImageCB_D["daKernel"] = mAtrousState.pdaKernel;
+    perImageCB_D["daVarianceKernel"] = mAtrousState.pdaVarianceKernel;
+    perImageCB_D["daLuminanceParams"] = mAtrousState.pdaLuminanceParams;
+    perImageCB_D["daWeightFunctionParams"] = mAtrousState.pdaWeightFunctionParams;
 
     perImageCB["gAlbedo"]        = pAlbedoTexture;
     perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
@@ -628,15 +641,6 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
     perImageCB["dvAlpha"] = mReprojectState.dvAlpha;
     perImageCB["dvMomentsAlpha"] = mReprojectState.dvMomentsAlpha;
 
-    pRenderContext->clearUAV(mpTempDiffColor->getUAV().get(), Falcor::uint4(0));
-    pRenderContext->clearUAV(mpTempDiffAlbedo->getUAV().get(), Falcor::uint4(0));
-    pRenderContext->clearUAV(mpTempDiffEmission->getUAV().get(), Falcor::uint4(0));
-
-    // Setup the temp diff textures
-    perImageCB["d_gColor"] = mpTempDiffColor;
-    perImageCB["d_gAlbedo"] = mpTempDiffAlbedo;
-    perImageCB["d_gEmission"] = mpTempDiffEmission;
-
     perImageCB["dvLuminanceParams"] = mReprojectState.dvLuminanceParams;
 
     for (int i = 0; i < 3; i++) {
@@ -658,21 +662,6 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
 
 void SVGFPass::computeDerivVerification(RenderContext* pRenderContext)
 {
-    /*
-    std::vector<int4> blob(1920 * 1080);
-
-    for(int i = 0; i < 1080; i++)
-        for (int j = 0; j < 1920; j++) {
-            float2 fpos = 30.0f * float2(i, j) / float2(1080, 1920);
-            float val = sin(fpos.x) + sin(fpos.y);
-            //val = abs(val);
-            val *= 16384;
-            blob[i * 1920 + j] = int4(val);
-        }
-
-    mFinalModulateState.pdaIllumination->setBlob(blob.data(), 0, blob.size() * sizeof(int4));
-    */
-
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
     perImageCB["drBackwardsDiffBuffer"] = mAtrousState.pdaSigmaL;
@@ -740,15 +729,6 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> p
     // Setup variables for our reprojection pass
     perImageCB["dvAlpha"] = mReprojectState.dvAlpha;
     perImageCB["dvMomentsAlpha"] = mReprojectState.dvMomentsAlpha;
-
-    pRenderContext->clearUAV(mpTempDiffColor->getUAV().get(), Falcor::uint4(0));
-    pRenderContext->clearUAV(mpTempDiffAlbedo->getUAV().get(), Falcor::uint4(0));
-    pRenderContext->clearUAV(mpTempDiffEmission->getUAV().get(), Falcor::uint4(0));
-
-    // Setup the temp diff textures
-    perImageCB["d_gColor"] = mpTempDiffColor;
-    perImageCB["d_gAlbedo"] = mpTempDiffAlbedo;
-    perImageCB["d_gEmission"] = mpTempDiffEmission;
 
     perImageCB["dvLuminanceParams"] = mReprojectState.dvLuminanceParams;
 

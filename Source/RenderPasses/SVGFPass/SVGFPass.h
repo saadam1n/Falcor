@@ -80,6 +80,8 @@ private:
 
     void computeDerivVerification(RenderContext* pRenderContext);
 
+    ref<Buffer> createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem = sizeof(int4)); 
+
     bool mBuffersNeedClear = false;
 
     // SVGF parameters
@@ -111,11 +113,6 @@ private:
     ref<Fbo> mpPrevReprojFbo;
     ref<Fbo> mpFilteredIlluminationFbo;
     ref<Fbo> mpFinalFbo;
-
-    // Temporary buffers used during backwards diff
-    ref<Buffer> mpTempDiffColor;
-    ref<Buffer> mpTempDiffAlbedo;
-    ref<Buffer> mpTempDiffEmission;
 
     // we want to optimize parameters per pass to get a little bit of extra tuning
     // da is short for derivative accum
