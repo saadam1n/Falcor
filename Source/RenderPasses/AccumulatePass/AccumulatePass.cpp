@@ -57,6 +57,9 @@ const char kAutoReset[] = "autoReset";
 const char kPrecisionMode[] = "precisionMode";
 const char kMaxFrameCount[] = "maxFrameCount";
 const char kOverflowMode[] = "overflowMode";
+
+const char* kDictSamplesPerPixel = "samplesPerPixel";
+
 } // namespace
 
 AccumulatePass::AccumulatePass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
@@ -215,6 +218,9 @@ void AccumulatePass::execute(RenderContext* pRenderContext, const RenderData& re
         logWarning("AccumulatePass unsupported I/O configuration. The output will be cleared.");
         pRenderContext->clearUAV(pDst->getUAV().get(), uint4(0));
     }
+
+    // we need to pass the samples per pixel to the dataset saver pass
+    renderData.getDictionary().samplesPerPixel = mFrameCount;
 }
 
 void AccumulatePass::accumulate(RenderContext* pRenderContext, const ref<Texture>& pSrc, const ref<Texture>& pDst)

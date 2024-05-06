@@ -227,7 +227,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mFinalModulateState.pdrFilteredImage = make_ref<Buffer>(pDevice, sizeof(int4) * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
 
 
-    FALCOR_ASSERT(mFinalModulateState.pdaIllum &&  mFinalModulateState.pdrFilteredImage);
+    FALCOR_ASSERT(mFinalModulateState.pdaIllumination &&  mFinalModulateState.pdrFilteredImage);
 
 
 }

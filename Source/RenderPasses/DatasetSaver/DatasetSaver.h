@@ -66,6 +66,8 @@ private:
     ref<Texture> tempDownloadTexture;
     std::vector<float4> tempDownloadCpuBuffer;
 
+    int mTargetSamples;
+
     void setStoragePath(const std::string& path);
     void setStorageKey(const std::string& key);
     void storeImage(RenderContext* pRenderContext, const RenderData& renderData, const std::string& name);

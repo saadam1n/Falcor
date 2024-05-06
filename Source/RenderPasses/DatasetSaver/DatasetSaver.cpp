@@ -41,6 +41,9 @@ namespace {
     int screenWidth = 1920;
     int screenHeight = 1080;
 
+    const char* kDictSamplesPerPixel = "samplesPerPixel";
+
+    const char* kTargetSamples = "targetSamples";
 }
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
@@ -48,8 +51,17 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
     registry.registerClass<RenderPass, DatasetSaver>();
 }
 
-DatasetSaver::DatasetSaver(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), currentStorageIndex(0)
+DatasetSaver::DatasetSaver(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), currentStorageIndex(0), mTargetSamples(1024 * 16)
 {
+    for (const auto& [key, value] : props)
+    {
+        if (key == kTargetSamples)
+            mTargetSamples = value;
+        else
+            logWarning("Unknown property '{}' in DatasetSaver properties.", key);
+    }
+
+
     setStoragePath("C:/FalcorFiles/Dataset0");
 
     tempDownloadTexture =  make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
@@ -76,7 +88,12 @@ RenderPassReflection DatasetSaver::reflect(const CompileData& compileData)
 
 void DatasetSaver::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    if (pScene)
+    Dictionary& dict = renderData.getDictionary();
+    int sampleCount =  dict.samplesPerPixel;
+
+    std::cout << "Current sample count is " << sampleCount << std::endl;
+
+    if (pScene && sampleCount == mTargetSamples)
     {
         setStorageKey(std::to_string(currentStorageIndex++));
 

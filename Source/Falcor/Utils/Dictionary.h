@@ -55,7 +55,7 @@ public:
             return std::any_cast<T>(mValue);
         }
 
-    private:
+    //private:
         std::any mValue;
     };
 
@@ -95,6 +95,9 @@ public:
         return it != mContainer.end() ? it->second : defaultValue;
     }
 
+    // I HATE STD::ANY
+    // JUST USE A GOD DAMN VOID* POINTER
+    int samplesPerPixel;
 private:
     Container mContainer;
 };
