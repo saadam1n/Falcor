@@ -8,6 +8,12 @@ cbuffer PerImageCB_D
     RWByteAddressBuffer drMoments;
     RWByteAddressBuffer drIllumination;
     RWByteAddressBuffer drHistoryLen;
+
+    RWByteAddressBuffer daLuminanceParams;
+    RWByteAddressBuffer daReprojKernel;
+    RWByteAddressBuffer daReprojParams;
+    RWByteAddressBuffer daAlpha;
+    RWByteAddressBuffer daMomentsAlpha;
 };
 
 void main(FullScreenPassVsOut vsOut) {
@@ -26,4 +32,11 @@ void main(FullScreenPassVsOut vsOut) {
     diffInput.OutHistoryLength = readDerivBuf4(drHistoryLen, ipos, gIllumination).x;
 
     __bwd_diff(reproject)(vsOut, dpLuminanceParams, dpReprojParams, dpReprojKernel, dpAlpha, dpMomentsAlpha, diffInput);
+
+    accumDerivBuf4(daLuminanceParams, ipos, float4(dpLuminanceParams.d, 0.0f), gIllumination);
+    accumDerivBuf4(daReprojKernel, ipos, float4(dpReprojKernel.d[0], dpReprojKernel.d[1], dpReprojKernel.d[2], 0.0f), gIllumination);
+    accumDerivBuf4(daReprojParams, ipos, float4(dpReprojParams.d[0], dpReprojParams.d[1], dpReprojParams.d[2], dpReprojParams.d[3]), gIllumination);
+    accumDerivBuf4(daAlpha, ipos, float4(dpAlpha.d), gIllumination);
+    accumDerivBuf4(daMomentsAlpha, ipos, float4(dpMomentsAlpha.d), gIllumination);
+
 }

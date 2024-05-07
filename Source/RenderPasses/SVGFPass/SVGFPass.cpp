@@ -169,6 +169,12 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mReprojectState.dvKernel[1] = 1.0;
     mReprojectState.dvKernel[2] = 1.0;
 
+    mReprojectState.pdaLuminanceParams = createAccumulationBuffer(pDevice);
+    mReprojectState.pdaReprojKernel = createAccumulationBuffer(pDevice);
+    mReprojectState.pdaReprojParams = createAccumulationBuffer(pDevice);
+    mReprojectState.pdaAlpha = createAccumulationBuffer(pDevice);
+    mReprojectState.pdaMomentsAlpha = createAccumulationBuffer(pDevice);
+
     // set filter moments params
     mFilterMomentsState.dvSigmaL = dvSigmaL;
     mFilterMomentsState.dvSigmaZ = dvSigmaZ;
@@ -183,6 +189,10 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mFilterMomentsState.dvVarianceBoostFactor = 4.0;
     mFilterMomentsState.pdaIllumination = createAccumulationBuffer(pDevice);
     mFilterMomentsState.pdaMoments = createAccumulationBuffer(pDevice);
+
+    mFilterMomentsState.pdaLuminanceParams = createAccumulationBuffer(pDevice);
+    mFilterMomentsState.pdaVarianceBoostFactor = createAccumulationBuffer(pDevice);
+    mFilterMomentsState.pdaWeightFunctionParams = createAccumulationBuffer(pDevice);
 
     // Set atrous state vars
     mAtrousState.dvSigmaL = dvSigmaL;
@@ -611,6 +621,12 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
 
     perImageCB_D["drIllumination"] = mAtrousState.pdaIllumination[0];
     perImageCB_D["daSigmaL"] = mAtrousState.pdaSigmaL;
+    perImageCB_D["daSigmaZ"] = mAtrousState.pdaSigmaZ;
+    perImageCB_D["daSigmaN"] = mAtrousState.pdaSigmaN;
+
+    perImageCB_D["daVarianceBoostFactor"] = mFilterMomentsState.pdaVarianceBoostFactor;
+    perImageCB_D["daLuminanceParams"] = mFilterMomentsState.pdaLuminanceParams;
+    perImageCB_D["daWeightFunctionParams"] = mFilterMomentsState.pdaWeightFunctionParams;
 
     mFilterMomentsState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 }
@@ -656,6 +672,12 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
     perImageCB_D["drIllumination"] = mFilterMomentsState.pdaIllumination;
     perImageCB_D["drHistoryLen"] = mAtrousState.pdaHistoryLen;
     perImageCB_D["drMoments"] = mAtrousState.pdaHistoryLen;
+
+    perImageCB_D["daLuminanceParams"] = mReprojectState.pdaLuminanceParams;
+    perImageCB_D["daReprojKernel"] = mReprojectState.pdaReprojKernel;
+    perImageCB_D["daReprojParams"] = mReprojectState.pdaReprojParams;
+    perImageCB_D["daAlpha"] = mReprojectState.pdaAlpha;
+    perImageCB_D["daMomentsAlpha"] = mReprojectState.pdaMomentsAlpha;
 
     mReprojectState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 }

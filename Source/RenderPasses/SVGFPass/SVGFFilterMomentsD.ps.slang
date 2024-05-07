@@ -7,6 +7,12 @@ cbuffer PerImageCB_D
     RWByteAddressBuffer drIllumination;
 
     RWByteAddressBuffer daSigmaL;
+    RWByteAddressBuffer daSigmaZ;
+    RWByteAddressBuffer daSigmaN;
+
+    RWByteAddressBuffer daVarianceBoostFactor;
+    RWByteAddressBuffer daLuminanceParams;
+    RWByteAddressBuffer daWeightFunctionParams;;
 };
 
 // compute moments
@@ -25,4 +31,10 @@ void main(FullScreenPassVsOut vsOut)
     float bwd = dpVarianceBoostFactor.d;
 
     accumDerivBuf4(daSigmaL, ipos, float4(dpSigmaL.d), gIllumination);
+    accumDerivBuf4(daSigmaZ, ipos, float4(dpSigmaZ.d), gIllumination);
+    accumDerivBuf4(daSigmaN, ipos, float4(dpSigmaN.d), gIllumination);
+
+    accumDerivBuf4(daVarianceBoostFactor, ipos, float4(dpVarianceBoostFactor.d), gIllumination);
+    accumDerivBuf4(daLuminanceParams, ipos, float4(dpLuminanceParams.d, 0.0f), gIllumination);
+    accumDerivBuf4(daWeightFunctionParams, ipos, float4(dpWeightFunctionParams.d[0], dpWeightFunctionParams.d[1], dpWeightFunctionParams.d[2], 0.0f), gIllumination);
 }
