@@ -27,7 +27,7 @@ void main(FullScreenPassVsOut vsOut)
     
     const int2 ipos = int2(vsOut.posH.xy);
 
-     __bwd_diff(filter_moments)(vsOut, dpVarianceBoostFactor, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaZ, readDerivBuf4(drIllumination, ipos, gIllumination));
+     __bwd_diff(filter_moments)(vsOut, dpVarianceBoostFactor, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, readDerivBuf4(drIllumination, ipos, gIllumination));
     float bwd = dpVarianceBoostFactor.d;
 
     accumDerivBuf4(daSigmaL, ipos, float4(dpSigmaL.d), gIllumination);

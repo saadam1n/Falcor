@@ -126,6 +126,8 @@ private:
         ref<Texture> ptHistoryLen;
         ref<Texture> ptMoments;
 
+        ref<Texture> pPrevIllum;
+
         ref<Buffer> pdaLuminanceParams;
         ref<Buffer> pdaReprojKernel;
         ref<Buffer> pdaReprojParams;
@@ -152,6 +154,10 @@ private:
         ref<Buffer> pdaVarianceBoostFactor;
         ref<Buffer> pdaLuminanceParams;
         ref<Buffer> pdaWeightFunctionParams;
+
+        ref<Buffer> pdaSigmaL;
+        ref<Buffer> pdaSigmaZ;
+        ref<Buffer> pdaSigmaN;
 
         float   dvSigmaL;
         float   dvSigmaZ;

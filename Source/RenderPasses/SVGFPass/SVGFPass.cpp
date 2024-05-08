@@ -175,6 +175,8 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mReprojectState.pdaAlpha = createAccumulationBuffer(pDevice);
     mReprojectState.pdaMomentsAlpha = createAccumulationBuffer(pDevice);
 
+    mReprojectState.pPrevIllum = make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
+
     // set filter moments params
     mFilterMomentsState.dvSigmaL = dvSigmaL;
     mFilterMomentsState.dvSigmaZ = dvSigmaZ;
@@ -189,6 +191,10 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mFilterMomentsState.dvVarianceBoostFactor = 4.0;
     mFilterMomentsState.pdaIllumination = createAccumulationBuffer(pDevice);
     mFilterMomentsState.pdaMoments = createAccumulationBuffer(pDevice);
+
+    mFilterMomentsState.pdaSigmaL = createAccumulationBuffer(pDevice);
+    mFilterMomentsState.pdaSigmaZ = createAccumulationBuffer(pDevice);
+    mFilterMomentsState.pdaSigmaN = createAccumulationBuffer(pDevice);
 
     mFilterMomentsState.pdaLuminanceParams = createAccumulationBuffer(pDevice);
     mFilterMomentsState.pdaVarianceBoostFactor = createAccumulationBuffer(pDevice);
@@ -243,6 +249,75 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
 
 
 }
+
+void SVGFPass::clearBuffers(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    pRenderContext->clearFbo(mpPingPongFbo[0].get(), float4(0), 1.0f, 0, FboAttachmentType::All);
+    pRenderContext->clearFbo(mpPingPongFbo[1].get(), float4(0), 1.0f, 0, FboAttachmentType::All);
+    pRenderContext->clearFbo(mpLinearZAndNormalFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
+    pRenderContext->clearFbo(mpFilteredPastFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
+    pRenderContext->clearFbo(mpCurReprojFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
+    pRenderContext->clearFbo(mpPrevReprojFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
+    pRenderContext->clearFbo(mpFilteredIlluminationFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
+
+    pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLinearZAndNormal).get());
+    pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLighting).get());
+    pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousMoments).get());
+
+    pRenderContext->clearFbo(mpDerivativeVerifyFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
+}
+
+void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
+{
+    {
+        // Screen-size FBOs with 3 MRTs: one that is RGBA32F, one that is
+        // RG32F for the luminance moments, and one that is R16F.
+        Fbo::Desc desc;
+        desc.setSampleCount(0);
+        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float); // illumination
+        desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Float);   // moments
+        desc.setColorTarget(2, Falcor::ResourceFormat::RGBA32Float);    // history length
+        desc.setColorTarget(3, Falcor::ResourceFormat::RGBA32Float);    // debug buf
+        mpCurReprojFbo  = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+        mpPrevReprojFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+    }
+
+    {
+        // Screen-size RGBA32F buffer for linear Z, derivative, and packed normal
+        Fbo::Desc desc;
+        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
+        mpLinearZAndNormalFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+    }
+
+    {
+        // Screen-size FBOs with 1 RGBA32F buffer
+        Fbo::Desc desc;
+        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Float);    // debug buf
+
+        mpPingPongFbo[0]  = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+        mpPingPongFbo[1]  = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+        mpFilteredPastFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+        mpFilteredIlluminationFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+        mpFinalFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+    }
+
+    {
+        Fbo::Desc desc;
+        desc.setSampleCount(0);
+        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(2, Falcor::ResourceFormat::RGBA32Float);
+        mpDerivativeVerifyFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+
+        // creating an empty fbo creates a nonexistent screen area to run the fullscreen pass for
+        // so yeah, we have to do this instead
+        mpDummyFullscreenFbo = mpDerivativeVerifyFbo;
+    }
+
+    mBuffersNeedClear = true;
+}
+
 
 ref<Buffer> SVGFPass::createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem) {
     return make_ref<Buffer>(pDevice, bytes_per_elem * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
@@ -378,21 +453,21 @@ void SVGFPass::executeWithDerivatives(RenderContext* pRenderContext, const Rende
         perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
         mpFinalModulate->execute(pRenderContext, mpFinalFbo);
 
-        // Blit into the output texture.
-        pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), pOutputTexture->getRTV());
-
         if (shouldCalcDerivatives)
         {
+            computeDerivatives(pRenderContext, renderData);
+
+            computeDerivVerification(pRenderContext);
+            pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(0)->getSRV(), pDerivVerifyTexture->getRTV());
+
             // Swap resources so we're ready for next frame.
             // only do it though if we are calculating derivaitves so we don't screw up our results from the finite diff pass
             std::swap(mpCurReprojFbo, mpPrevReprojFbo);
             pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(),
                                     pPrevLinearZAndNormalTexture->getRTV());
 
-            computeDerivatives(pRenderContext, renderData);
-
-            computeDerivVerification(pRenderContext);
-            pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(0)->getSRV(), pDerivVerifyTexture->getRTV());
+            // Blit into the output texture.
+            pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), pOutputTexture->getRTV());
         }
 
     }
@@ -405,77 +480,41 @@ void SVGFPass::executeWithDerivatives(RenderContext* pRenderContext, const Rende
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    mDelta = 0.1f;
-    float oldval = mAtrousState.dvSigmaL;
+    mDelta = 0.005f;
 
-    mAtrousState.dvSigmaL = oldval - mDelta;
+    float& valToChange = mAtrousState.dvKernel[0];
+    float oldval = valToChange;
+
+    valToChange = oldval - mDelta;
     executeWithDerivatives(pRenderContext, renderData, false);
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), mpFuncOutputLower->getRTV());
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), renderData.getTexture(kOutputFuncLower)->getRTV());
 
 
-    mAtrousState.dvSigmaL = oldval + mDelta;
+    valToChange = oldval + mDelta;
     executeWithDerivatives(pRenderContext, renderData, false);
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), mpFuncOutputUpper->getRTV());
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(),  renderData.getTexture(kOutputFuncUpper)->getRTV());
 
-    mAtrousState.dvSigmaL = oldval;
+    valToChange = oldval;
     executeWithDerivatives(pRenderContext, renderData, true);
     pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(1)->getSRV(),  renderData.getTexture(kOutputFdCol)->getRTV());
     pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(2)->getSRV(),  renderData.getTexture(kOutputBdCol)->getRTV());
 
 }
 
-void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
+void SVGFPass::computeDerivVerification(RenderContext* pRenderContext)
 {
-    {
-        // Screen-size FBOs with 3 MRTs: one that is RGBA32F, one that is
-        // RG32F for the luminance moments, and one that is R16F.
-        Fbo::Desc desc;
-        desc.setSampleCount(0);
-        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float); // illumination
-        desc.setColorTarget(1, Falcor::ResourceFormat::RG32Float);   // moments
-        desc.setColorTarget(2, Falcor::ResourceFormat::R16Float);    // history length
-        desc.setColorTarget(3, Falcor::ResourceFormat::RGBA32Float);    // debug buf
-        mpCurReprojFbo  = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
-        mpPrevReprojFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
-    }
+    auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    {
-        // Screen-size RGBA32F buffer for linear Z, derivative, and packed normal
-        Fbo::Desc desc;
-        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
-        mpLinearZAndNormalFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
-    }
+    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.pdaKernel;
+    perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
+    perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
+    perImageCB["delta"] = mDelta;
 
-    {
-        // Screen-size FBOs with 1 RGBA32F buffer
-        Fbo::Desc desc;
-        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
-        desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Float);    // debug buf
-
-        mpPingPongFbo[0]  = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
-        mpPingPongFbo[1]  = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
-        mpFilteredPastFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
-        mpFilteredIlluminationFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
-        mpFinalFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
-    }
-
-    {
-        Fbo::Desc desc;
-        desc.setSampleCount(0);
-        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
-        desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Float);
-        desc.setColorTarget(2, Falcor::ResourceFormat::RGBA32Float);
-        mpDerivativeVerifyFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
-
-        // creating an empty fbo creates a nonexistent screen area to run the fullscreen pass for
-        // so yeah, we have to do this instead
-        mpDummyFullscreenFbo = mpDerivativeVerifyFbo;
-    }
-
-    mBuffersNeedClear = true;
+    mpDerivativeVerify->execute(pRenderContext, mpDerivativeVerifyFbo);
 }
+
 
 // I'll move parts of this off to other function as need be
 void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const RenderData& renderData)
@@ -524,9 +563,71 @@ void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Text
     mFinalModulateState.dPass->execute(pRenderContext, mpDerivativeVerifyFbo);
 }
 
+void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, bool nonFiniteDiffPass)
+{
+    auto perImageCB = mpAtrous->getRootVar()["PerImageCB"];
+
+    perImageCB["gAlbedo"] = pAlbedoTexture;
+    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
+    perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
+
+    perImageCB["dvSigmaL"] = mAtrousState.dvSigmaL;
+    perImageCB["dvSigmaZ"] = mAtrousState.dvSigmaZ;
+    perImageCB["dvSigmaN"] = mAtrousState.dvSigmaN;
+
+    perImageCB["dvLuminanceParams"] = mAtrousState.dvLuminanceParams;
+
+    for (int i = 0; i < 3; i++) {
+        perImageCB["dvWeightFunctionParams"][i] = mAtrousState.dvWeightFunctionParams[i];
+    }
+
+    for (int i = 0; i < 3; i++) {
+        perImageCB["dvKernel"][i] = mAtrousState.dvKernel[i];
+    }
+
+    for (int i = 0; i < 2; i++) {
+        for (int j = 0; j < 2; j++) {
+            perImageCB["dvVarianceKernel"][i][j] = mAtrousState.dvVarianceKernel[i][j];
+        }
+    }
+
+    for (int i = 0; i < mFilterIterations; i++)
+    {
+        ref<Fbo> curTargetFbo = mpPingPongFbo[1];
+
+        perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
+        perImageCB["gStepSize"] = 1 << i;
+
+        // keep a copy of our input for backwards differation
+        if(nonFiniteDiffPass)
+            pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), mAtrousState.pgIllumination[i]->getRTV());
+
+        mpAtrous->execute(pRenderContext, curTargetFbo);
+
+        // store the filtered color for the feedback path
+        if (nonFiniteDiffPass && i == std::min(mFeedbackTap, mFilterIterations - 1))
+        {
+            pRenderContext->blit(curTargetFbo->getColorTexture(0)->getSRV(), mpFilteredPastFbo->getRenderTargetView(0));
+        }
+
+        std::swap(mpPingPongFbo[0], mpPingPongFbo[1]);
+    }
+
+    if (nonFiniteDiffPass && mFeedbackTap < 0)
+    {
+        pRenderContext->blit(mpCurReprojFbo->getColorTexture(0)->getSRV(), mpFilteredPastFbo->getRenderTargetView(0));
+    }
+}
+
 void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, ref<Texture> pOutputTexture)
 {
     pRenderContext->clearUAV(mAtrousState.pdaSigmaL->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(mAtrousState.pdaSigmaZ->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(mAtrousState.pdaSigmaN->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(mAtrousState.pdaKernel->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(mAtrousState.pdaVarianceKernel->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(mAtrousState.pdaLuminanceParams->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(mAtrousState.pdaWeightFunctionParams->getUAV().get(), Falcor::uint4(0));
 
 
     auto perImageCB = mAtrousState.dPass->getRootVar()["PerImageCB"];
@@ -590,6 +691,29 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
     }
 }
 
+void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
+{
+    auto perImageCB = mpFilterMoments->getRootVar()["PerImageCB"];
+
+    perImageCB["gIllumination"] = mpCurReprojFbo->getColorTexture(0);
+    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
+    perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
+    perImageCB["gMoments"] = mpCurReprojFbo->getColorTexture(1);
+
+    perImageCB["dvSigmaL"] = mFilterMomentsState.dvSigmaL;
+    perImageCB["dvSigmaZ"] = mFilterMomentsState.dvSigmaZ;
+    perImageCB["dvSigmaN"] = mFilterMomentsState.dvSigmaN;
+
+    perImageCB["dvLuminanceParams"] =mFilterMomentsState. dvLuminanceParams;
+    perImageCB["dvVarianceBoostFactor"] = mFilterMomentsState.dvVarianceBoostFactor;
+
+    for (int i = 0; i < 3; i++) {
+        perImageCB["dvWeightFunctionParams"][i] = mFilterMomentsState.dvWeightFunctionParams[i];
+    }
+
+    mpFilterMoments->execute(pRenderContext, mpPingPongFbo[0]);
+}
+
 void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
 {
     auto perImageCB = mFilterMomentsState.dPass->getRootVar()["PerImageCB"];
@@ -620,110 +744,15 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
     auto perImageCB_D = mFilterMomentsState.dPass->getRootVar()["PerImageCB_D"];
 
     perImageCB_D["drIllumination"] = mAtrousState.pdaIllumination[0];
-    perImageCB_D["daSigmaL"] = mAtrousState.pdaSigmaL;
-    perImageCB_D["daSigmaZ"] = mAtrousState.pdaSigmaZ;
-    perImageCB_D["daSigmaN"] = mAtrousState.pdaSigmaN;
+    perImageCB_D["daSigmaL"] = mFilterMomentsState.pdaSigmaL;
+    perImageCB_D["daSigmaZ"] = mFilterMomentsState.pdaSigmaZ;
+    perImageCB_D["daSigmaN"] = mFilterMomentsState.pdaSigmaN;
 
     perImageCB_D["daVarianceBoostFactor"] = mFilterMomentsState.pdaVarianceBoostFactor;
     perImageCB_D["daLuminanceParams"] = mFilterMomentsState.pdaLuminanceParams;
     perImageCB_D["daWeightFunctionParams"] = mFilterMomentsState.pdaWeightFunctionParams;
 
     mFilterMomentsState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
-}
-
-void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture,
-                                   ref<Texture> pColorTexture, ref<Texture> pEmissionTexture,
-                                   ref<Texture> pMotionVectorTexture,
-                                   ref<Texture> pPositionNormalFwidthTexture,
-                                   ref<Texture> pPrevLinearZTexture,
-                                   ref<Texture> pDebugTexture
-    )
-{
-    auto perImageCB = mReprojectState.dPass->getRootVar()["PerImageCB"];
-
-    // Setup textures for our reprojection shader pass
-    perImageCB["gMotion"]        = pMotionVectorTexture;
-    perImageCB["gColor"]         = pColorTexture;
-    perImageCB["gEmission"]      = pEmissionTexture;
-    perImageCB["gAlbedo"]        = pAlbedoTexture;
-    perImageCB["gPositionNormalFwidth"] = pPositionNormalFwidthTexture;
-    perImageCB["gPrevIllum"]     = mpFilteredPastFbo->getColorTexture(0);
-    perImageCB["gPrevMoments"]   = mpPrevReprojFbo->getColorTexture(1);
-    perImageCB["gLinearZAndNormal"]       = mpLinearZAndNormalFbo->getColorTexture(0);
-    perImageCB["gPrevLinearZAndNormal"]   = pPrevLinearZTexture;
-    perImageCB["gPrevHistoryLength"] = mpPrevReprojFbo->getColorTexture(2);
-
-    // Setup variables for our reprojection pass
-    perImageCB["dvAlpha"] = mReprojectState.dvAlpha;
-    perImageCB["dvMomentsAlpha"] = mReprojectState.dvMomentsAlpha;
-
-    perImageCB["dvLuminanceParams"] = mReprojectState.dvLuminanceParams;
-
-    for (int i = 0; i < 3; i++) {
-        perImageCB["dvReprojKernel"][i] = mReprojectState.dvKernel[i];
-    }
-
-    for (int i = 0; i < 4; i++) {
-        perImageCB["dvReprojParams"][i] = mReprojectState.dvParams[i];
-    }
-
-    auto perImageCB_D = mReprojectState.dPass->getRootVar()["PerImageCB_D"];
-
-    perImageCB_D["drIllumination"] = mFilterMomentsState.pdaIllumination;
-    perImageCB_D["drHistoryLen"] = mAtrousState.pdaHistoryLen;
-    perImageCB_D["drMoments"] = mAtrousState.pdaHistoryLen;
-
-    perImageCB_D["daLuminanceParams"] = mReprojectState.pdaLuminanceParams;
-    perImageCB_D["daReprojKernel"] = mReprojectState.pdaReprojKernel;
-    perImageCB_D["daReprojParams"] = mReprojectState.pdaReprojParams;
-    perImageCB_D["daAlpha"] = mReprojectState.pdaAlpha;
-    perImageCB_D["daMomentsAlpha"] = mReprojectState.pdaMomentsAlpha;
-
-    mReprojectState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
-}
-
-void SVGFPass::computeDerivVerification(RenderContext* pRenderContext)
-{
-    auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
-
-    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.pdaSigmaL;
-    perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
-    perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
-    perImageCB["delta"] = mDelta;
-
-    mpDerivativeVerify->execute(pRenderContext, mpDerivativeVerifyFbo);
-}
-
-
-void SVGFPass::clearBuffers(RenderContext* pRenderContext, const RenderData& renderData)
-{
-    pRenderContext->clearFbo(mpPingPongFbo[0].get(), float4(0), 1.0f, 0, FboAttachmentType::All);
-    pRenderContext->clearFbo(mpPingPongFbo[1].get(), float4(0), 1.0f, 0, FboAttachmentType::All);
-    pRenderContext->clearFbo(mpLinearZAndNormalFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
-    pRenderContext->clearFbo(mpFilteredPastFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
-    pRenderContext->clearFbo(mpCurReprojFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
-    pRenderContext->clearFbo(mpPrevReprojFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
-    pRenderContext->clearFbo(mpFilteredIlluminationFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
-
-    pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLinearZAndNormal).get());
-    pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLighting).get());
-    pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousMoments).get());
-
-    pRenderContext->clearFbo(mpDerivativeVerifyFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
-}
-
-// Extracts linear z and its derivative from the linear Z texture and packs
-// the normal from the world normal texture and packes them into the FBO.
-// (It's slightly wasteful to copy linear z here, but having this all
-// together in a single buffer is a small simplification, since we make a
-// copy of it to refer to in the next frame.)
-void SVGFPass::computeLinearZAndNormal(RenderContext* pRenderContext, ref<Texture> pLinearZTexture, ref<Texture> pWorldNormalTexture)
-{
-    auto perImageCB = mpPackLinearZAndNormal->getRootVar()["PerImageCB"];
-    perImageCB["gLinearZ"] = pLinearZTexture;
-    perImageCB["gNormal"] = pWorldNormalTexture;
-
-    mpPackLinearZAndNormal->execute(pRenderContext, mpLinearZAndNormalFbo);
 }
 
 void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture,
@@ -763,84 +792,81 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> p
     }
 
     mpReprojection->execute(pRenderContext, mpCurReprojFbo);
+
+    // save a copy of our past filtration for backwards differentiation
+    pRenderContext->blit(mpFilteredPastFbo->getColorTexture(0)->getSRV(), mReprojectState.pPrevIllum->getRTV());
 }
 
-void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
+void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture,
+                                   ref<Texture> pColorTexture, ref<Texture> pEmissionTexture,
+                                   ref<Texture> pMotionVectorTexture,
+                                   ref<Texture> pPositionNormalFwidthTexture,
+                                   ref<Texture> pPrevLinearZTexture,
+                                   ref<Texture> pDebugTexture
+    )
 {
-    auto perImageCB = mpFilterMoments->getRootVar()["PerImageCB"];
+    auto perImageCB = mReprojectState.dPass->getRootVar()["PerImageCB"];
 
-    perImageCB["gIllumination"] = mpCurReprojFbo->getColorTexture(0);
-    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
-    perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
-    perImageCB["gMoments"] = mpCurReprojFbo->getColorTexture(1);
+    // Setup textures for our reprojection shader pass
+    perImageCB["gMotion"]        = pMotionVectorTexture;
+    perImageCB["gColor"]         = pColorTexture;
+    perImageCB["gEmission"]      = pEmissionTexture;
+    perImageCB["gAlbedo"]        = pAlbedoTexture;
+    perImageCB["gPositionNormalFwidth"] = pPositionNormalFwidthTexture;
+    perImageCB["gPrevIllum"]     = mReprojectState.pPrevIllum;
+    perImageCB["gPrevMoments"]   = mpPrevReprojFbo->getColorTexture(1);
+    perImageCB["gLinearZAndNormal"]       = mpLinearZAndNormalFbo->getColorTexture(0);
+    perImageCB["gPrevLinearZAndNormal"]   = pPrevLinearZTexture;
+    perImageCB["gPrevHistoryLength"] = mpPrevReprojFbo->getColorTexture(2);
 
-    perImageCB["dvSigmaL"] = mFilterMomentsState.dvSigmaL;
-    perImageCB["dvSigmaZ"] = mFilterMomentsState.dvSigmaZ;
-    perImageCB["dvSigmaN"] = mFilterMomentsState.dvSigmaN;
+    // Setup variables for our reprojection pass
+    perImageCB["dvAlpha"] = mReprojectState.dvAlpha;
+    perImageCB["dvMomentsAlpha"] = mReprojectState.dvMomentsAlpha;
 
-    perImageCB["dvLuminanceParams"] =mFilterMomentsState. dvLuminanceParams;
-    perImageCB["dvVarianceBoostFactor"] = mFilterMomentsState.dvVarianceBoostFactor;
+    perImageCB["dvLuminanceParams"] = mReprojectState.dvLuminanceParams;
 
     for (int i = 0; i < 3; i++) {
-        perImageCB["dvWeightFunctionParams"][i] = mFilterMomentsState.dvWeightFunctionParams[i];
+        perImageCB["dvReprojKernel"][i] = mReprojectState.dvKernel[i];
     }
 
-    mpFilterMoments->execute(pRenderContext, mpPingPongFbo[0]);
+    for (int i = 0; i < 4; i++) {
+        perImageCB["dvReprojParams"][i] = mReprojectState.dvParams[i];
+    }
+
+    auto perImageCB_D = mReprojectState.dPass->getRootVar()["PerImageCB_D"];
+
+    perImageCB_D["drIllumination"] = mFilterMomentsState.pdaIllumination;
+    perImageCB_D["drHistoryLen"] = mAtrousState.pdaHistoryLen;
+    perImageCB_D["drMoments"] = mFilterMomentsState.pdaMoments;
+
+    pRenderContext->clearUAV(mReprojectState.pdaLuminanceParams->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(mReprojectState.pdaReprojKernel->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(mReprojectState.pdaReprojParams->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(mReprojectState.pdaAlpha->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(mReprojectState.pdaMomentsAlpha->getUAV().get(), Falcor::uint4(0));
+
+    perImageCB_D["daLuminanceParams"] = mReprojectState.pdaLuminanceParams;
+    perImageCB_D["daReprojKernel"] = mReprojectState.pdaReprojKernel;
+    perImageCB_D["daReprojParams"] = mReprojectState.pdaReprojParams;
+    perImageCB_D["daAlpha"] = mReprojectState.pdaAlpha;
+    perImageCB_D["daMomentsAlpha"] = mReprojectState.pdaMomentsAlpha;
+
+    mReprojectState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 }
 
-void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, bool nonFiniteDiffPass)
+
+// Extracts linear z and its derivative from the linear Z texture and packs
+// the normal from the world normal texture and packes them into the FBO.
+// (It's slightly wasteful to copy linear z here, but having this all
+// together in a single buffer is a small simplification, since we make a
+// copy of it to refer to in the next frame.)
+void SVGFPass::computeLinearZAndNormal(RenderContext* pRenderContext, ref<Texture> pLinearZTexture, ref<Texture> pWorldNormalTexture)
 {
-    auto perImageCB = mpAtrous->getRootVar()["PerImageCB"];
+    auto perImageCB = mpPackLinearZAndNormal->getRootVar()["PerImageCB"];
+    perImageCB["gLinearZ"] = pLinearZTexture;
+    perImageCB["gNormal"] = pWorldNormalTexture;
 
-    perImageCB["gAlbedo"] = pAlbedoTexture;
-    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
-    perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
-
-    perImageCB["dvSigmaL"] = mAtrousState.dvSigmaL;
-    perImageCB["dvSigmaZ"] = mAtrousState.dvSigmaZ;
-    perImageCB["dvSigmaN"] = mAtrousState.dvSigmaN;
-
-    perImageCB["dvLuminanceParams"] = mAtrousState.dvLuminanceParams;
-
-    for (int i = 0; i < 3; i++) {
-        perImageCB["dvWeightFunctionParams"][i] = mAtrousState.dvWeightFunctionParams[i];
-    }
-
-    for (int i = 0; i < 3; i++) {
-        perImageCB["dvKernel"][i] = mAtrousState.dvKernel[i];
-    }
-
-    for (int i = 0; i < 2; i++) {
-        for (int j = 0; j < 2; j++) {
-            perImageCB["dvVarianceKernel"][i][j] = mAtrousState.dvVarianceKernel[i][j];
-        }
-    }
-
-    for (int i = 0; i < mFilterIterations; i++)
-    {
-        ref<Fbo> curTargetFbo = mpPingPongFbo[1];
-
-        perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
-        perImageCB["gStepSize"] = 1 << i;
-
-        // keep a copy of our input for backwards differation 
-        pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), mAtrousState.pgIllumination[i]->getRTV());
-
-        mpAtrous->execute(pRenderContext, curTargetFbo);
-
-        // store the filtered color for the feedback path
-        if (nonFiniteDiffPass && i == std::min(mFeedbackTap, mFilterIterations - 1))
-        {
-            pRenderContext->blit(curTargetFbo->getColorTexture(0)->getSRV(), mpFilteredPastFbo->getRenderTargetView(0));
-        }
-
-        std::swap(mpPingPongFbo[0], mpPingPongFbo[1]);
-    }
-
-    if (nonFiniteDiffPass && mFeedbackTap < 0)
-    {
-        pRenderContext->blit(mpCurReprojFbo->getColorTexture(0)->getSRV(), mpFilteredPastFbo->getRenderTargetView(0));
-    }
+    mpPackLinearZAndNormal->execute(pRenderContext, mpLinearZAndNormalFbo);
 }
 
 void SVGFPass::renderUI(Gui::Widgets& widget)
