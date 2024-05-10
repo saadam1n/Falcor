@@ -97,7 +97,7 @@ float4 computeDebugDiffError(float finite, float bwd) {
     return float4(val);
 }
 
-static const float QUANTIZATION = 16384.0;
+static const float QUANTIZATION = 65536.0;
 
 int3 quantVal3(float3 val) {
     return int3(QUANTIZATION * val);
@@ -154,7 +154,7 @@ void accumDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Textu
         rwaddrbuff.InterlockedAdd(addr, a[i], dummy);
     }
 
-    //rwaddrbuff.Store4(base_addr + 10, int4(a));
+    //rwaddrbuff.Store4(base_addr, int4(a));
 }
 
 // TODO: figure out how to properly read from a rwbyteaddressbuf

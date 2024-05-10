@@ -172,29 +172,34 @@ private:
     } mFilterMomentsState;
 
     struct {
-        ref<Buffer> pdaKernel;
-        ref<Buffer> pdaVarianceKernel;
-        ref<Buffer> pdaLuminanceParams;
-        ref<Buffer> pdaWeightFunctionParams;
-        ref<Buffer> pdaSigmaL;
-        ref<Buffer> pdaSigmaZ;
-        ref<Buffer> pdaSigmaN;
+
+        struct PerIterationState
+        {
+            ref<Texture> pgIllumination; // saved illumination for this iteration
+
+            ref<Buffer> pdaKernel;
+            ref<Buffer> pdaVarianceKernel;
+            ref<Buffer> pdaLuminanceParams;
+            ref<Buffer> pdaWeightFunctionParams;
+            ref<Buffer> pdaSigmaL;
+            ref<Buffer> pdaSigmaZ;
+            ref<Buffer> pdaSigmaN;
+
+            float   dvSigmaL;
+            float   dvSigmaZ;
+            float   dvSigmaN;
+
+            float dvWeightFunctionParams[3];
+            float3 dvLuminanceParams;
+
+            float dvVarianceKernel[2][2];
+            float dvKernel[3];
+        };
+
+        std::vector<PerIterationState> mIterationState;
 
         ref<Buffer> pdaIllumination[2];
-
         ref<Buffer> pdaHistoryLen;
-
-        std::vector<ref<Texture>> pgIllumination;
-
-        float   dvSigmaL;
-        float   dvSigmaZ;
-        float   dvSigmaN;
-
-        float dvWeightFunctionParams[3];
-        float3 dvLuminanceParams;
-
-        float dvVarianceKernel[2][2];
-        float dvKernel[3];
 
         ref<FullScreenPass> dPass;
     } mAtrousState;
