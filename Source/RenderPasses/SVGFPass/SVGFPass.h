@@ -80,7 +80,8 @@ private:
 
     void computeDerivVerification(RenderContext* pRenderContext);
 
-    ref<Buffer> createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem = sizeof(int4)); 
+    ref<Buffer> createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem = sizeof(int4));
+    ref<Texture> createFullscreenTexture(ref<Device> pDevice);
 
     bool mBuffersNeedClear = false;
 
@@ -185,6 +186,8 @@ private:
             ref<Buffer> pdaSigmaZ;
             ref<Buffer> pdaSigmaN;
 
+            ref<Buffer> pdaIllumination;
+
             float   dvSigmaL;
             float   dvSigmaZ;
             float   dvSigmaN;
@@ -198,8 +201,10 @@ private:
 
         std::vector<PerIterationState> mIterationState;
 
-        ref<Buffer> pdaIllumination[2];
         ref<Buffer> pdaHistoryLen;
+
+        ref<Texture> lowerTexture;
+        ref<Texture> upperTexture;
 
         ref<FullScreenPass> dPass;
     } mAtrousState;

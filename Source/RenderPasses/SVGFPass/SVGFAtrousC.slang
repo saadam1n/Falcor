@@ -50,6 +50,8 @@ cbuffer PerImageCB
     float dvWeightFunctionParams[3];
     float dvKernel[3];
     float dvVarianceKernel[2][2];
+
+    float3 deltaIllum;
 };
 
 void d_getIllumination(int2 ipos, float4 val)
@@ -86,6 +88,18 @@ float getHistoryLength(int2 ipos)
     return gHistoryLength[ipos].x;
 }
 
+[BackwardDifferentiable]
+float4 getDelta(int xx, int yy)
+{
+    if(xx == 0 && yy == 0)
+    {
+        return float4(deltaIllum, 0.0f);
+    }
+    else
+    {
+        return float4(0.0f);
+    }
+}
 
 // computes a 3x3 gaussian blur of the variance, centered around
 // the current pixel
@@ -100,12 +114,14 @@ float computeVarianceCenter(int2 ipos, float[2][2] kernel)
         {
             const int2 p = ipos + int2(xx, yy);
             const float k = kernel[abs(xx)][abs(yy)];
-            sum += getIllumination(p).a * k;
+            sum += getIllumination(p).a  * k;
         }
     }
 
     return sum;
 }
+
+
 
 [BackwardDifferentiable]
 float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] varianceKernel, float3 luminanceParams, float[3] weightsParams, float sigmaL, float sigmaZ, float sigmaN) {
@@ -149,7 +165,7 @@ float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] va
 
             if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
             {
-                const float4 illuminationP = getIllumination(p);
+                const float4 illuminationP = getIllumination(p) + getDelta(xx, yy);
                 const float lIlluminationP = dot(illuminationP.rgb, luminanceParams);
                 const float zP = getLinearZAndNormal(p).x;
                 const float3 nP = oct_to_ndir_snorm(getLinearZAndNormal(p).zw);

@@ -45,6 +45,7 @@ namespace
 
     const char kAtrousShaderS[]               = "RenderPasses/SVGFPass/SVGFAtrousS.ps.slang";
     const char kAtrousShaderD[]               = "RenderPasses/SVGFPass/SVGFAtrousD.ps.slang";
+    const char kAtrousShaderF[]               = "RenderPasses/SVGFPass/SVGFAtrousF.ps.slang";
 
     const char kFilterMomentShaderS[]         = "RenderPasses/SVGFPass/SVGFFilterMomentsS.ps.slang";
     const char kFilterMomentShaderD[]         = "RenderPasses/SVGFPass/SVGFFilterMomentsD.ps.slang";
@@ -178,7 +179,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mReprojectState.pdaAlpha = createAccumulationBuffer(pDevice);
     mReprojectState.pdaMomentsAlpha = createAccumulationBuffer(pDevice);
 
-    mReprojectState.pPrevIllum = make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
+    mReprojectState.pPrevIllum = createFullscreenTexture(pDevice);
 
     // set filter moments params
     mFilterMomentsState.dvSigmaL = dvSigmaL;
@@ -227,11 +228,9 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         iterationState.dvVarianceKernel[1][0] = 1.0 / 8.0;
         iterationState.dvVarianceKernel[1][1] = 1.0 / 16.0;
 
-        iterationState.pgIllumination = make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
+        iterationState.pgIllumination = createFullscreenTexture(pDevice);
 
-        for (int i = 0; i < 2; i++) {
-            mAtrousState.pdaIllumination[i] = createAccumulationBuffer(pDevice);
-        }
+        iterationState.pdaIllumination = createAccumulationBuffer(pDevice);
 
         iterationState.pdaSigmaL = createAccumulationBuffer(pDevice);
         iterationState.pdaSigmaZ = createAccumulationBuffer(pDevice);
@@ -242,7 +241,8 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         iterationState.pdaWeightFunctionParams = createAccumulationBuffer(pDevice);
     }
 
-
+    mAtrousState.lowerTexture = createFullscreenTexture(pDevice);
+    mAtrousState.upperTexture = createFullscreenTexture(pDevice);
 
     mAtrousState.pdaHistoryLen = createAccumulationBuffer(pDevice);
 
@@ -316,9 +316,14 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         desc.setColorTarget(2, Falcor::ResourceFormat::RGBA32Float);
         mpDerivativeVerifyFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
 
-        // creating an empty fbo creates a nonexistent screen area to run the fullscreen pass for
-        // so yeah, we have to do this instead
-        mpDummyFullscreenFbo = mpDerivativeVerifyFbo;
+    }
+
+    {
+        // contains a debug buffer for whatever we want to store
+        Fbo::Desc desc;
+        desc.setSampleCount(0);
+        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
+        mpDummyFullscreenFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
     }
 
     mBuffersNeedClear = true;
@@ -327,6 +332,11 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
 
 ref<Buffer> SVGFPass::createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem) {
     return make_ref<Buffer>(pDevice, bytes_per_elem * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
+}
+
+ref<Texture> SVGFPass::createFullscreenTexture(ref<Device> pDevice)
+{
+    return make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
 }
 
 
@@ -577,8 +587,12 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
     perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
 
+    float3 noDelta = float3(0.0f);
+    perImageCB["deltaIllum"] = noDelta;
+
     for (int iteration = 0; iteration < mFilterIterations; iteration++)
     {
+
         auto& curIterationState = mAtrousState.mIterationState[iteration];
 
         perImageCB["dvSigmaL"] = curIterationState.dvSigmaL;
@@ -632,13 +646,19 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
     auto perImageCB = mAtrousState.dPass->getRootVar()["PerImageCB"];
     auto perImageCB_D = mAtrousState.dPass->getRootVar()["PerImageCB_D"];
 
+    float3 noDelta = float3(0.0f);
+    perImageCB["deltaIllum"] = noDelta;
 
     pRenderContext->clearUAV(mAtrousState.pdaHistoryLen->getUAV().get(), Falcor::uint4(0));
 
     perImageCB["daHistoryLen"] = mAtrousState.pdaHistoryLen;
 
-    pRenderContext->clearUAV(mAtrousState.pdaIllumination[0]->getUAV().get(), Falcor::uint4(0));
-    pRenderContext->clearUAV(mAtrousState.pdaIllumination[1]->getUAV().get(), Falcor::uint4(0));
+    perImageCB["gAlbedo"]        = pAlbedoTexture;
+    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
+    perImageCB["gLinearZAndNormal"]       = mpLinearZAndNormalFbo->getColorTexture(0);
+
+    perImageCB_D["isFiniteDiffPass"] = false;
+
 
     for (int iteration = mFilterIterations - 1; iteration >= 0; iteration--)
     {
@@ -651,6 +671,7 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
         pRenderContext->clearUAV(curIterationState.pdaVarianceKernel->getUAV().get(), Falcor::uint4(0));
         pRenderContext->clearUAV(curIterationState.pdaLuminanceParams->getUAV().get(), Falcor::uint4(0));
         pRenderContext->clearUAV(curIterationState.pdaWeightFunctionParams->getUAV().get(), Falcor::uint4(0));
+        pRenderContext->clearUAV(curIterationState.pdaIllumination->getUAV().get(), Falcor::uint4(0));
 
         perImageCB_D["daSigmaL"] = curIterationState.pdaSigmaL;
         perImageCB_D["daSigmaZ"] = curIterationState.pdaSigmaZ;
@@ -659,10 +680,6 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
         perImageCB_D["daVarianceKernel"] = curIterationState.pdaVarianceKernel;
         perImageCB_D["daLuminanceParams"] = curIterationState.pdaLuminanceParams;
         perImageCB_D["daWeightFunctionParams"] = curIterationState.pdaWeightFunctionParams;
-
-        perImageCB["gAlbedo"]        = pAlbedoTexture;
-        perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
-        perImageCB["gLinearZAndNormal"]       = mpLinearZAndNormalFbo->getColorTexture(0);
 
         perImageCB["dvSigmaL"] = curIterationState.dvSigmaL;
         perImageCB["dvSigmaZ"] = curIterationState.dvSigmaZ;
@@ -684,24 +701,30 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
             }
         }
 
-
-        // Here, let's have [0] be the buffer we read from, and [1] be the buffer we write to. Let's start by clearing our write buffer
-        pRenderContext->clearUAV(mAtrousState.pdaIllumination[1]->getUAV().get(), Falcor::uint4(0));
-
-        // we read deriv from 0. if first iteration of this loop, use the final modulate buffer instead 
-        perImageCB_D["drIllumination"] = (iteration == mFilterIterations - 1 ? mFinalModulateState.pdaIllumination : mAtrousState.pdaIllumination[0]);
-        perImageCB["daIllumination"] = mAtrousState.pdaIllumination[1];
+        perImageCB_D["drIllumination"] = (iteration == mFilterIterations - 1 ? mFinalModulateState.pdaIllumination : mAtrousState.mIterationState[iteration + 1].pdaIllumination);
+        perImageCB["daIllumination"] = curIterationState.pdaIllumination;
 
         perImageCB["gIllumination"] = curIterationState.pgIllumination;
         perImageCB["gStepSize"] = 1 << iteration;
 
         mAtrousState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 
-        // Swap our ping pong buffers 
-        std::swap(mAtrousState.pdaIllumination[0], mAtrousState.pdaIllumination[1]);
 
-        // our written results are now in buf 0
-        // if we exit the loop now, we can access idx 0 for results from atrous loop 
+        if (false && iteration == 0)
+        {
+            float3 delta = float3(0.005);
+            perImageCB_D["isFiniteDiffPass"] = true;
+
+            perImageCB["deltaIllum"] = -delta;
+            mAtrousState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
+            pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(0)->getSRV(), mAtrousState.lowerTexture->getRTV());
+
+            perImageCB["deltaIllum"] = delta;
+            mAtrousState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
+            pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(0)->getSRV(), mAtrousState.upperTexture->getRTV());
+
+
+        }
     }
 }
 
@@ -757,7 +780,7 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
 
     auto perImageCB_D = mFilterMomentsState.dPass->getRootVar()["PerImageCB_D"];
 
-    perImageCB_D["drIllumination"] = mAtrousState.pdaIllumination[0];
+    perImageCB_D["drIllumination"] = mAtrousState.mIterationState[0].pdaIllumination;
     perImageCB_D["daSigmaL"] = mFilterMomentsState.pdaSigmaL;
     perImageCB_D["daSigmaZ"] = mFilterMomentsState.pdaSigmaZ;
     perImageCB_D["daSigmaN"] = mFilterMomentsState.pdaSigmaN;
