@@ -153,8 +153,6 @@ void accumDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Textu
         int dummy;
         rwaddrbuff.InterlockedAdd(addr, a[i], dummy);
     }
-
-    //rwaddrbuff.Store4(base_addr, int4(a));
 }
 
 // TODO: figure out how to properly read from a rwbyteaddressbuf

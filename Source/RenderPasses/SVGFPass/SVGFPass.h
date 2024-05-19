@@ -47,7 +47,14 @@ public:
     virtual void compile(RenderContext* pRenderContext, const CompileData& compileData) override;
     virtual void renderUI(Gui::Widgets& widget) override;
 
+    virtual void setScene(RenderContext* pRenderContext, const ref<Scene>& pSceneUpdate) override
+    {
+        this->pScene = pSceneUpdate;
+    }
+
 private:
+    ref<Scene> pScene;
+
     void allocateFbos(uint2 dim, RenderContext* pRenderContext);
     void clearBuffers(RenderContext* pRenderContext, const RenderData& renderData);
 
@@ -81,7 +88,7 @@ private:
     void computeDerivVerification(RenderContext* pRenderContext);
 
     ref<Buffer> createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem = sizeof(int4));
-    ref<Texture> createFullscreenTexture(ref<Device> pDevice);
+    ref<Texture> createFullscreenTexture(ref<Device> pDevice, ResourceFormat fmt = ResourceFormat::RGBA32Float);
 
     bool mBuffersNeedClear = false;
 
@@ -97,6 +104,8 @@ private:
     ref<FullScreenPass> mpFilterMoments;
     ref<FullScreenPass> mpAtrous;
     ref<FullScreenPass> mpFinalModulate;
+
+    ref<Buffer> mReadbackBuffer;
 
     ref<FullScreenPass> mpDerivativeVerify;
     ref<Fbo> mpDerivativeVerifyFbo;
@@ -198,6 +207,8 @@ private:
             float dvVarianceKernel[2][2];
             float dvKernel[3];
         };
+
+        ref<Texture> mSaveIllum;
 
         std::vector<PerIterationState> mIterationState;
 

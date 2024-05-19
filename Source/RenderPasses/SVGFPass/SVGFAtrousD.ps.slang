@@ -15,7 +15,7 @@ cbuffer PerImageCB_D
     RWByteAddressBuffer daWeightFunctionParams;
 };
 
-void main(FullScreenPassVsOut vsOut) 
+int4 main(FullScreenPassVsOut vsOut) : SV_TARGET1
 {
     var dpKernel = diffPair(dvKernel, {0.0, 0.0, 0.0});
     var dpVarianceKernel = diffPair(dvVarianceKernel, {{0.0, 0.0}, {0.0, 0.0}});
@@ -38,6 +38,6 @@ void main(FullScreenPassVsOut vsOut)
     accumDerivBuf4(daLuminanceParams, ipos, float4(dpLuminanceParams.d, 0.0f), gAlbedo);
     accumDerivBuf4(daWeightFunctionParams, ipos, float4(dpWeightFunctionParams.d[0], dpWeightFunctionParams.d[1], dpWeightFunctionParams.d[2], 0.0f), gAlbedo);
 
-
+    return totalWrites;
 
 }

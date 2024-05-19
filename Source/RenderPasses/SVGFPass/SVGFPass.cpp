@@ -230,7 +230,6 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
 
         iterationState.pgIllumination = createFullscreenTexture(pDevice);
 
-        iterationState.pdaIllumination = createAccumulationBuffer(pDevice);
 
         iterationState.pdaSigmaL = createAccumulationBuffer(pDevice);
         iterationState.pdaSigmaZ = createAccumulationBuffer(pDevice);
@@ -239,6 +238,8 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         iterationState.pdaVarianceKernel = createAccumulationBuffer(pDevice);
         iterationState.pdaLuminanceParams = createAccumulationBuffer(pDevice);
         iterationState.pdaWeightFunctionParams = createAccumulationBuffer(pDevice);
+
+        iterationState.pdaIllumination = createAccumulationBuffer(pDevice);
     }
 
     mAtrousState.pdaHistoryLen = createAccumulationBuffer(pDevice);
@@ -250,7 +251,9 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
 
     FALCOR_ASSERT(mFinalModulateState.pdaIllumination &&  mFinalModulateState.pdrFilteredImage);
 
+    mReadbackBuffer = make_ref<Buffer>(pDevice, sizeof(int4) * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::ReadBack, nullptr);
 
+    mAtrousState.mSaveIllum = createFullscreenTexture(pDevice, ResourceFormat::RGBA32Int);
 }
 
 void SVGFPass::clearBuffers(RenderContext* pRenderContext, const RenderData& renderData)
@@ -320,6 +323,7 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         Fbo::Desc desc;
         desc.setSampleCount(0);
         desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Int);
         mpDummyFullscreenFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
     }
 
@@ -331,9 +335,9 @@ ref<Buffer> SVGFPass::createAccumulationBuffer(ref<Device> pDevice, int bytes_pe
     return make_ref<Buffer>(pDevice, bytes_per_elem * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
 }
 
-ref<Texture> SVGFPass::createFullscreenTexture(ref<Device> pDevice)
+ref<Texture> SVGFPass::createFullscreenTexture(ref<Device> pDevice, ResourceFormat fmt)
 {
-    return make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
+    return make_ref<Texture>(pDevice, Resource::Type::Texture2D, fmt, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, nullptr);
 }
 
 
@@ -451,7 +455,7 @@ void SVGFPass::executeWithDerivatives(RenderContext* pRenderContext, const Rende
         // mpPingPongFbo[0].  Takes mpCurReprojFbo as input.
         computeFilteredMoments(pRenderContext);
 
-        pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(1)->getSRV(), pDebugTexture->getRTV());
+        //pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(1)->getSRV(), pDebugTexture->getRTV());
 
         // Filter illumination from mpCurReprojFbo[0], storing the result
         // in mpPingPongFbo[0].  Along the way (or at the end, depending on
@@ -493,6 +497,9 @@ void SVGFPass::executeWithDerivatives(RenderContext* pRenderContext, const Rende
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    if(!pScene)
+        return;
+
     mDelta = 0.005f;
 
     float& valToChange = mAtrousState.mIterationState[1].dvKernel[0];
@@ -514,13 +521,16 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
     pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(1)->getSRV(),  renderData.getTexture(kOutputFdCol)->getRTV());
     pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(2)->getSRV(),  renderData.getTexture(kOutputBdCol)->getRTV());
 
+    pRenderContext->blit(mAtrousState.mSaveIllum->getSRV(),   renderData.getTexture(kOutputDebugBuffer)->getRTV());
+
+
 }
 
 void SVGFPass::computeDerivVerification(RenderContext* pRenderContext)
 {
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[1].pdaKernel;
+    //perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[1].pdaKernel;
     perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
     perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
     perImageCB["delta"] = mDelta;
@@ -698,6 +708,43 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
 
         mAtrousState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 
+        if (iteration == 1)
+        {
+            // save this for later so that it doesn't get overwritten
+            pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(1)->getSRV(), mAtrousState.mSaveIllum->getRTV());
+
+            // now, download the second attachment
+            auto v = pRenderContext->readTextureSubresource(mpDummyFullscreenFbo->getColorTexture(1).get(), 0);
+            int4* totalbuf = (int4*)v.data();
+
+            pRenderContext->copyBufferRegion(mReadbackBuffer.get(), 0, curIterationState.pdaIllumination.get(), 0, numPixels * sizeof(int4));
+            int4* scatterbuf = (int4*)mReadbackBuffer->map();
+
+            // sum them all up
+            int4 totsum(0), scattersum(0);
+            for (int i = 1820 * 800 + 500; i < 1820 * 800 + 550; i++)
+            {
+                //totsum += totalbuf[i];
+                //scattersum += scatterbuf[i];
+                int4 totl = totalbuf[i];
+                int4 scat = scatterbuf[i];
+
+                int4 diff = totl - scat;
+                std::cout << "Written\t" << totl.x << '\t' << totl.y << '\t' << totl.z << '\t' << totl.w << '\n';
+                std::cout << "Buf Values\t" << scat.x << '\t' << scat.y << '\t' << scat.z << '\t' << scat.w << '\n';
+                std::cout << "D\t" << diff.x << '\t' << diff.y << '\t' << diff.z << '\t' << diff.w << '\n';
+            }
+
+            std::cout.flush();
+
+            //int ctot  = dot(totsum, int4(1, 1, 1, 0));
+            //int cscat = dot(scattersum, int4(1, 1, 1, 0));
+            //int cdiff = ctot - cscat;
+            //std::cout << ctot << '\t' << cscat << '\t' << cdiff << std::endl;
+
+            // unmap before we leave
+            mReadbackBuffer->unmap();
+        }
     }
 }
 

@@ -38,9 +38,6 @@ cbuffer PerImageCB
 
     int         gStepSize;
 
-    RWByteAddressBuffer   daIllumination;
-    RWByteAddressBuffer   daHistoryLen;
-
     float dvSigmaL;
     float dvSigmaZ;
     float dvSigmaN;
@@ -50,10 +47,17 @@ cbuffer PerImageCB
     float dvWeightFunctionParams[3];
     float dvKernel[3];
     float dvVarianceKernel[2][2];
+
+    RWByteAddressBuffer   daHistoryLen;
+    RWByteAddressBuffer   daIllumination;
 };
+
+static int4 totalWrites = int4(0);
 
 void d_getIllumination(int2 ipos, float4 val)
 {
+    totalWrites += quantVal4(val);
+
     accumDerivBuf4(daIllumination, ipos, val, gAlbedo);
 }
 
