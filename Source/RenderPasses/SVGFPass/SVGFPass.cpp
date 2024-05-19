@@ -241,9 +241,6 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         iterationState.pdaWeightFunctionParams = createAccumulationBuffer(pDevice);
     }
 
-    mAtrousState.lowerTexture = createFullscreenTexture(pDevice);
-    mAtrousState.upperTexture = createFullscreenTexture(pDevice);
-
     mAtrousState.pdaHistoryLen = createAccumulationBuffer(pDevice);
 
     // set final modulate state vars
@@ -498,7 +495,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 {
     mDelta = 0.005f;
 
-    float& valToChange = mAtrousState.mIterationState[0].dvKernel[0];
+    float& valToChange = mAtrousState.mIterationState[1].dvKernel[0];
     float oldval = valToChange;
 
     valToChange = oldval - mDelta;
@@ -523,7 +520,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext)
 {
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[0].pdaKernel;
+    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[1].pdaKernel;
     perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
     perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
     perImageCB["delta"] = mDelta;
@@ -587,9 +584,6 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
     perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
 
-    float3 noDelta = float3(0.0f);
-    perImageCB["deltaIllum"] = noDelta;
-
     for (int iteration = 0; iteration < mFilterIterations; iteration++)
     {
 
@@ -646,9 +640,6 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
     auto perImageCB = mAtrousState.dPass->getRootVar()["PerImageCB"];
     auto perImageCB_D = mAtrousState.dPass->getRootVar()["PerImageCB_D"];
 
-    float3 noDelta = float3(0.0f);
-    perImageCB["deltaIllum"] = noDelta;
-
     pRenderContext->clearUAV(mAtrousState.pdaHistoryLen->getUAV().get(), Falcor::uint4(0));
 
     perImageCB["daHistoryLen"] = mAtrousState.pdaHistoryLen;
@@ -656,8 +647,6 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
     perImageCB["gAlbedo"]        = pAlbedoTexture;
     perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
     perImageCB["gLinearZAndNormal"]       = mpLinearZAndNormalFbo->getColorTexture(0);
-
-    perImageCB_D["isFiniteDiffPass"] = false;
 
 
     for (int iteration = mFilterIterations - 1; iteration >= 0; iteration--)
@@ -709,22 +698,6 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
 
         mAtrousState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 
-
-        if (false && iteration == 0)
-        {
-            float3 delta = float3(0.005);
-            perImageCB_D["isFiniteDiffPass"] = true;
-
-            perImageCB["deltaIllum"] = -delta;
-            mAtrousState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
-            pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(0)->getSRV(), mAtrousState.lowerTexture->getRTV());
-
-            perImageCB["deltaIllum"] = delta;
-            mAtrousState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
-            pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(0)->getSRV(), mAtrousState.upperTexture->getRTV());
-
-
-        }
     }
 }
 

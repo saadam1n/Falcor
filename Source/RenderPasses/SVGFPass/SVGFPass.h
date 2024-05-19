@@ -203,9 +203,6 @@ private:
 
         ref<Buffer> pdaHistoryLen;
 
-        ref<Texture> lowerTexture;
-        ref<Texture> upperTexture;
-
         ref<FullScreenPass> dPass;
     } mAtrousState;
 

@@ -28,10 +28,10 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     const int2 texSize = getTextureDims(gFuncOutputLower, 0);
 
     float4 fdcol = (gFuncOutputUpper[ipos] - gFuncOutputLower[ipos]) / (2.0f * delta);
-    //fdcol = float4(dot(fdcol, float4(1.0f, 1.0f, 1.0f, 0.0f)));
+    fdcol = float4(dot(fdcol, float4(1.0f, 1.0f, 1.0f, 0.0f)));
 
     float4 bdcol = readDerivBuf4(drBackwardsDiffBuffer, ipos, gFuncOutputLower);
-    //bdcol = float4(bdcol[0]);
+    bdcol = float4(bdcol[0]);
 
     float4 col;
 
