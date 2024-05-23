@@ -530,7 +530,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext)
 {
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    //perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[1].pdaKernel;
+    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[1].pdaKernel;
     perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
     perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
     perImageCB["delta"] = mDelta;
@@ -730,9 +730,10 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
                 int4 scat = scatterbuf[i];
 
                 int4 diff = totl - scat;
-                std::cout << "Written\t" << totl.x << '\t' << totl.y << '\t' << totl.z << '\t' << totl.w << '\n';
-                std::cout << "Buf Values\t" << scat.x << '\t' << scat.y << '\t' << scat.z << '\t' << scat.w << '\n';
+                std::cout << "WR\t" << totl.x << '\t' << totl.y << '\t' << totl.z << '\t' << totl.w << '\n';
+                std::cout << "BUF\t" << scat.x << '\t' << scat.y << '\t' << scat.z << '\t' << scat.w << '\n';
                 std::cout << "D\t" << diff.x << '\t' << diff.y << '\t' << diff.z << '\t' << diff.w << '\n';
+                std::cout << '\n';
             }
 
             std::cout.flush();

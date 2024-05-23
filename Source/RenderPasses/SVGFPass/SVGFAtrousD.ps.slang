@@ -27,7 +27,8 @@ int4 main(FullScreenPassVsOut vsOut) : SV_TARGET1
     
     const int2 ipos = int2(vsOut.posH.xy);
 
-    __bwd_diff(atrous)(vsOut, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, readDerivBuf4(drIllumination, ipos, gAlbedo));
+    float4 dIllum = readDerivBuf4(drIllumination, ipos, gAlbedo);
+    __bwd_diff(atrous)(vsOut, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, dIllum);
 
     accumDerivBuf4(daSigmaL, ipos, float4(dpSigmaL.d), gAlbedo);
     accumDerivBuf4(daSigmaZ, ipos, float4(dpSigmaZ.d), gAlbedo);

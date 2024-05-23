@@ -10,46 +10,46 @@ cbuffer PerImageCB
 };
 
 // Read gColor
-void d_getIllum(int2 ipos, float3 val)
+void d_getIllum(int2 ipos, float4 val)
 {
     // this we actually care about, as this feeds into the previous stage's output
     // add one float of padding because that is what the atrous pipeline uses
-    accumDerivBuf4(daIllumination, ipos, float4(val, 0.0), gIllumination);
+    accumDerivBuf4(daIllumination, ipos, val, gIllumination);
 }
 
 // Read gAlbedo
-void d_getAlbedo(int2 ipos, float3 val)
+void d_getAlbedo(int2 ipos, float4 val)
 {
     // constant that we do not care about
 }
 
 // Read gEmission
-void d_getEmission(int2 ipos, float3 val)
+void d_getEmission(int2 ipos, float4 val)
 {
     // constant that we do not care about
 }
 
 [BackwardDerivative(d_getIllum)]
-float3 getIllum(int2 ipos)
+float4 getIllum(int2 ipos)
 {
-    return gIllumination[ipos].rgb;
+    return gIllumination[ipos];
 }
 
 [BackwardDerivative(d_getAlbedo)]
-float3 getAlbedo(int2 ipos)
+float4 getAlbedo(int2 ipos)
 {
-    return gAlbedo[ipos].rgb;
+    return gAlbedo[ipos];
 }
 
 [BackwardDerivative(d_getEmission)]
-float3 getEmission(int2 ipos)
+float4 getEmission(int2 ipos)
 {
-    return gEmission[ipos].rgb;
+    return gEmission[ipos];
 }
 
 [BackwardDifferentiable]
 float4 final_mod(FullScreenPassVsOut vsOut) {
     const int2 ipos = int2(vsOut.posH.xy);
 
-    return float4(remodulate(getIllum(ipos), getAlbedo(ipos)) + getEmission(ipos), 0.0);
+    return remodulate(getIllum(ipos), getAlbedo(ipos)) + getEmission(ipos);
 }

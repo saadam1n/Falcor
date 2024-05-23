@@ -66,9 +66,16 @@ struct FullScreenPassVsOut
 };
 
 [BackwardDifferentiable]
+float getAlbedoLum(float3 albedo)
+{
+    float lum = dot(albedo.rgb, float3(1.0));
+    return lum;
+}
+
+[BackwardDifferentiable]
 float3 demodulate(float3 c, float3 albedo)
 {
-    float lum = dot(albedo, float3(1.0));
+    float lum = getAlbedoLum(albedo);
     if(lum > 0.01)
         return c / max(albedo, float3(0.001, 0.001, 0.001));
     else    
@@ -76,10 +83,11 @@ float3 demodulate(float3 c, float3 albedo)
 }
 
 [BackwardDifferentiable]
-float3 remodulate(float3 c, float3 albedo) {
-    float lum = dot(albedo, float3(1.0));
+float4 remodulate(float4 c, float4 albedo) {
+
+    float lum = getAlbedoLum(albedo.rgb);
     if(lum > 0.01)
-        return c * max(albedo, float3(0.001, 0.001, 0.001));
+        return c * max(albedo, float4(0.001, 0.001, 0.001, 1.0)); // don't touch the variance
     else    
         return c;
 }

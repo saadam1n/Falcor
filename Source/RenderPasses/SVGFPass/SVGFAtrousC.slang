@@ -56,6 +56,11 @@ static int4 totalWrites = int4(0);
 
 void d_getIllumination(int2 ipos, float4 val)
 {
+    const int2 screenSize = getTextureDims(gAlbedo, 0);
+    const bool inside = all(ipos >= int2(0, 0)) && all(ipos < screenSize);
+    if(!inside)
+        return;
+
     totalWrites += quantVal4(val);
 
     accumDerivBuf4(daIllumination, ipos, val, gAlbedo);
@@ -69,13 +74,13 @@ void d_getLinearZAndNormal(int2 ipos, float4 val)
 void d_getHistoryLength(int2 ipos, float val)
 {
     // waste of space, I know, but I don't care
-    accumDerivBuf4(daHistoryLen, ipos, val, gAlbedo);
+    accumDerivBuf4(daHistoryLen, ipos, val.xxxx, gAlbedo);
 }
 
 [BackwardDerivative(d_getIllumination)]
 float4 getIllumination(int2 ipos)
 {
-    return gIllumination.Load(int3(ipos, 0));
+    return gIllumination[ipos];
 }
 
 [BackwardDerivative(d_getLinearZAndNormal)]
