@@ -15,30 +15,22 @@ cbuffer PerImageCB_D
     RWByteAddressBuffer daWeightFunctionParams;
 };
 
-int4 main(FullScreenPassVsOut vsOut) : SV_TARGET1
+
+
+
+void main(FullScreenPassVsOut vsOut)
 {
-    var dpKernel = diffPair(dvKernel, {0.0, 0.0, 0.0});
-    var dpVarianceKernel = diffPair(dvVarianceKernel, {{0.0, 0.0}, {0.0, 0.0}});
-    var dpLuminanceParams =  diffPair(dvLuminanceParams, float3(0.0));
-    var dpWeightFunctionParams = diffPair(dvWeightFunctionParams, {0.0, 0.0, 0.0});
-    var dpSigmaL = diffPair(dvSigmaL, 0.0);
-    var dpSigmaZ = diffPair(dvSigmaZ, 0.0);
-    var dpSigmaN = diffPair(dvSigmaN, 0.0);
-    
     const int2 ipos = int2(vsOut.posH.xy);
-
     float4 dIllum = readDerivBuf4(drIllumination, ipos, gAlbedo);
-    __bwd_diff(atrous)(vsOut, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, dIllum);
 
-    accumDerivBuf4(daSigmaL, ipos, float4(dpSigmaL.d), gAlbedo);
-    accumDerivBuf4(daSigmaZ, ipos, float4(dpSigmaZ.d), gAlbedo);
-    accumDerivBuf4(daSigmaN, ipos, float4(dpSigmaN.d), gAlbedo);
+    var pvd = calcAtrousDiffPairs(vsOut, int2(0, 0), dIllum);
 
-    accumDerivBuf4(daKernel, ipos, float4(dpKernel.d[0], dpKernel.d[1], dpKernel.d[2], 0.0f), gAlbedo);
-    accumDerivBuf4(daVarianceKernel, ipos, float4(dpVarianceKernel.d[0][0], dpVarianceKernel.d[0][1], dpVarianceKernel.d[1][0], dpVarianceKernel.d[1][1]), gAlbedo);
-    accumDerivBuf4(daLuminanceParams, ipos, float4(dpLuminanceParams.d, 0.0f), gAlbedo);
-    accumDerivBuf4(daWeightFunctionParams, ipos, float4(dpWeightFunctionParams.d[0], dpWeightFunctionParams.d[1], dpWeightFunctionParams.d[2], 0.0f), gAlbedo);
+    accumDerivBuf4(daSigmaL, ipos, float4(pvd.sigmaL), gAlbedo);
+    accumDerivBuf4(daSigmaZ, ipos, float4(pvd.sigmaZ), gAlbedo);
+    accumDerivBuf4(daSigmaN, ipos, float4(pvd.sigmaN), gAlbedo);
 
-    return totalWrites;
-
+    accumDerivBuf4(daKernel, ipos, float4(pvd.kernel[0], pvd.kernel[1], pvd.kernel[2], 0.0f), gAlbedo);
+    accumDerivBuf4(daVarianceKernel, ipos, float4(pvd.varianceKernel[0][0], pvd.varianceKernel[0][1], pvd.varianceKernel[1][0], pvd.varianceKernel[1][1]), gAlbedo);
+    accumDerivBuf4(daLuminanceParams, ipos, float4(pvd.luminanceParams, 0.0f), gAlbedo);
+    accumDerivBuf4(daWeightFunctionParams, ipos, float4(pvd.weightFunctionParams[0], pvd.weightFunctionParams[1], pvd.weightFunctionParams[2], 0.0f), gAlbedo);
 }

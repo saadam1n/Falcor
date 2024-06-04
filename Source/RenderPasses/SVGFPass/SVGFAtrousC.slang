@@ -52,19 +52,9 @@ cbuffer PerImageCB
     RWByteAddressBuffer   daIllumination;
 };
 
-static int4 totalWrites = int4(0);
+// accumulate to a different buffer
+int pixelIndex = 0;
 
-void d_getIllumination(int2 ipos, float4 val)
-{
-    const int2 screenSize = getTextureDims(gAlbedo, 0);
-    const bool inside = all(ipos >= int2(0, 0)) && all(ipos < screenSize);
-    if(!inside)
-        return;
-
-    totalWrites += quantVal4(val);
-
-    accumDerivBuf4(daIllumination, ipos, val, gAlbedo);
-}
 
 void d_getLinearZAndNormal(int2 ipos, float4 val)
 {
@@ -77,11 +67,21 @@ void d_getHistoryLength(int2 ipos, float val)
     accumDerivBuf4(daHistoryLen, ipos, val.xxxx, gAlbedo);
 }
 
-[BackwardDerivative(d_getIllumination)]
-float4 getIllumination(int2 ipos)
+
+void d_getIllumination(int2 ipos, int2 offset, int index, float4 val)
 {
-    return gIllumination[ipos];
+    const int2 screenSize = getTextureDims(gAlbedo, 0);
+    accumDerivBuf4(daIllumination, ipos, val, gAlbedo, index);
 }
+
+[BackwardDerivative(d_getIllumination)]
+float4 getIllumination(int2 ipos, int2 offset, int index)
+{
+    int2 p = ipos + offset;
+    return gIllumination[p];
+}
+
+
 
 [BackwardDerivative(d_getLinearZAndNormal)]
 float4 getLinearZAndNormal(int2 ipos)
@@ -95,8 +95,11 @@ float getHistoryLength(int2 ipos)
     return gHistoryLength[ipos].x;
 }
 
+
+static int nextStoreIndex = 0;
+
 // computes a 3x3 gaussian blur of the variance, centered around
-// the current pixel
+// the current pixel. nextStoreIndex will be 9 after this function
 [BackwardDifferentiable]
 float computeVarianceCenter(int2 ipos, float[2][2] kernel)
 {
@@ -106,9 +109,9 @@ float computeVarianceCenter(int2 ipos, float[2][2] kernel)
     {
         for (int xx = -1; xx <= 1; xx++)
         {
-            const int2 p = ipos + int2(xx, yy);
+            const int2 offset = int2(xx, yy);
             const float k = kernel[abs(xx)][abs(yy)];
-            sum += getIllumination(p).a  * k;
+            sum += getIllumination(ipos, offset, nextStoreIndex++).a  * k;
         }
     }
 
@@ -126,11 +129,11 @@ float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] va
 
     // constant samplers to prevent the compiler from generating code which
     // fetches the sampler descriptor from memory for each texture access
-    const float4 illuminationCenter = getIllumination(ipos);
+    const float4 illuminationCenter = getIllumination(ipos, int2(0, 0), nextStoreIndex++);
     const float lIlluminationCenter = dot(illuminationCenter.rgb, luminanceParams);
 
     // variance, filtered using 3x3 gaussin blur
-    const float var = computeVarianceCenter(ipos, varianceKernel);
+    const float var = 1.0f;//computeVarianceCenter(ipos, varianceKernel);
 
     const float2 zCenter = getLinearZAndNormal(ipos).xy;
     if (zCenter.x < 0)
@@ -152,6 +155,7 @@ float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] va
     {
         for (int xx = -2; xx <= 2; xx++)
         {
+            const int2 offset = int2(xx, yy) * gStepSize;
             const int2 p = ipos + int2(xx, yy) * gStepSize;
             const bool inside = all(p >= int2(0, 0)) && all(p < screenSize);
 
@@ -159,7 +163,7 @@ float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] va
 
             if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
             {
-                const float4 illuminationP = getIllumination(p);
+                const float4 illuminationP = getIllumination(ipos, offset, nextStoreIndex++);
                 const float lIlluminationP = dot(illuminationP.rgb, luminanceParams);
                 const float zP = getLinearZAndNormal(p).x;
                 const float3 nP = oct_to_ndir_snorm(getLinearZAndNormal(p).zw);
@@ -184,4 +188,63 @@ float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] va
     float4 filteredIllumination = float4(sumIllumination / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination));
 
     return filteredIllumination;
+}
+
+/*
+    var dpKernel = diffPair(dvKernel, {0.0, 0.0, 0.0});
+    var dpVarianceKernel = diffPair(dvVarianceKernel, {{0.0, 0.0}, {0.0, 0.0}});
+    var dpLuminanceParams =  diffPair(dvLuminanceParams, float3(0.0));
+    var dpWeightFunctionParams = diffPair(dvWeightFunctionParams, {0.0, 0.0, 0.0});
+    var dpSigmaL = diffPair(dvSigmaL, 0.0);
+    var dpSigmaZ = diffPair(dvSigmaZ, 0.0);
+    var dpSigmaN = diffPair(dvSigmaN, 0.0);
+*/
+
+struct ParamDiffValues 
+{
+    float kernel[3];
+    float varianceKernel[2][2];
+    float3 luminanceParams;
+    float weightFunctionParams[3];
+    float sigmaL;
+    float sigmaZ;
+    float sigmaN;
+};
+
+ParamDiffValues calcAtrousDiffPairs(FullScreenPassVsOut vsOut, int2 offset, float4 dIllum)
+{
+    FullScreenPassVsOut jumpToLocation = vsOut;
+    jumpToLocation.posH.xy += offset;
+
+    var dpKernel = diffPair(dvKernel, {0.0, 0.0, 0.0});
+    var dpVarianceKernel = diffPair(dvVarianceKernel, {{0.0, 0.0}, {0.0, 0.0}});
+    var dpLuminanceParams =  diffPair(dvLuminanceParams, float3(0.0));
+    var dpWeightFunctionParams = diffPair(dvWeightFunctionParams, {0.0, 0.0, 0.0});
+    var dpSigmaL = diffPair(dvSigmaL, 0.0);
+    var dpSigmaZ = diffPair(dvSigmaZ, 0.0);
+    var dpSigmaN = diffPair(dvSigmaN, 0.0);
+    
+    const int2 ipos = int2(vsOut.posH.xy);
+
+    __bwd_diff(atrous)(jumpToLocation, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, dIllum);
+
+    ParamDiffValues pvd;
+
+    for(int i = 0; i < 3; i++)
+        pvd.kernel[i] = dpKernel.d[i];
+
+    for(int i = 0; i < 2; i++)
+        for(int j = 0; j < 2; j++)
+            pvd.varianceKernel[i][j] = dpVarianceKernel.d[i][j];
+
+    pvd.luminanceParams = dpLuminanceParams.d;
+
+    for(int i = 0; i < 3; i++)
+        pvd.weightFunctionParams[i] = dpWeightFunctionParams.d[i];
+
+    pvd.sigmaL = dpSigmaL.d;
+    pvd.sigmaZ = dpSigmaZ.d;
+    pvd.sigmaN = dpSigmaN.d;
+
+    return pvd;
 }

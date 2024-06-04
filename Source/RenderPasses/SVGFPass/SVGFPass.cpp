@@ -240,7 +240,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         iterationState.pdaLuminanceParams = createAccumulationBuffer(pDevice);
         iterationState.pdaWeightFunctionParams = createAccumulationBuffer(pDevice);
 
-        iterationState.pdaIllumination = createAccumulationBuffer(pDevice, sizeof(int4) * 5 * 5);
+        iterationState.pdaIllumination = createAccumulationBuffer(pDevice, sizeof(int4) * (9 + 25));
     }
 
     mAtrousState.pdaHistoryLen = createAccumulationBuffer(pDevice);
