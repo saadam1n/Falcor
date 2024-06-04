@@ -97,6 +97,7 @@ private:
     int32_t mFilterIterations    = 4;
     int32_t mFeedbackTap         = 1;
     float   mVarainceEpsilon     = 1e-4f;
+    int mDerivativeInteration;
 
     // SVGF passes
     ref<FullScreenPass> mpPackLinearZAndNormal;

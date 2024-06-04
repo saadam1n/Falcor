@@ -119,6 +119,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
 
     mFilterIterations = 2;
     mFeedbackTap = -1;
+    mDerivativeInteration = 1;
 
     mpPackLinearZAndNormal = FullScreenPass::create(mpDevice, kPackLinearZAndNormalShader);
     mpReprojection = FullScreenPass::create(mpDevice, kReprojectShaderS);
@@ -239,7 +240,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         iterationState.pdaLuminanceParams = createAccumulationBuffer(pDevice);
         iterationState.pdaWeightFunctionParams = createAccumulationBuffer(pDevice);
 
-        iterationState.pdaIllumination = createAccumulationBuffer(pDevice);
+        iterationState.pdaIllumination = createAccumulationBuffer(pDevice, sizeof(int4) * 5 * 5);
     }
 
     mAtrousState.pdaHistoryLen = createAccumulationBuffer(pDevice);
@@ -494,6 +495,25 @@ void SVGFPass::executeWithDerivatives(RenderContext* pRenderContext, const Rende
     }
 }
 
+double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
+{
+    auto v = pRenderContext->readTextureSubresource(tex.get(), 0);
+
+    float4* ptr = (float4*)v.data();
+
+    double sum = 0.0;
+    for(int i = 0; i < numPixels; i++)
+        sum += (double)ptr[i].x;
+
+    return sum;
+
+    /*
+    * // mDerivativeInteration
+    std::cout << "Fwd Diff Sum:\t" << getTexSum(pRenderContext, mpDerivativeVerifyFbo->getColorTexture(1)) << std::endl;
+    std::cout << "Bwd Diff Sum:\t" << getTexSum(pRenderContext, mpDerivativeVerifyFbo->getColorTexture(2)) << std::endl;
+    std::cout << std::endl;
+    */
+}
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
@@ -502,7 +522,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 
     mDelta = 0.005f;
 
-    float& valToChange = mAtrousState.mIterationState[1].dvKernel[0];
+    float& valToChange = mAtrousState.mIterationState[mDerivativeInteration].dvKernel[0];
     float oldval = valToChange;
 
     valToChange = oldval - mDelta;
@@ -523,14 +543,16 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 
     pRenderContext->blit(mAtrousState.mSaveIllum->getSRV(),   renderData.getTexture(kOutputDebugBuffer)->getRTV());
 
-
+    std::cout << "Fwd Diff Sum:\t" << getTexSum(pRenderContext, mpDerivativeVerifyFbo->getColorTexture(1)) << std::endl;
+    std::cout << "Bwd Diff Sum:\t" << getTexSum(pRenderContext, mpDerivativeVerifyFbo->getColorTexture(2)) << std::endl;
+    std::cout << std::endl;
 }
 
 void SVGFPass::computeDerivVerification(RenderContext* pRenderContext)
 {
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[1].pdaKernel;
+    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[mDerivativeInteration].pdaKernel;
     perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
     perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
     perImageCB["delta"] = mDelta;
@@ -707,45 +729,6 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
         perImageCB["gStepSize"] = 1 << iteration;
 
         mAtrousState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
-
-        if (iteration == 1)
-        {
-            // save this for later so that it doesn't get overwritten
-            pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(1)->getSRV(), mAtrousState.mSaveIllum->getRTV());
-
-            // now, download the second attachment
-            auto v = pRenderContext->readTextureSubresource(mpDummyFullscreenFbo->getColorTexture(1).get(), 0);
-            int4* totalbuf = (int4*)v.data();
-
-            pRenderContext->copyBufferRegion(mReadbackBuffer.get(), 0, curIterationState.pdaIllumination.get(), 0, numPixels * sizeof(int4));
-            int4* scatterbuf = (int4*)mReadbackBuffer->map();
-
-            // sum them all up
-            int4 totsum(0), scattersum(0);
-            for (int i = 1820 * 800 + 500; i < 1820 * 800 + 550; i++)
-            {
-                //totsum += totalbuf[i];
-                //scattersum += scatterbuf[i];
-                int4 totl = totalbuf[i];
-                int4 scat = scatterbuf[i];
-
-                int4 diff = totl - scat;
-                std::cout << "WR\t" << totl.x << '\t' << totl.y << '\t' << totl.z << '\t' << totl.w << '\n';
-                std::cout << "BUF\t" << scat.x << '\t' << scat.y << '\t' << scat.z << '\t' << scat.w << '\n';
-                std::cout << "D\t" << diff.x << '\t' << diff.y << '\t' << diff.z << '\t' << diff.w << '\n';
-                std::cout << '\n';
-            }
-
-            std::cout.flush();
-
-            //int ctot  = dot(totsum, int4(1, 1, 1, 0));
-            //int cscat = dot(scattersum, int4(1, 1, 1, 0));
-            //int cdiff = ctot - cscat;
-            //std::cout << ctot << '\t' << cscat << '\t' << cdiff << std::endl;
-
-            // unmap before we leave
-            mReadbackBuffer->unmap();
-        }
     }
 }
 
@@ -940,6 +923,8 @@ void SVGFPass::renderUI(Gui::Widgets& widget)
     widget.text("    iteration feeds into future frames?");
     dirty |= (int)widget.var("Iterations", mFilterIterations, 1, 10, 1);
     dirty |= (int)widget.var("Feedback", mFeedbackTap, -1, mFilterIterations - 2, 1);
+
+    widget.var("mDI", mDerivativeInteration, 0, mFilterIterations - 1, 1);
 
     widget.text("");
     widget.text("Contol edge stopping on bilateral fitler");

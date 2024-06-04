@@ -133,34 +133,49 @@ uint getBufIdx3(int2 ipos, Texture2D tex) {
     return base_addr;
 }
 
-uint getBufIdx4(int2 ipos, Texture2D tex) {
+uint getBufIdx4(int2 ipos, Texture2D tex, int idx) {
     uint2 dim = getTextureDims(tex, 0);
+
+    ipos.y += dim.y * idx;
+
     uint base_addr = sizeof(int4) * (dim.x * ipos.y + ipos.x);
     return base_addr;
 }
 
+//#define ATOMIC_STORE
+
 void accumDerivBuf3(RWByteAddressBuffer rwaddrbuff, int2 ipos, float3 val, Texture2D tex) {
     uint base_addr = getBufIdx3(ipos, tex);
 
+    #ifdef ATOMIC_STORE
     int3 a = quantVal3(val);
     for(int i = 0; i < 3; i++) {
         uint addr = base_addr + 4 * i;
         int dummy;
         rwaddrbuff.InterlockedAdd(addr, a[i], dummy);
     }
+    #else
+    // idk figure out what to put here later
+    //rwaddrbuff.Store3(base_addr, a, status);
+    #endif
 }
 
 // tex is a texture with equal dimensions to rwaddrbuff
-void accumDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Texture2D tex) {
-    uint base_addr = getBufIdx4(ipos, tex);
+void accumDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Texture2D tex, int idx = 0) {
+    uint base_addr = getBufIdx4(ipos, tex, idx);
 
     int4 a = quantVal4(val);
     
+    #ifdef ATOMIC_STORE
     for(int i = 0; i < 4; i++) {
         uint addr = base_addr + 4 * i;
         int dummy;
         rwaddrbuff.InterlockedAdd(addr, a[i], dummy);
     }
+    #else
+    int status;
+    rwaddrbuff.Store4(base_addr, a);
+    #endif
 }
 
 // TODO: figure out how to properly read from a rwbyteaddressbuf
@@ -177,8 +192,8 @@ float3 readDerivBuf3(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex) {
     return dequant3(temp);
 }
 
-float4 readDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex) {
-    uint base_addr = getBufIdx4(ipos, tex);
+float4 readDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex, int idx = 0) {
+    uint base_addr = getBufIdx4(ipos, tex, idx);
 
     /*
     int4 temp;
