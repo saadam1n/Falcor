@@ -161,9 +161,11 @@ float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] va
 
             const float kernel = kernelWeights[abs(xx)] * kernelWeights[abs(yy)];
 
+            int nsi = nextStoreIndex++;
+
             if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
             {
-                const float4 illuminationP = getIllumination(ipos, offset, nextStoreIndex++);
+                const float4 illuminationP = getIllumination(ipos, offset, nsi);
                 const float lIlluminationP = dot(illuminationP.rgb, luminanceParams);
                 const float zP = getLinearZAndNormal(p).x;
                 const float3 nP = oct_to_ndir_snorm(getLinearZAndNormal(p).zw);

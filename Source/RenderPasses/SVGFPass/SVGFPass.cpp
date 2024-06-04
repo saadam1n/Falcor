@@ -119,7 +119,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
 
     mFilterIterations = 2;
     mFeedbackTap = -1;
-    mDerivativeInteration = 1;
+    mDerivativeInteration = 0;
 
     mpPackLinearZAndNormal = FullScreenPass::create(mpDevice, kPackLinearZAndNormalShader);
     mpReprojection = FullScreenPass::create(mpDevice, kReprojectShaderS);
@@ -650,6 +650,7 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
         perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
         perImageCB["gStepSize"] = 1 << iteration;
 
+
         mpAtrous->execute(pRenderContext, curTargetFbo);
 
         // store the filtered color for the feedback path
@@ -727,6 +728,7 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
 
         perImageCB["gIllumination"] = curIterationState.pgIllumination;
         perImageCB["gStepSize"] = 1 << iteration;
+        perImageCB_D["iteration"] = iteration;
 
         mAtrousState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
     }
