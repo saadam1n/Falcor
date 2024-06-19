@@ -192,9 +192,7 @@ private:
             ref<Buffer> pdaVarianceKernel;
             ref<Buffer> pdaLuminanceParams;
             ref<Buffer> pdaWeightFunctionParams;
-            ref<Buffer> pdaSigmaL;
-            ref<Buffer> pdaSigmaZ;
-            ref<Buffer> pdaSigmaN;
+            ref<Buffer> pdaSigma;
 
             ref<Buffer> pdaIllumination;
 

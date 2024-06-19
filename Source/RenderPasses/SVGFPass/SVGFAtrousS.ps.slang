@@ -8,9 +8,12 @@ struct FS_OUT {
 
 FS_OUT main(FullScreenPassVsOut vsOut)
 {
+    const int2 ipos = int2(vsOut.posH.xy);
+    var ird = prefetchIrd(ipos);
+
     FS_OUT fs_out;
 
-    fs_out.filter_result = atrous(vsOut, dvKernel, dvVarianceKernel, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL, dvSigmaZ, dvSigmaN);
+    fs_out.filter_result = atrous(vsOut, dvKernel, dvVarianceKernel, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL, dvSigmaZ, dvSigmaN, ird.variance, ird.color_v);
 
     return fs_out;
 }

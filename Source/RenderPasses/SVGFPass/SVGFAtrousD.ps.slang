@@ -3,18 +3,13 @@ import SVGFCommon;
 
 cbuffer PerImageCB_D
 {
-    RWByteAddressBuffer drIllumination;
+    RWByteAddressBuffer daIllumination;
 
-    RWByteAddressBuffer daSigmaL;
-    RWByteAddressBuffer daSigmaZ;
-    RWByteAddressBuffer daSigmaN;
-
+    RWByteAddressBuffer daSigma;
     RWByteAddressBuffer daKernel;
     RWByteAddressBuffer daVarianceKernel;
     RWByteAddressBuffer daLuminanceParams;
     RWByteAddressBuffer daWeightFunctionParams;
-
-    int iteration;
 };
 
 struct ParamDiffValues 
@@ -26,13 +21,12 @@ struct ParamDiffValues
     float sigmaL;
     float sigmaZ;
     float sigmaN;
+
+    ImageReadData ird;
 };
 
-ParamDiffValues calcAtrousDiffPairs(FullScreenPassVsOut vsOut, int2 offset, float4 dIllum)
+ParamDiffValues calcAtrousDiffPairs(FullScreenPassVsOut vsOut, ImageReadData ird, float4 dIllum)
 {
-    FullScreenPassVsOut jumpToLocation = vsOut;
-    jumpToLocation.posH.xy += offset;
-
     var dpKernel = diffPair(dvKernel, {0.0, 0.0, 0.0});
     var dpVarianceKernel = diffPair(dvVarianceKernel, {{0.0, 0.0}, {0.0, 0.0}});
     var dpLuminanceParams =  diffPair(dvLuminanceParams, float3(0.0));
@@ -40,43 +34,50 @@ ParamDiffValues calcAtrousDiffPairs(FullScreenPassVsOut vsOut, int2 offset, floa
     var dpSigmaL = diffPair(dvSigmaL, 0.0);
     var dpSigmaZ = diffPair(dvSigmaZ, 0.0);
     var dpSigmaN = diffPair(dvSigmaN, 0.0);
-    
-    const int2 ipos = int2(vsOut.posH.xy);
 
-    __bwd_diff(atrous)(jumpToLocation, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, dIllum);
+    var dpIrdVariance = diffPair(ird.variance);
+    var dpIrdColorV = diffPair(ird.color_v);
 
-    ParamDiffValues pvd;
+    __bwd_diff(atrous)(vsOut, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, dpIrdVariance, dpIrdColorV, dIllum);
+
+    ParamDiffValues pdv;
 
     for(int i = 0; i < 3; i++)
-        pvd.kernel[i] = dpKernel.d[i];
+        pdv.kernel[i] = dpKernel.d[i];
 
     for(int i = 0; i < 2; i++)
         for(int j = 0; j < 2; j++)
-            pvd.varianceKernel[i][j] = dpVarianceKernel.d[i][j];
+            pdv.varianceKernel[i][j] = dpVarianceKernel.d[i][j];
 
-    pvd.luminanceParams = dpLuminanceParams.d;
+    pdv.luminanceParams = dpLuminanceParams.d;
 
     for(int i = 0; i < 3; i++)
-        pvd.weightFunctionParams[i] = dpWeightFunctionParams.d[i];
+        pdv.weightFunctionParams[i] = dpWeightFunctionParams.d[i];
 
-    pvd.sigmaL = dpSigmaL.d;
-    pvd.sigmaZ = dpSigmaZ.d;
-    pvd.sigmaN = dpSigmaN.d;
+    pdv.sigmaL = dpSigmaL.d;
+    pdv.sigmaZ = dpSigmaZ.d;
+    pdv.sigmaN = dpSigmaN.d;
 
-    return pvd;
+    for(int i = 0; i < 3; i++)
+    {
+        for(int j = 0; j < 3; j++)
+        {
+            pdv.ird.variance[i][j] = dpIrdVariance.d[i][j];
+        }
+    }
+
+    for(int i = 0; i < 5; i++)
+    {
+        for(int j = 0; j < 5; j++)
+        {
+            pdv.ird.color_v[i][j] = dpIrdColorV.d[i][j];
+        }
+    }
+
+    return pdv;
 }
 
-void storeAtrousPdv(int2 ipos, ParamDiffValues pdv)
-{
-    accumDerivBuf4(daSigmaL, ipos, float4(pdv.sigmaL), gAlbedo);
-    accumDerivBuf4(daSigmaZ, ipos, float4(pdv.sigmaZ), gAlbedo);
-    accumDerivBuf4(daSigmaN, ipos, float4(pdv.sigmaN), gAlbedo);
 
-    accumDerivBuf4(daKernel, ipos, float4(pdv.kernel[0], pdv.kernel[1], pdv.kernel[2], 0.0f), gAlbedo);
-    accumDerivBuf4(daVarianceKernel, ipos, float4(pdv.varianceKernel[0][0], pdv.varianceKernel[0][1], pdv.varianceKernel[1][0], pdv.varianceKernel[1][1]), gAlbedo);
-    accumDerivBuf4(daLuminanceParams, ipos, float4(pdv.luminanceParams, 0.0f), gAlbedo);
-    accumDerivBuf4(daWeightFunctionParams, ipos, float4(pdv.weightFunctionParams[0], pdv.weightFunctionParams[1], pdv.weightFunctionParams[2], 0.0f), gAlbedo);
-}
 
 ParamDiffValues addAtrousPdv(ParamDiffValues lhs, ParamDiffValues rhs)
 {
@@ -102,6 +103,75 @@ ParamDiffValues addAtrousPdv(ParamDiffValues lhs, ParamDiffValues rhs)
     return res;
 }
 
+void storePdvCompressed(int2 ipos, int idx, ParamDiffValues pdv)
+{
+    // pk = packed
+    float4 pkSigma = float4(pdv.sigmaL, pdv.sigmaZ, pdv.sigmaN, 0.0f);
+    float4 pkKernel = float4(pdv.kernel[0], pdv.kernel[1], pdv.kernel[2], 0.0f);
+    float4 pkVarianceKernel = float4(pdv.varianceKernel[0][0], pdv.varianceKernel[0][1], pdv.varianceKernel[1][0], pdv.varianceKernel[1][1]);
+    float4 pkLuminanceParams = float4(pdv.luminanceParams, 0.0f);
+    float4 pkWeightFunctionParams = float4(pdv.weightFunctionParams[0], pdv.weightFunctionParams[1], pdv.weightFunctionParams[2], 0.0f);
+
+    // just store directly
+    //float4 pkIrd[25 + 3];
+
+    int k = 28 * idx;
+    for(int i = 0; i < 5; i++)
+    {
+        for(int j = 0; j < 5; j++)
+        {
+            accumDerivBuf4(daIllumination, ipos, pdv.ird.color_v[i][j], gAlbedo, k++);
+        }
+    }
+
+    accumDerivBuf4(daIllumination, ipos, float4(pdv.ird.variance[0][0], pdv.ird.variance[0][1], pdv.ird.variance[0][2], pdv.ird.variance[1][0]), gAlbedo, k++);
+    accumDerivBuf4(daIllumination, ipos, float4(pdv.ird.variance[1][1], pdv.ird.variance[1][2], pdv.ird.variance[2][0], pdv.ird.variance[2][1]), gAlbedo, k++);
+    accumDerivBuf4(daIllumination, ipos, float4(pdv.ird.variance[2][2],                   0.0f,                   0.0f,                   0.0f), gAlbedo, k++);
+
+
+    accumDerivBuf4(daSigma, ipos, pkSigma, gAlbedo, idx);
+    accumDerivBuf4(daKernel, ipos, pkKernel, gAlbedo, idx);
+    accumDerivBuf4(daVarianceKernel, ipos, pkVarianceKernel, gAlbedo, idx);
+    accumDerivBuf4(daLuminanceParams, ipos, pkLuminanceParams, gAlbedo, idx);
+    accumDerivBuf4(daWeightFunctionParams, ipos, pkWeightFunctionParams, gAlbedo, idx);
+}
+
+void main(FullScreenPassVsOut vsOut)
+{
+    const int2 ipos = int2(vsOut.posH.xy);
+
+    var ird = prefetchIrd(ipos);
+
+    // all these need to be stored separately
+    ParamDiffValues pdv[4];
+    pdv[0] = calcAtrousDiffPairs(vsOut, ird, float4(1.0f, 0.0f, 0.0f, 0.0f));
+    pdv[1] = calcAtrousDiffPairs(vsOut, ird, float4(0.0f, 1.0f, 0.0f, 0.0f));
+    pdv[2] = calcAtrousDiffPairs(vsOut, ird, float4(0.0f, 0.0f, 1.0f, 0.0f));
+    pdv[3] = calcAtrousDiffPairs(vsOut, ird, float4(0.0f, 0.0f, 0.0f, 1.0f));
+
+    // store them in their respective indices
+    for(int i = 0; i < 4; i++)
+    {
+        storePdvCompressed(ipos, i, pdv[i]);
+    }
+
+}
+
+
+/*
+void storeAtrousPdv(int2 ipos, ParamDiffValues pdv)
+{
+    accumDerivBuf4(daSigmaL, ipos, float4(pdv.sigmaL), gAlbedo);
+    accumDerivBuf4(daSigmaZ, ipos, float4(pdv.sigmaZ), gAlbedo);
+    accumDerivBuf4(daSigmaN, ipos, float4(pdv.sigmaN), gAlbedo);
+
+    accumDerivBuf4(daKernel, ipos, float4(pdv.kernel[0], pdv.kernel[1], pdv.kernel[2], 0.0f), gAlbedo);
+    accumDerivBuf4(daVarianceKernel, ipos, float4(pdv.varianceKernel[0][0], pdv.varianceKernel[0][1], pdv.varianceKernel[1][0], pdv.varianceKernel[1][1]), gAlbedo);
+    accumDerivBuf4(daLuminanceParams, ipos, float4(pdv.luminanceParams, 0.0f), gAlbedo);
+    accumDerivBuf4(daWeightFunctionParams, ipos, float4(pdv.weightFunctionParams[0], pdv.weightFunctionParams[1], pdv.weightFunctionParams[2], 0.0f), gAlbedo);
+}
+
+// Brute force code
 void main(FullScreenPassVsOut vsOut)
 {
     const int2 ipos = int2(vsOut.posH.xy);
@@ -109,7 +179,54 @@ void main(FullScreenPassVsOut vsOut)
     {
         float4 dIllum = readDerivBuf4(drIllumination, ipos, gAlbedo);
 
-        var pdv = calcAtrousDiffPairs(vsOut, int2(0, 0), dIllum);
+        ParamDiffValues pdv;
+
+        for(int i = 0; i < 3; i++)
+            pdv.kernel[i] = 0.0f;
+
+        for(int i = 0; i < 2; i++)
+            for(int j = 0; j < 2; j++)
+                pdv.varianceKernel[i][j] = 0.0f;
+
+
+        pdv.luminanceParams = float3(0.0f);
+
+        for(int i = 0; i < 3; i++)
+            pdv.weightFunctionParams[i] = 0.0f;
+
+        pdv.sigmaL = 0.0f;
+        pdv.sigmaZ = 0.0f;
+        pdv.sigmaN = 0.0f;
+
+        // for each channel
+        for(int i = 0; i < 4; i++)
+        {
+            // set every other channel to zero
+            float4 dChannelMask;
+            for(int j = 0; j < 4; j++)
+            {
+                if(i != j)
+                {
+                    dChannelMask[j] = 0.0f;
+                }
+                else
+                {
+                    dChannelMask[j] = 1.0f;
+                }
+            }
+
+            var channelPdv = calcAtrousDiffPairs(vsOut, int2(0, 0), dChannelMask);
+
+            // scale everything by this value
+            float dChannelMultiplier = dIllum[i];
+
+            // TODO: actually scale everything
+            channelPdv.kernel[0] *= dChannelMultiplier;
+
+            pdv = addAtrousPdv(pdv, channelPdv);
+        }
+
+        //pdv = calcAtrousDiffPairs(vsOut, int2(0, 0), dIllum);
 
         storeAtrousPdv(ipos, pdv);
     }
@@ -138,7 +255,15 @@ void main(FullScreenPassVsOut vsOut)
         // our read index
         int nextReadIndex = 0;
 
-        // let's first do the variance 3x3
+
+        // start off with center pixel
+        {
+            float4 dIllum = readDerivBuf4(drIllumination, ipos, gAlbedo, nextReadIndex++);
+            var pdv = calcAtrousDiffPairs(vsOut, int2(0, 0), dIllum);
+            accum = addAtrousPdv(accum, pdv);
+        }
+
+        // now do variance 3x3
         for (int yy = -1; yy <= 1; yy++)
         {
             break;
@@ -150,12 +275,6 @@ void main(FullScreenPassVsOut vsOut)
             }
         }
 
-        // do center pixel now
-        {
-            float4 dIllum = readDerivBuf4(drIllumination, ipos, gAlbedo, nextReadIndex++);
-            var pdv = calcAtrousDiffPairs(vsOut, int2(0, 0), dIllum);
-            accum = addAtrousPdv(accum, pdv);
-        }
 
         // do all remaining pixels now
         const int2 screenSize = getTextureDims(gAlbedo, 0);
@@ -181,3 +300,5 @@ void main(FullScreenPassVsOut vsOut)
         storeAtrousPdv(ipos, accum);
     }
 }
+
+*/

@@ -12,7 +12,7 @@ cbuffer PerImageCB
 
 bool isNonNegligble(float4 col)
 {
-    return (abs(dot(col, float4(1.0f))) < 0.1f);
+    return (abs(dot(col, float4(1.0f))) < 0.2f);
 }
 
 struct PS_OUT

@@ -47,14 +47,7 @@ cbuffer PerImageCB
     float dvWeightFunctionParams[3];
     float dvKernel[3];
     float dvVarianceKernel[2][2];
-
-    RWByteAddressBuffer   daHistoryLen;
-    RWByteAddressBuffer   daIllumination;
 };
-
-// accumulate to a different buffer
-int pixelIndex = 0;
-
 
 void d_getLinearZAndNormal(int2 ipos, float4 val)
 {
@@ -63,25 +56,8 @@ void d_getLinearZAndNormal(int2 ipos, float4 val)
 
 void d_getHistoryLength(int2 ipos, float val)
 {
-    // waste of space, I know, but I don't care
-    accumDerivBuf4(daHistoryLen, ipos, val.xxxx, gAlbedo);
+    // we will have to store it in a different way
 }
-
-
-void d_getIllumination(int2 ipos, int2 offset, int index, float4 val)
-{
-    const int2 screenSize = getTextureDims(gAlbedo, 0);
-    accumDerivBuf4(daIllumination, ipos, val, gAlbedo, index);
-}
-
-[BackwardDerivative(d_getIllumination)]
-float4 getIllumination(int2 ipos, int2 offset, int index)
-{
-    int2 p = ipos + offset;
-    return gIllumination[p];
-}
-
-
 
 [BackwardDerivative(d_getLinearZAndNormal)]
 float4 getLinearZAndNormal(int2 ipos)
@@ -95,13 +71,55 @@ float getHistoryLength(int2 ipos)
     return gHistoryLength[ipos].x;
 }
 
+struct ImageReadData
+{
+    float variance[3][3];
+    float4 color_v[5][5];
+};
 
-static int nextStoreIndex = 0;
+ImageReadData prefetchIrd(int2 ipos)
+{
+    ImageReadData ird;
+
+    for (int yy = -1; yy <= 1; yy++)
+    {
+        for (int xx = -1; xx <= 1; xx++)
+        {
+            const int2 offset = int2(xx, yy);
+            const int2 p = ipos + offset;
+            ird.variance[yy + 1][xx + 1] = gIllumination[p].a;
+        }
+    }
+
+    for (int yy = -2; yy <= 2; yy++)
+    {
+        for (int xx = -2; xx <= 2; xx++)
+        {
+            const int2 offset = int2(xx, yy) * gStepSize;
+            const int2 p = ipos + offset;
+            ird.color_v[yy + 2][xx + 2] = gIllumination[p];
+        }
+    }
+
+    return ird;
+}
+
+[BackwardDifferentiable]
+float getIrdVariance(ImageReadData ird, int xx, int yy)
+{
+    return ird.variance[yy + 1][xx + 1];
+}
+
+[BackwardDifferentiable]
+float4 getIrdColorV(ImageReadData ird, int xx, int yy)
+{
+    return ird.color_v[yy + 2][xx + 2];
+}
 
 // computes a 3x3 gaussian blur of the variance, centered around
 // the current pixel. nextStoreIndex will be 9 after this function
 [BackwardDifferentiable]
-float computeVarianceCenter(int2 ipos, float[2][2] kernel)
+float computeVarianceCenter(int2 ipos, float[2][2] kernel, float[3][3] irdVariance)
 {
     float sum = 0.f;
 
@@ -111,17 +129,18 @@ float computeVarianceCenter(int2 ipos, float[2][2] kernel)
         {
             const int2 offset = int2(xx, yy);
             const float k = kernel[abs(xx)][abs(yy)];
-            sum += getIllumination(ipos, offset, nextStoreIndex++).a  * k;
+            sum += irdVariance[yy + 1][xx + 1]  * k;
         }
     }
 
     return sum;
 }
 
-
-
 [BackwardDifferentiable]
-float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] varianceKernel, float3 luminanceParams, float[3] weightsParams, float sigmaL, float sigmaZ, float sigmaN) {
+float4 atrous(FullScreenPassVsOut vsOut, 
+              float[3] kernelWeights, float [2][2] varianceKernel, float3 luminanceParams, float[3] weightsParams, 
+              float sigmaL, float sigmaZ, float sigmaN, 
+              float[3][3] irdVariance, float4[5][5] irdColorV) {
     const int2 ipos = int2(vsOut.posH.xy);
     const int2 screenSize = getTextureDims(gAlbedo, 0);
 
@@ -129,11 +148,11 @@ float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] va
 
     // constant samplers to prevent the compiler from generating code which
     // fetches the sampler descriptor from memory for each texture access
-    const float4 illuminationCenter = getIllumination(ipos, int2(0, 0), nextStoreIndex++);
+    const float4 illuminationCenter = irdColorV[2][2];
     const float lIlluminationCenter = dot(illuminationCenter.rgb, luminanceParams);
 
     // variance, filtered using 3x3 gaussin blur
-    const float var = 1.0f;//computeVarianceCenter(ipos, varianceKernel);
+    const float var = computeVarianceCenter(ipos, varianceKernel, irdVariance);
 
     const float2 zCenter = getLinearZAndNormal(ipos).xy;
     if (zCenter.x < 0)
@@ -161,11 +180,9 @@ float4 atrous(FullScreenPassVsOut vsOut, float[3] kernelWeights, float [2][2] va
 
             const float kernel = kernelWeights[abs(xx)] * kernelWeights[abs(yy)];
 
-            int nsi = nextStoreIndex++;
-
             if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
             {
-                const float4 illuminationP = getIllumination(ipos, offset, nsi);
+                const float4 illuminationP = irdColorV[yy + 2][xx + 2];
                 const float lIlluminationP = dot(illuminationP.rgb, luminanceParams);
                 const float zP = getLinearZAndNormal(p).x;
                 const float3 nP = oct_to_ndir_snorm(getLinearZAndNormal(p).zw);

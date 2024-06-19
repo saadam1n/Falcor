@@ -117,7 +117,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         else logWarning("Unknown field '{}' in SVGFPass dictionary.", key);
     }
 
-    mFilterIterations = 2;
+    mFilterIterations = 1;
     mFeedbackTap = -1;
     mDerivativeInteration = 0;
 
@@ -232,15 +232,14 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         iterationState.pgIllumination = createFullscreenTexture(pDevice);
 
 
-        iterationState.pdaSigmaL = createAccumulationBuffer(pDevice);
-        iterationState.pdaSigmaZ = createAccumulationBuffer(pDevice);
-        iterationState.pdaSigmaN = createAccumulationBuffer(pDevice);
+        iterationState.pdaSigma = createAccumulationBuffer(pDevice);
         iterationState.pdaKernel = createAccumulationBuffer(pDevice);
         iterationState.pdaVarianceKernel = createAccumulationBuffer(pDevice);
         iterationState.pdaLuminanceParams = createAccumulationBuffer(pDevice);
         iterationState.pdaWeightFunctionParams = createAccumulationBuffer(pDevice);
 
-        iterationState.pdaIllumination = createAccumulationBuffer(pDevice, sizeof(int4) * (9 + 25));
+        // flaot4/4 color channel-specific derivaitves/9 + 25 derivatives per SVGF iteration
+        iterationState.pdaIllumination = createAccumulationBuffer(pDevice, 4 * 28 * sizeof(float4));
     }
 
     mAtrousState.pdaHistoryLen = createAccumulationBuffer(pDevice);
@@ -520,7 +519,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
     if(!pScene)
         return;
 
-    mDelta = 0.005f;
+    mDelta = 0.05f;
 
     float& valToChange = mAtrousState.mIterationState[mDerivativeInteration].dvKernel[0];
     float oldval = valToChange;
@@ -675,8 +674,6 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
 
     pRenderContext->clearUAV(mAtrousState.pdaHistoryLen->getUAV().get(), Falcor::uint4(0));
 
-    perImageCB["daHistoryLen"] = mAtrousState.pdaHistoryLen;
-
     perImageCB["gAlbedo"]        = pAlbedoTexture;
     perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
     perImageCB["gLinearZAndNormal"]       = mpLinearZAndNormalFbo->getColorTexture(0);
@@ -686,18 +683,15 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
     {
         auto& curIterationState = mAtrousState.mIterationState[iteration];
 
-        pRenderContext->clearUAV(curIterationState.pdaSigmaL->getUAV().get(), Falcor::uint4(0));
-        pRenderContext->clearUAV(curIterationState.pdaSigmaZ->getUAV().get(), Falcor::uint4(0));
-        pRenderContext->clearUAV(curIterationState.pdaSigmaN->getUAV().get(), Falcor::uint4(0));
+        pRenderContext->clearUAV(curIterationState.pdaSigma->getUAV().get(), Falcor::uint4(0));
         pRenderContext->clearUAV(curIterationState.pdaKernel->getUAV().get(), Falcor::uint4(0));
         pRenderContext->clearUAV(curIterationState.pdaVarianceKernel->getUAV().get(), Falcor::uint4(0));
         pRenderContext->clearUAV(curIterationState.pdaLuminanceParams->getUAV().get(), Falcor::uint4(0));
         pRenderContext->clearUAV(curIterationState.pdaWeightFunctionParams->getUAV().get(), Falcor::uint4(0));
         pRenderContext->clearUAV(curIterationState.pdaIllumination->getUAV().get(), Falcor::uint4(0));
 
-        perImageCB_D["daSigmaL"] = curIterationState.pdaSigmaL;
-        perImageCB_D["daSigmaZ"] = curIterationState.pdaSigmaZ;
-        perImageCB_D["daSigmaN"] = curIterationState.pdaSigmaN;
+        perImageCB_D["daIllumination"] = curIterationState.pdaIllumination;
+        perImageCB_D["daSigma"] = curIterationState.pdaSigma;
         perImageCB_D["daKernel"] = curIterationState.pdaKernel;
         perImageCB_D["daVarianceKernel"] = curIterationState.pdaVarianceKernel;
         perImageCB_D["daLuminanceParams"] = curIterationState.pdaLuminanceParams;
@@ -723,12 +717,9 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
             }
         }
 
-        perImageCB_D["drIllumination"] = (iteration == mFilterIterations - 1 ? mFinalModulateState.pdaIllumination : mAtrousState.mIterationState[iteration + 1].pdaIllumination);
-        perImageCB["daIllumination"] = curIterationState.pdaIllumination;
 
         perImageCB["gIllumination"] = curIterationState.pgIllumination;
         perImageCB["gStepSize"] = 1 << iteration;
-        perImageCB_D["iteration"] = iteration;
 
         mAtrousState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
     }

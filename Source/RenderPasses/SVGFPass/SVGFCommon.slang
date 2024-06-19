@@ -135,10 +135,9 @@ uint getBufIdx3(int2 ipos, Texture2D tex) {
 
 uint getBufIdx4(int2 ipos, Texture2D tex, int idx) {
     uint2 dim = getTextureDims(tex, 0);
-
-    ipos.y += dim.y * idx;
-
-    uint base_addr = sizeof(int4) * (dim.x * ipos.y + ipos.x);
+    uint base_addr = (dim.x * ipos.y + ipos.x);
+    base_addr += dim.x * dim.y * idx;
+    base_addr *= sizeof(int4);
     return base_addr;
 }
 
