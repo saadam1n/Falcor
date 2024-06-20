@@ -117,7 +117,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         else logWarning("Unknown field '{}' in SVGFPass dictionary.", key);
     }
 
-    mFilterIterations = 1;
+    mFilterIterations = 2;
     mFeedbackTap = -1;
     mDerivativeInteration = 0;
 
@@ -239,7 +239,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         iterationState.pdaWeightFunctionParams = createAccumulationBuffer(pDevice);
 
         // flaot4/4 color channel-specific derivaitves/9 + 25 derivatives per SVGF iteration
-        iterationState.pdaIllumination = createAccumulationBuffer(pDevice, 4 * 28 * sizeof(float4));
+        iterationState.pdaIllumination = createAccumulationBuffer(pDevice);
     }
 
     mAtrousState.pdaHistoryLen = createAccumulationBuffer(pDevice);
@@ -505,13 +505,6 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
         sum += (double)ptr[i].x;
 
     return sum;
-
-    /*
-    * // mDerivativeInteration
-    std::cout << "Fwd Diff Sum:\t" << getTexSum(pRenderContext, mpDerivativeVerifyFbo->getColorTexture(1)) << std::endl;
-    std::cout << "Bwd Diff Sum:\t" << getTexSum(pRenderContext, mpDerivativeVerifyFbo->getColorTexture(2)) << std::endl;
-    std::cout << std::endl;
-    */
 }
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
@@ -690,7 +683,6 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
         pRenderContext->clearUAV(curIterationState.pdaWeightFunctionParams->getUAV().get(), Falcor::uint4(0));
         pRenderContext->clearUAV(curIterationState.pdaIllumination->getUAV().get(), Falcor::uint4(0));
 
-        perImageCB_D["daIllumination"] = curIterationState.pdaIllumination;
         perImageCB_D["daSigma"] = curIterationState.pdaSigma;
         perImageCB_D["daKernel"] = curIterationState.pdaKernel;
         perImageCB_D["daVarianceKernel"] = curIterationState.pdaVarianceKernel;
@@ -717,6 +709,8 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
             }
         }
 
+        perImageCB_D["drIllumination"] = (iteration == mFilterIterations - 1 ? mFinalModulateState.pdaIllumination : mAtrousState.mIterationState[iteration + 1].pdaIllumination);
+        perImageCB["daIllumination"] = curIterationState.pdaIllumination;
 
         perImageCB["gIllumination"] = curIterationState.pgIllumination;
         perImageCB["gStepSize"] = 1 << iteration;

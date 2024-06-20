@@ -141,7 +141,7 @@ uint getBufIdx4(int2 ipos, Texture2D tex, int idx) {
     return base_addr;
 }
 
-//#define ATOMIC_STORE
+#define ATOMIC_STORE
 
 void accumDerivBuf3(RWByteAddressBuffer rwaddrbuff, int2 ipos, float3 val, Texture2D tex) {
     uint base_addr = getBufIdx3(ipos, tex);
