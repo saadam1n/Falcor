@@ -239,7 +239,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         iterationState.pdaWeightFunctionParams = createAccumulationBuffer(pDevice);
 
         // flaot4/4 color channel-specific derivaitves/9 + 25 derivatives per SVGF iteration
-        iterationState.pdaIllumination = createAccumulationBuffer(pDevice);
+        iterationState.pdaIllumination = createAccumulationBuffer(pDevice, sizeof(float4) * (9 + 26));
     }
 
     mAtrousState.pdaHistoryLen = createAccumulationBuffer(pDevice);
@@ -714,6 +714,8 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
 
         perImageCB["gIllumination"] = curIterationState.pgIllumination;
         perImageCB["gStepSize"] = 1 << iteration;
+
+        perImageCB_D["iteration"] = iteration;
 
         mAtrousState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
     }

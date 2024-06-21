@@ -73,21 +73,22 @@ float getHistoryLength(int2 ipos)
     return gHistoryLength[ipos].x;
 }
 
-void d_getIllumination(int2 ipos, float4 val)
+void d_getIllumination(int2 ipos, int nsi, float4 val)
 {
-    accumDerivBuf4(daIllumination, ipos, val, gAlbedo, 0);
+    accumDerivBuf4(daIllumination, ipos, val, gAlbedo, nsi);
 }
 
 [BackwardDerivative(d_getIllumination)]
-float4 getIllumination(int2 ipos)
+float4 getIllumination(int2 ipos, int nsi)
 {
     return gIllumination[ipos];
 }
 
+static int nsi = 0;
 // computes a 3x3 gaussian blur of the variance, centered around
 // the current pixel. nextStoreIndex will be 9 after this function
 [BackwardDifferentiable]
-float computeVarianceCenter(int2 ipos, float[2][2] kernel)
+float computeVarianceCenter(int2 ipos, float[2][2] kernel, int2 screenSize)
 {
     float sum = 0.f;
 
@@ -95,9 +96,12 @@ float computeVarianceCenter(int2 ipos, float[2][2] kernel)
     {
         for (int xx = -1; xx <= 1; xx++)
         {
-            const int2 offset = int2(xx, yy);
+            int2 p = ipos + int2(xx, yy);
             const float k = kernel[abs(xx)][abs(yy)];
-            sum += getIllumination(ipos + offset).a * k;
+
+            const bool inside = (all(p >= int2(0, 0)) && all(p < screenSize));
+            if(inside)
+                sum += getIllumination(p, nsi).a * k;
         }
     }
 
@@ -115,11 +119,11 @@ float4 atrous(FullScreenPassVsOut vsOut,
 
     // constant samplers to prevent the compiler from generating code which
     // fetches the sampler descriptor from memory for each texture access
-    const float4 illuminationCenter = getIllumination(ipos);
+    const float4 illuminationCenter = getIllumination(ipos, nsi);
     const float lIlluminationCenter = dot(illuminationCenter.rgb, luminanceParams);
 
     // variance, filtered using 3x3 gaussin blur
-    const float var = computeVarianceCenter(ipos, varianceKernel);
+    const float var = computeVarianceCenter(ipos, varianceKernel, screenSize);
 
     const float2 zCenter = getLinearZAndNormal(ipos).xy;
     if (zCenter.x < 0)
@@ -146,9 +150,11 @@ float4 atrous(FullScreenPassVsOut vsOut,
 
             const float kernel = kernelWeights[abs(xx)] * kernelWeights[abs(yy)];
 
+            int force_nsi = nsi;
+
             if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
             {
-                const float4 illuminationP = getIllumination(p);
+                const float4 illuminationP = getIllumination(p, force_nsi);
                 const float lIlluminationP = dot(illuminationP.rgb, luminanceParams);
                 const float zP = getLinearZAndNormal(p).x;
                 const float3 nP = oct_to_ndir_snorm(getLinearZAndNormal(p).zw);
