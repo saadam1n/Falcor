@@ -237,7 +237,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         iterationState.pdaWeightFunctionParams = createAccumulationBuffer(pDevice);
 
         // flaot4/4 color channel-specific derivaitves/9 + 25 derivatives per SVGF iteration
-        iterationState.pdaIllumination = createAccumulationBuffer(pDevice, sizeof(float4) * (9 + 25));
+        iterationState.pdaIllumination = createAccumulationBuffer(pDevice, sizeof(float4) * (9 + 26));
     }
 
     mAtrousState.pdaHistoryLen = createAccumulationBuffer(pDevice);
@@ -900,6 +900,8 @@ void SVGFPass::computeLinearZAndNormal(RenderContext* pRenderContext, ref<Textur
 void SVGFPass::renderUI(Gui::Widgets& widget)
 {
     float dummyVal;
+
+    float dummyVal = 0.0f;
 
     int dirty = 0;
     dirty |= (int)widget.checkbox("Enable SVGF", mFilterEnabled);

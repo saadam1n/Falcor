@@ -73,67 +73,22 @@ float getHistoryLength(int2 ipos)
     return gHistoryLength[ipos].x;
 }
 
-/*
-void d_getIllumination(int2 ipos, float4 val)
+void d_getIllumination(int2 ipos, int nsi, float4 val)
 {
-    accumDerivBuf4(daIllumination, ipos, val, gAlbedo, 0);
+    accumDerivBuf4(daIllumination, ipos, val, gAlbedo, nsi);
 }
 
 [BackwardDerivative(d_getIllumination)]
-float4 getIllumination(int2 ipos)
+float4 getIllumination(int2 ipos, int nsi)
 {
     return gIllumination[ipos];
-}*/
-
-struct ImageReadData
-{
-    float variance[3][3];
-    float4 color_v[5][5];
-};
-
-ImageReadData prefetchIrd(int2 ipos)
-{
-    ImageReadData ird;
-
-    for (int yy = -1; yy <= 1; yy++)
-    {
-        for (int xx = -1; xx <= 1; xx++)
-        {
-            const int2 offset = int2(xx, yy);
-            const int2 p = ipos + offset;
-            ird.variance[yy + 1][xx + 1] = gIllumination[p].a;
-        }
-    }
-
-    for (int yy = -2; yy <= 2; yy++)
-    {
-        for (int xx = -2; xx <= 2; xx++)
-        {
-            const int2 offset = int2(xx, yy) * gStepSize;
-            const int2 p = ipos + offset;
-            ird.color_v[yy + 2][xx + 2] = gIllumination[p];
-        }
-    }
-
-    return ird;
 }
 
-[BackwardDifferentiable]
-float getIrdVariance(ImageReadData ird, int xx, int yy)
-{
-    return ird.variance[yy + 1][xx + 1];
-}
-
-[BackwardDifferentiable]
-float4 getIrdColorV(ImageReadData ird, int xx, int yy)
-{
-    return ird.color_v[yy + 2][xx + 2];
-}
-
+static int nsi = 0;
 // computes a 3x3 gaussian blur of the variance, centered around
 // the current pixel. nextStoreIndex will be 9 after this function
 [BackwardDifferentiable]
-float computeVarianceCenterSelfsampling(int2 ipos, float[2][2] kernel)
+float computeVarianceCenter(int2 screenSize, int2 ipos, float[2][2] kernel)
 {
     float sum = 0.f;
 
@@ -141,27 +96,12 @@ float computeVarianceCenterSelfsampling(int2 ipos, float[2][2] kernel)
     {
         for (int xx = -1; xx <= 1; xx++)
         {
-            const int2 offset = int2(xx, yy);
+            int2 p = ipos + int2(xx, yy);
             const float k = kernel[abs(xx)][abs(yy)];
-            //sum += getIllumination(ipos + offset).a * k;
-        }
-    }
 
-    return sum;
-}
-
-[BackwardDifferentiable]
-float computeVarianceCenter(int2 ipos, float[2][2] kernel, float[3][3] irdVariance)
-{
-    float sum = 0.f;
-
-    for (int yy = -1; yy <= 1; yy++)
-    {
-        for (int xx = -1; xx <= 1; xx++)
-        {
-            const int2 offset = int2(xx, yy);
-            const float k = kernel[abs(xx)][abs(yy)];
-            sum += irdVariance[yy + 1][xx + 1]  * k;
+            const bool inside = (all(p >= int2(0, 0)) && all(p < screenSize));
+            if(inside)
+                sum += getIllumination(p, nsi++).a * k;
         }
     }
 
@@ -181,11 +121,11 @@ float4 atrous(FullScreenPassVsOut vsOut,
 
     // constant samplers to prevent the compiler from generating code which
     // fetches the sampler descriptor from memory for each texture access
-    const float4 illuminationCenter = irdColorV[2][2];
+    const float4 illuminationCenter = getIllumination(ipos, nsi++);
     const float lIlluminationCenter = dot(illuminationCenter.rgb, luminanceParams);
 
     // variance, filtered using 3x3 gaussin blur
-    const float var = computeVarianceCenter(ipos, varianceKernel, irdVariance);
+    const float var = computeVarianceCenter(screenSize, ipos, varianceKernel);
 
     const float2 zCenter = getLinearZAndNormal(ipos).xy;
     if (zCenter.x < 0)
@@ -212,9 +152,11 @@ float4 atrous(FullScreenPassVsOut vsOut,
 
             const float kernel = kernelWeights[abs(xx)] * kernelWeights[abs(yy)];
 
+            int force_nsi = nsi++;
+
             if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
             {
-                const float4 illuminationP = irdColorV[yy + 2][xx + 2];
+                const float4 illuminationP = getIllumination(p, force_nsi);
                 const float lIlluminationP = dot(illuminationP.rgb, luminanceParams);
                 const float zP = getLinearZAndNormal(p).x;
                 const float3 nP = oct_to_ndir_snorm(getLinearZAndNormal(p).zw);
