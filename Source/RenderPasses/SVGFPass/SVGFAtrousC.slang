@@ -84,51 +84,6 @@ float4 getIllumination(int2 ipos)
     return gIllumination[ipos];
 }
 
-struct ImageReadData
-{
-    float variance[3][3];
-    float4 color_v[5][5];
-};
-
-ImageReadData prefetchIrd(int2 ipos)
-{
-    ImageReadData ird;
-
-    for (int yy = -1; yy <= 1; yy++)
-    {
-        for (int xx = -1; xx <= 1; xx++)
-        {
-            const int2 offset = int2(xx, yy);
-            const int2 p = ipos + offset;
-            ird.variance[yy + 1][xx + 1] = gIllumination[p].a;
-        }
-    }
-
-    for (int yy = -2; yy <= 2; yy++)
-    {
-        for (int xx = -2; xx <= 2; xx++)
-        {
-            const int2 offset = int2(xx, yy) * gStepSize;
-            const int2 p = ipos + offset;
-            ird.color_v[yy + 2][xx + 2] = gIllumination[p];
-        }
-    }
-
-    return ird;
-}
-
-[BackwardDifferentiable]
-float getIrdVariance(ImageReadData ird, int xx, int yy)
-{
-    return ird.variance[yy + 1][xx + 1];
-}
-
-[BackwardDifferentiable]
-float4 getIrdColorV(ImageReadData ird, int xx, int yy)
-{
-    return ird.color_v[yy + 2][xx + 2];
-}
-
 // computes a 3x3 gaussian blur of the variance, centered around
 // the current pixel. nextStoreIndex will be 9 after this function
 [BackwardDifferentiable]
