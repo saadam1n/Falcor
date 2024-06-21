@@ -141,7 +141,7 @@ uint getBufIdx4(int2 ipos, Texture2D tex, int idx) {
     return base_addr;
 }
 
-#define ATOMIC_STORE
+//#define ATOMIC_STORE
 
 void accumDerivBuf3(RWByteAddressBuffer rwaddrbuff, int2 ipos, float3 val, Texture2D tex) {
     uint base_addr = getBufIdx3(ipos, tex);
@@ -163,7 +163,8 @@ void accumDerivBuf3(RWByteAddressBuffer rwaddrbuff, int2 ipos, float3 val, Textu
 void accumDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Texture2D tex, int idx = 0) {
     uint base_addr = getBufIdx4(ipos, tex, idx);
 
-    int4 a = quantVal4(val);
+    //int4 a = quantVal4(val);
+    int4 a = reinterpret<int4>(val);
     
     #ifdef ATOMIC_STORE
     for(int i = 0; i < 4; i++) {
@@ -195,7 +196,8 @@ float4 readDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex, i
     uint base_addr = getBufIdx4(ipos, tex, idx);
 
     uint status;
-    int4 temp = int4(rwaddrbuff.Load4(base_addr, status));
+    uint4 temp = rwaddrbuff.Load4(base_addr, status);
 
-    return dequant4(temp);
+    //return dequant4(int4(temp));
+    return reinterpret<float4>(temp);
 }

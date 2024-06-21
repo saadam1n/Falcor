@@ -14,12 +14,7 @@ cbuffer PerImageCB_D
     int iteration;
 };
 
-struct FS_OUT
-{
-    float4 val : SV_TARGET0;
-};
-
-FS_OUT main(FullScreenPassVsOut vsOut)
+void main(FullScreenPassVsOut vsOut)
 {
     var dpKernel = diffPair(dvKernel, {0.0, 0.0, 0.0});
     var dpVarianceKernel = diffPair(dvVarianceKernel, {{0.0, 0.0}, {0.0, 0.0}});
@@ -52,10 +47,4 @@ FS_OUT main(FullScreenPassVsOut vsOut)
     accumDerivBuf4(daVarianceKernel, ipos, float4(dpVarianceKernel.d[0][0], dpVarianceKernel.d[0][1], dpVarianceKernel.d[1][0], dpVarianceKernel.d[1][1]), gAlbedo);
     accumDerivBuf4(daLuminanceParams, ipos, float4(dpLuminanceParams.d, 0.0f), gAlbedo);
     accumDerivBuf4(daWeightFunctionParams, ipos, float4(dpWeightFunctionParams.d[0], dpWeightFunctionParams.d[1], dpWeightFunctionParams.d[2], 0.0f), gAlbedo);
-
-    FS_OUT fs_out;
-
-    fs_out.val = dIllum - readDerivBuf4(drIllumination, ipos, gAlbedo);
-
-    return fs_out;
 }

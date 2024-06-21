@@ -88,7 +88,7 @@ static int nsi = 0;
 // computes a 3x3 gaussian blur of the variance, centered around
 // the current pixel. nextStoreIndex will be 9 after this function
 [BackwardDifferentiable]
-float computeVarianceCenter(int2 ipos, float[2][2] kernel, int2 screenSize)
+float computeVarianceCenter(int2 screenSize, int2 ipos, float[2][2] kernel)
 {
     float sum = 0.f;
 
@@ -101,7 +101,7 @@ float computeVarianceCenter(int2 ipos, float[2][2] kernel, int2 screenSize)
 
             const bool inside = (all(p >= int2(0, 0)) && all(p < screenSize));
             if(inside)
-                sum += getIllumination(p, nsi).a * k;
+                sum += getIllumination(p, nsi++).a * k;
         }
     }
 
@@ -119,11 +119,11 @@ float4 atrous(FullScreenPassVsOut vsOut,
 
     // constant samplers to prevent the compiler from generating code which
     // fetches the sampler descriptor from memory for each texture access
-    const float4 illuminationCenter = getIllumination(ipos, nsi);
+    const float4 illuminationCenter = getIllumination(ipos, nsi++);
     const float lIlluminationCenter = dot(illuminationCenter.rgb, luminanceParams);
 
     // variance, filtered using 3x3 gaussin blur
-    const float var = computeVarianceCenter(ipos, varianceKernel, screenSize);
+    const float var = computeVarianceCenter(screenSize, ipos, varianceKernel);
 
     const float2 zCenter = getLinearZAndNormal(ipos).xy;
     if (zCenter.x < 0)
@@ -150,7 +150,7 @@ float4 atrous(FullScreenPassVsOut vsOut,
 
             const float kernel = kernelWeights[abs(xx)] * kernelWeights[abs(yy)];
 
-            int force_nsi = nsi;
+            int force_nsi = nsi++;
 
             if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
             {
