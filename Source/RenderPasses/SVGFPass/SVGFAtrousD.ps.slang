@@ -10,6 +10,8 @@ cbuffer PerImageCB_D
     RWByteAddressBuffer daVarianceKernel;
     RWByteAddressBuffer daLuminanceParams;
     RWByteAddressBuffer daWeightFunctionParams;
+
+    int iteration;
 };
 
 struct ParamDiffValues 
@@ -38,7 +40,7 @@ ParamDiffValues calcAtrousDiffPairs(FullScreenPassVsOut vsOut, ImageReadData ird
     var dpIrdVariance = diffPair(ird.variance);
     var dpIrdColorV = diffPair(ird.color_v);
 
-    __bwd_diff(atrous)(vsOut, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, dIllum);
+   // __bwd_diff(atrous)(vsOut, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, dIllum);
 
     ParamDiffValues pdv;
 
@@ -145,11 +147,48 @@ void main(FullScreenPassVsOut vsOut)
     var dpSigmaL = diffPair(dvSigmaL, 0.0);
     var dpSigmaZ = diffPair(dvSigmaZ, 0.0);
     var dpSigmaN = diffPair(dvSigmaN, 0.0);
-    
-    const int2 ipos = int2(vsOut.posH.xy);
 
-    float4 dIllum = readDerivBuf4(drIllumination, ipos, gAlbedo);
-    __bwd_diff(atrous)(vsOut, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, dIllum);
+    const int2 ipos = int2(vsOut.posH.xy);
+    var ird = prefetchIrd(ipos);
+    var dpIrdVariance = diffPair(ird.variance);
+    var dpIrdColorV = diffPair(ird.color_v);
+
+    // get our dIllum
+    float4 dIllum = float4(0.0f);
+    if(iteration == 1)
+    {
+        dIllum = readDerivBuf4(drIllumination, ipos, gAlbedo);
+    }
+    else
+    {
+        int k = 0;
+        for (int yy = 2; yy >= -2; yy--)
+        {
+            for (int xx = 2; xx >= -2; xx--)
+            {
+                const int2 p = ipos + int2(xx, yy) * gStepSize;
+                dIllum += readDerivBuf4(drIllumination, p, gAlbedo, k++);
+            }
+        }
+
+        int vidx = 0;
+        for (int yy = 1; yy >= -1; yy--)
+        {
+            for (int xx = 1; xx >= -1; xx--)
+            {
+                const int2 p = ipos + int2(xx, yy);
+
+                int vector = vidx / 4;
+                int channel = vidx % 4;
+                vidx++;
+
+                dIllum.a += readDerivBuf4(drIllumination, p, gAlbedo, k + vector)[channel];
+            }
+        }
+
+    }
+    
+    __bwd_diff(atrous)(vsOut, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, dpIrdVariance, dpIrdColorV, dIllum);
 
     accumDerivBuf4(daSigma, ipos, float4(dpSigmaL.d, dpSigmaZ.d, dpSigmaN.d, 0.0f), gAlbedo);
     accumDerivBuf4(daKernel, ipos, float4(dpKernel.d[0], dpKernel.d[1], dpKernel.d[2], 0.0f), gAlbedo);
@@ -157,6 +196,19 @@ void main(FullScreenPassVsOut vsOut)
     accumDerivBuf4(daLuminanceParams, ipos, float4(dpLuminanceParams.d, 0.0f), gAlbedo);
     accumDerivBuf4(daWeightFunctionParams, ipos, float4(dpWeightFunctionParams.d[0], dpWeightFunctionParams.d[1], dpWeightFunctionParams.d[2], 0.0f), gAlbedo);
 
+    // store everything
+    int k = 0;
+    for (int yy = -2; yy <= 2; yy++)
+    {
+        for (int xx = -2; xx <= 2; xx++)
+        {
+            accumDerivBuf4(daIllumination, ipos, dpIrdColorV.d[yy + 2][xx + 2], gAlbedo, k++);
+        }
+    }
+
+    accumDerivBuf4(daIllumination, ipos, float4(dpIrdVariance.d[0][0], dpIrdVariance.d[0][1], dpIrdVariance.d[0][2], dpIrdVariance.d[1][0]), gAlbedo, k++);
+    accumDerivBuf4(daIllumination, ipos, float4(dpIrdVariance.d[1][1], dpIrdVariance.d[1][2], dpIrdVariance.d[2][0], dpIrdVariance.d[2][1]), gAlbedo, k++);
+    accumDerivBuf4(daIllumination, ipos, float4(dpIrdVariance.d[2][2],                  0.0f,                  0.0f,                  0.0f), gAlbedo, k++);
 
 }
 
