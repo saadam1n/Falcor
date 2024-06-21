@@ -899,8 +899,6 @@ void SVGFPass::computeLinearZAndNormal(RenderContext* pRenderContext, ref<Textur
 
 void SVGFPass::renderUI(Gui::Widgets& widget)
 {
-    float dummyVal;
-
     float dummyVal = 0.0f;
 
     int dirty = 0;

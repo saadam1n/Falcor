@@ -111,9 +111,7 @@ float computeVarianceCenter(int2 screenSize, int2 ipos, float[2][2] kernel)
 [BackwardDifferentiable]
 float4 atrous(FullScreenPassVsOut vsOut, 
               float[3] kernelWeights, float [2][2] varianceKernel, float3 luminanceParams, float[3] weightsParams, 
-              float sigmaL, float sigmaZ, float sigmaN,
-              float[3][3] irdVariance, float4[5][5] irdColorV
-              ) {
+              float sigmaL, float sigmaZ, float sigmaN              ) {
     const int2 ipos = int2(vsOut.posH.xy);
     const int2 screenSize = getTextureDims(gAlbedo, 0);
 
