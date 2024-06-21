@@ -149,7 +149,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
 
     float3 dvLuminanceParams = float3(0.3333);
 
-    float   dvSigmaL              = 10.0f;
+    float   dvSigmaL              = 1.0f;
     float   dvSigmaZ              = 1.0;
     float   dvSigmaN              = 128.0f;
     float   dvAlpha               = 0.05f;
@@ -900,7 +900,7 @@ void SVGFPass::computeLinearZAndNormal(RenderContext* pRenderContext, ref<Textur
 void SVGFPass::renderUI(Gui::Widgets& widget)
 {
 
-    auto& dummyIterState = mAtrousState.mIterationState[0];
+    float dummyVal = 0.0f;
 
     int dirty = 0;
     dirty |= (int)widget.checkbox("Enable SVGF", mFilterEnabled);
@@ -915,14 +915,14 @@ void SVGFPass::renderUI(Gui::Widgets& widget)
 
     widget.text("");
     widget.text("Contol edge stopping on bilateral fitler");
-    dirty |= (int)widget.var("For Color", dummyIterState.dvSigmaL, 0.0f, 10000.0f, 0.01f);  // pass in sigma l as dummy var
-    dirty |= (int)widget.var("For Normal", dummyIterState.dvSigmaL, 0.001f, 1000.0f, 0.2f);
+    dirty |= (int)widget.var("For Color", dummyVal, 0.0f, 10000.0f, 0.01f);  // pass in sigma l as dummy var
+    dirty |= (int)widget.var("For Normal", dummyVal, 0.001f, 1000.0f, 0.2f);
 
     widget.text("");
     widget.text("How much history should be used?");
     widget.text("    (alpha; 0 = full reuse; 1 = no reuse)");
-    dirty |= (int)widget.var("Alpha", dummyIterState.dvSigmaL, 0.0f, 1.0f, 0.001f);
-    dirty |= (int)widget.var("Moments Alpha", dummyIterState.dvSigmaL, 0.0f, 1.0f, 0.001f);
+    dirty |= (int)widget.var("Alpha", dummyVal, 0.0f, 1.0f, 0.001f);
+    dirty |= (int)widget.var("Moments Alpha", dummyVal, 0.0f, 1.0f, 0.001f);
 
     if (dirty)
         mBuffersNeedClear = true;
