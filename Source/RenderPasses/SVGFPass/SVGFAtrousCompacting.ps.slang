@@ -17,7 +17,7 @@ void main(FullScreenPassVsOut vsOut)
     float4 dIllum = float4(0.0f);
     for(int i = 0; i < 26 + 9; i++)
     {
-        dIllum += readDerivBuf4(drIllumination, ipos, gAlbedo, i);
+        dIllum += readDerivBuf4_16(drIllumination, ipos, gAlbedo, i);
     }
 
     accumDerivBuf4(daIllumination, ipos, dIllum, gAlbedo);

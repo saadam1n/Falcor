@@ -325,7 +325,7 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         Fbo::Desc desc;
         for (int i = 0; i < 5; i++)
         {
-            desc.setColorTarget(i, Falcor::ResourceFormat::RGBA32Float);
+            desc.setColorTarget(i, Falcor::ResourceFormat::RGBA16Float);
         }
 
         for (int i = 0; i < mFilterIterations; i++)

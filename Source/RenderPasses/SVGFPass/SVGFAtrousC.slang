@@ -75,7 +75,7 @@ float getHistoryLength(int2 ipos)
 
 void d_getIllumination(int2 ipos, int nsi, float4 val)
 {
-    accumDerivBuf4(daIllumination, ipos, val, gAlbedo, nsi);
+    accumDerivBuf4_16(daIllumination, ipos, val, gAlbedo, nsi);
 }
 
 [BackwardDerivative(d_getIllumination)]

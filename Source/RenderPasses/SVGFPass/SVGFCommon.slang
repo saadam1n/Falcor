@@ -146,51 +146,25 @@ uint getBufIdx4(int2 ipos, Texture2D tex, int idx) {
 void accumDerivBuf3(RWByteAddressBuffer rwaddrbuff, int2 ipos, float3 val, Texture2D tex) {
     uint base_addr = getBufIdx3(ipos, tex);
 
-    #ifdef ATOMIC_STORE
-    int3 a = quantVal3(val);
-    for(int i = 0; i < 3; i++) {
-        uint addr = base_addr + 4 * i;
-        int dummy;
-        rwaddrbuff.InterlockedAdd(addr, a[i], dummy);
-    }
-    #else
-    // idk figure out what to put here later
-    //rwaddrbuff.Store3(base_addr, a, status);
-    #endif
 }
 
 // tex is a texture with equal dimensions to rwaddrbuff
 void accumDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Texture2D tex, int idx = 0) {
     uint base_addr = getBufIdx4(ipos, tex, idx);
 
-    //int4 a = quantVal4(val);
     int4 a = reinterpret<int4>(val);
-    
-    #ifdef ATOMIC_STORE
-    for(int i = 0; i < 4; i++) {
-        uint addr = base_addr + 4 * i;
-        int dummy;
-        rwaddrbuff.InterlockedAdd(addr, a[i], dummy);
-    }
-    #else
-    int status;
+
     rwaddrbuff.Store4(base_addr, a);
-    #endif
 }
 
-// TODO: figure out how to properly read from a rwbyteaddressbuf
+void accumDerivBuf4_16(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Texture2D tex, int idx = 0) {
+    uint base_addr = getBufIdx4(ipos, tex, idx) / 2;
 
-float3 readDerivBuf3(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex) {
-    uint base_addr = getBufIdx3(ipos, tex);
-
-    int3 temp;
-    for(int i = 0; i < 3; i++) {
-        uint addr = base_addr + 4 * i;
-        rwaddrbuff.InterlockedAdd(addr, 0, temp[i]);
-    }
-
-    return dequant3(temp);
+    half4 h4 = half4(val);
+    int2 a = reinterpret<int2>(h4);
+    rwaddrbuff.Store2(base_addr, a);
 }
+
 
 float4 readDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex, int idx = 0) {
     uint base_addr = getBufIdx4(ipos, tex, idx);
@@ -198,6 +172,16 @@ float4 readDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex, i
     uint status;
     uint4 temp = rwaddrbuff.Load4(base_addr, status);
 
-    //return dequant4(int4(temp));
     return reinterpret<float4>(temp);
+}
+
+float4 readDerivBuf4_16(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex, int idx = 0) {
+    uint base_addr = getBufIdx4(ipos, tex, idx) / 2;
+
+    uint status;
+    uint2 temp = rwaddrbuff.Load2(base_addr, status);
+
+    half4 h4 = reinterpret<half4>(temp);
+
+    return float4(h4);
 }
