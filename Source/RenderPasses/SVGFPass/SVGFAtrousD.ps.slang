@@ -4,15 +4,18 @@ import SVGFCommon;
 cbuffer PerImageCB_D
 {
     RWByteAddressBuffer drIllumination;
-
-    RWByteAddressBuffer daSigma;
-    RWByteAddressBuffer daKernel;
-    RWByteAddressBuffer daVarianceKernel;
-    RWByteAddressBuffer daLuminanceParams;
-    RWByteAddressBuffer daWeightFunctionParams;
 };
 
-void main(FullScreenPassVsOut vsOut)
+struct FS_OUT
+{
+    float4 sigma                    : SV_TARGET0;
+    float4 kernel                   : SV_TARGET1;
+    float4 varianceKernel           : SV_TARGET2;
+    float4 luminanceParams          : SV_TARGET3;
+    float4 weightFunctionParams     : SV_TARGET4;
+};
+
+FS_OUT main(FullScreenPassVsOut vsOut)
 {
     var dpKernel = diffPair(dvKernel, {0.0, 0.0, 0.0});
     var dpVarianceKernel = diffPair(dvVarianceKernel, {{0.0, 0.0}, {0.0, 0.0}});
@@ -28,9 +31,13 @@ void main(FullScreenPassVsOut vsOut)
     
     __bwd_diff(atrous)(vsOut, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, dIllum);
 
-    accumDerivBuf4(daSigma, ipos, float4(dpSigmaL.d, dpSigmaZ.d, dpSigmaN.d, 0.0f), gAlbedo);
-    accumDerivBuf4(daKernel, ipos, float4(dpKernel.d[0], dpKernel.d[1], dpKernel.d[2], 0.0f), gAlbedo);
-    accumDerivBuf4(daVarianceKernel, ipos, float4(dpVarianceKernel.d[0][0], dpVarianceKernel.d[0][1], dpVarianceKernel.d[1][0], dpVarianceKernel.d[1][1]), gAlbedo);
-    accumDerivBuf4(daLuminanceParams, ipos, float4(dpLuminanceParams.d, 0.0f), gAlbedo);
-    accumDerivBuf4(daWeightFunctionParams, ipos, float4(dpWeightFunctionParams.d[0], dpWeightFunctionParams.d[1], dpWeightFunctionParams.d[2], 0.0f), gAlbedo);
+    FS_OUT fs_out;
+
+    fs_out.sigma = float4(dpSigmaL.d, dpSigmaZ.d, dpSigmaN.d, 0.0f);
+    fs_out.kernel = float4(dpKernel.d[0], dpKernel.d[1], dpKernel.d[2], 0.0f);
+    fs_out.varianceKernel = float4(dpVarianceKernel.d[0][0], dpVarianceKernel.d[0][1], dpVarianceKernel.d[1][0], dpVarianceKernel.d[1][1]);
+    fs_out.luminanceParams = float4(dpLuminanceParams.d, 0.0f);
+    fs_out.weightFunctionParams = float4(dpWeightFunctionParams.d[0], dpWeightFunctionParams.d[1], dpWeightFunctionParams.d[2], 0.0f);
+
+    return fs_out;
 }

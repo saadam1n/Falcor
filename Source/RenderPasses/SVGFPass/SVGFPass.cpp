@@ -117,7 +117,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         else logWarning("Unknown field '{}' in SVGFPass dictionary.", key);
     }
 
-    mFilterIterations = 2;
+    mFilterIterations = 8;
     mFeedbackTap = -1;
     mDerivativeInteration = 0;
 
@@ -230,15 +230,6 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         iterationState.dvVarianceKernel[1][1] = 1.0 / 16.0;
 
         iterationState.pgIllumination = createFullscreenTexture(pDevice);
-
-
-        iterationState.pdaSigma = createAccumulationBuffer(pDevice);
-        iterationState.pdaKernel = createAccumulationBuffer(pDevice);
-        iterationState.pdaVarianceKernel = createAccumulationBuffer(pDevice);
-        iterationState.pdaLuminanceParams = createAccumulationBuffer(pDevice);
-        iterationState.pdaWeightFunctionParams = createAccumulationBuffer(pDevice);
-
-
     }
 
     // flaot4/4 color channel-specific derivaitves/9 + 25 derivatives per SVGF iteration
@@ -328,6 +319,20 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
         desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Int);
         mpDummyFullscreenFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+    }
+
+    {
+        Fbo::Desc desc;
+        for (int i = 0; i < 5; i++)
+        {
+            desc.setColorTarget(i, Falcor::ResourceFormat::RGBA32Float);
+        }
+
+        for (int i = 0; i < mFilterIterations; i++)
+        {
+            mAtrousState.mIterationState[i].pdaFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+        }
+
     }
 
     mBuffersNeedClear = true;
@@ -547,7 +552,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext)
 {
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[mDerivativeInteration].pdaKernel;
+    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[mDerivativeInteration].pdaFbo->getColorTexture(1);
     perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
     perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
     perImageCB["delta"] = mDelta;
@@ -684,20 +689,8 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
     {
         auto& curIterationState = mAtrousState.mIterationState[iteration];
 
-        pRenderContext->clearUAV(curIterationState.pdaSigma->getUAV().get(), Falcor::uint4(0));
-        pRenderContext->clearUAV(curIterationState.pdaKernel->getUAV().get(), Falcor::uint4(0));
-        pRenderContext->clearUAV(curIterationState.pdaVarianceKernel->getUAV().get(), Falcor::uint4(0));
-        pRenderContext->clearUAV(curIterationState.pdaLuminanceParams->getUAV().get(), Falcor::uint4(0));
-        pRenderContext->clearUAV(curIterationState.pdaWeightFunctionParams->getUAV().get(), Falcor::uint4(0));
-
         // clear raw output
         pRenderContext->clearUAV(mAtrousState.pdaRawOutputBuffer->getUAV().get(), Falcor::uint4(0));
-
-        perImageCB_D["daSigma"] = curIterationState.pdaSigma;
-        perImageCB_D["daKernel"] = curIterationState.pdaKernel;
-        perImageCB_D["daVarianceKernel"] = curIterationState.pdaVarianceKernel;
-        perImageCB_D["daLuminanceParams"] = curIterationState.pdaLuminanceParams;
-        perImageCB_D["daWeightFunctionParams"] = curIterationState.pdaWeightFunctionParams;
 
         perImageCB["dvSigmaL"] = curIterationState.dvSigmaL;
         perImageCB["dvSigmaZ"] = curIterationState.dvSigmaZ;
@@ -725,7 +718,7 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
         perImageCB["gIllumination"] = curIterationState.pgIllumination;
         perImageCB["gStepSize"] = 1 << iteration;
 
-        mAtrousState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
+        mAtrousState.dPass->execute(pRenderContext, curIterationState.pdaFbo);
 
         // compact the raw output
         mAtrousState.cPass->execute(pRenderContext, mpDummyFullscreenFbo);

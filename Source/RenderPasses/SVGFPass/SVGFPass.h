@@ -188,11 +188,7 @@ private:
         {
             ref<Texture> pgIllumination; // saved illumination for this iteration
 
-            ref<Buffer> pdaKernel;
-            ref<Buffer> pdaVarianceKernel;
-            ref<Buffer> pdaLuminanceParams;
-            ref<Buffer> pdaWeightFunctionParams;
-            ref<Buffer> pdaSigma;
+            ref<Fbo> pdaFbo;
 
             float   dvSigmaL;
             float   dvSigmaZ;
