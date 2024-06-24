@@ -10,8 +10,6 @@ cbuffer PerImageCB_D
     RWByteAddressBuffer daVarianceKernel;
     RWByteAddressBuffer daLuminanceParams;
     RWByteAddressBuffer daWeightFunctionParams;
-
-    int iteration;
 };
 
 void main(FullScreenPassVsOut vsOut)
@@ -26,19 +24,7 @@ void main(FullScreenPassVsOut vsOut)
     
     const int2 ipos = int2(vsOut.posH.xy);
 
-    float4 dIllum;
-    if(iteration == 0)
-    {
-        dIllum = float4(0.0f);
-        for(int i = 0; i < 26 + 9; i++)
-        {
-            dIllum += readDerivBuf4(drIllumination, ipos, gAlbedo, i);
-        }
-    }
-    else
-    {
-        dIllum = readDerivBuf4(drIllumination, ipos, gAlbedo);
-    }
+    float4 dIllum = readDerivBuf4(drIllumination, ipos, gAlbedo);;
     
     __bwd_diff(atrous)(vsOut, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, dIllum);
 

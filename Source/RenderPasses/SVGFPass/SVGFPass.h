@@ -194,8 +194,6 @@ private:
             ref<Buffer> pdaWeightFunctionParams;
             ref<Buffer> pdaSigma;
 
-            ref<Buffer> pdaIllumination;
-
             float   dvSigmaL;
             float   dvSigmaZ;
             float   dvSigmaN;
@@ -211,9 +209,13 @@ private:
 
         std::vector<PerIterationState> mIterationState;
 
+        ref<Buffer> pdaRawOutputBuffer;
+        ref<Buffer> pdaCompactedBuffer;
+
         ref<Buffer> pdaHistoryLen;
 
         ref<FullScreenPass> dPass;
+        ref<FullScreenPass> cPass;
     } mAtrousState;
 
     struct {
