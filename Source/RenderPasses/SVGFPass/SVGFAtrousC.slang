@@ -51,37 +51,37 @@ cbuffer PerImageCB
     RWByteAddressBuffer daIllumination;
 };
 
-void d_getLinearZAndNormal(int2 ipos, float4 val)
+void d_getLinearZAndNormal(int2 ipos, const float4 val)
 {
     // Something we really don't care about
 }
 
 [BackwardDerivative(d_getLinearZAndNormal)]
-float4 getLinearZAndNormal(int2 ipos)
+const float4 getLinearZAndNormal(int2 ipos)
 {
     return gLinearZAndNormal[ipos];
 }
 
-void d_getHistoryLength(int2 ipos, float val)
+void d_getHistoryLength(int2 ipos, const float val)
 {
     // we will have to store it in a different way
 }
 
 [BackwardDerivative(d_getHistoryLength)]
-float getHistoryLength(int2 ipos)
+const float getHistoryLength(int2 ipos)
 {
     return gHistoryLength[ipos].x;
 }
 
-void d_getIllumination(int2 ipos, int nsi, float4 val)
+void d_getIllumination(int2 ipos, int nsi, const float4 val)
 {
     accumDerivBuf4(daIllumination, ipos, val, gAlbedo, nsi);
 }
 
 [BackwardDerivative(d_getIllumination)]
-float4 getIllumination(int2 ipos, int nsi)
+const float4 getIllumination(int2 ipos, int nsi)
 {
-    return gIllumination[ipos];
+    return gIllumination.Load(int3(ipos, 0));
 }
 
 static int nsi = 0;
@@ -176,7 +176,7 @@ float4 atrous(FullScreenPassVsOut vsOut,
     }
 
     // renormalization is different for variance, check paper for the formula
-    float4 filteredIllumination = float4(sumIllumination / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination));
+    const float4 filteredIllumination = float4(sumIllumination / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination));
 
     return filteredIllumination;
 }

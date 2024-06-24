@@ -117,7 +117,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         else logWarning("Unknown field '{}' in SVGFPass dictionary.", key);
     }
 
-    mFilterIterations = 2;
+    mFilterIterations = 4;
     mFeedbackTap = -1;
     mDerivativeInteration = 0;
 
@@ -532,6 +532,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(),  renderData.getTexture(kOutputFuncUpper)->getRTV());
 
     valToChange = oldval;
+
     executeWithDerivatives(pRenderContext, renderData, true);
     pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(1)->getSRV(),  renderData.getTexture(kOutputFdCol)->getRTV());
     pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(2)->getSRV(),  renderData.getTexture(kOutputBdCol)->getRTV());
