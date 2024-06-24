@@ -32,7 +32,6 @@ import SVGFCommon;
 cbuffer PerImageCB
 {
     Texture2D gAlbedo;
-    Texture2D gHistoryLength;
     Texture2D gIllumination;
     Texture2D gLinearZAndNormal;
 
@@ -60,17 +59,6 @@ void d_getLinearZAndNormal(int2 ipos, const float4 val)
 const float4 getLinearZAndNormal(int2 ipos)
 {
     return gLinearZAndNormal[ipos];
-}
-
-void d_getHistoryLength(int2 ipos, const float val)
-{
-    // we will have to store it in a different way
-}
-
-[BackwardDerivative(d_getHistoryLength)]
-const float getHistoryLength(int2 ipos)
-{
-    return gHistoryLength[ipos].x;
 }
 
 void d_getIllumination(int2 ipos, int nsi, const float4 val)
