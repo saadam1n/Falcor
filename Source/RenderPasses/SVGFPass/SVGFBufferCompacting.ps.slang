@@ -8,6 +8,8 @@ cbuffer CompactingCB
     RWByteAddressBuffer daIllumination;
 
     Texture2D gAlbedo;
+
+    int elements;
 };
 
 void main(FullScreenPassVsOut vsOut)
@@ -15,7 +17,7 @@ void main(FullScreenPassVsOut vsOut)
     const int2 ipos = int2(vsOut.posH.xy);
 
     float4 dIllum = float4(0.0f);
-    for(int i = 0; i < 26 + 9; i++)
+    for(int i = 0; i < elements; i++)
     {
         dIllum += readDerivBuf4(drIllumination, ipos, gAlbedo, i);
     }

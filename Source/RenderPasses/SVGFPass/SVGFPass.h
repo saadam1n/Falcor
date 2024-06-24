@@ -125,6 +125,11 @@ private:
     ref<Fbo> mpFilteredIlluminationFbo;
     ref<Fbo> mpFinalFbo;
 
+    ref<FullScreenPass> compactingPass;
+    ref<Buffer> pdaRawOutputBuffer;
+    ref<Buffer> pdaCompactedBuffer;
+    void runCompactingPass(RenderContext* pRenderContext, int n);
+
     // we want to optimize parameters per pass to get a little bit of extra tuning
     // da is short for derivative accum
 
@@ -209,14 +214,15 @@ private:
 
         std::vector<PerIterationState> mIterationState;
 
-        ref<Buffer> pdaRawOutputBuffer;
-        ref<Buffer> pdaCompactedBuffer;
+
 
         ref<Buffer> pdaHistoryLen;
 
         ref<FullScreenPass> dPass;
-        ref<FullScreenPass> cPass;
     } mAtrousState;
+
+
+
 
     struct {
         ref<Buffer> pdaIllumination;

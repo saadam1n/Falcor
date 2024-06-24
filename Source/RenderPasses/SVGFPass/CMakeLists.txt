@@ -2,10 +2,10 @@ add_plugin(SVGFPass)
 
 target_sources(SVGFPass PRIVATE
     SVGFAtrousC.slang
-    SVGFAtrousCompacting.ps.slang
     SVGFAtrousD.ps.slang
     SVGFAtrousS.ps.slang
 
+    SVGFBufferCompacting.ps.slang
     SVGFCommon.slang
 
     SVGFFilterMomentsC.slang
