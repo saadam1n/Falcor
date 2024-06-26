@@ -162,18 +162,15 @@ private:
     } mReprojectState;
 
     struct {
-        ref<Texture> pLumVarTex;
+        ref<Buffer> pdaHistoryLen;
 
-        ref<Buffer> pdaIllumination; // accum illumination into here
-        ref<Buffer> pdaMoments;
+        ref<Texture> pLumVarTex;
 
         ref<Buffer> pdaVarianceBoostFactor;
         ref<Buffer> pdaLuminanceParams;
         ref<Buffer> pdaWeightFunctionParams;
 
-        ref<Buffer> pdaSigmaL;
-        ref<Buffer> pdaSigmaZ;
-        ref<Buffer> pdaSigmaN;
+        ref<Buffer> pdaSigma;
 
         float   dvSigmaL;
         float   dvSigmaZ;
@@ -214,10 +211,6 @@ private:
 
         std::vector<PerIterationState> mIterationState;
 
-
-
-        ref<Buffer> pdaHistoryLen;
-
         ref<FullScreenPass> dPass;
     } mAtrousState;
 
@@ -228,7 +221,6 @@ private:
         ref<Buffer> pdaIllumination;
         ref<Buffer> pdrFilteredImage;
 
-        //ref<FullScreenPass> sPass;
         ref<FullScreenPass> dPass;
     } mFinalModulateState;
 };

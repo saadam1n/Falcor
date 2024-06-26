@@ -56,10 +56,7 @@ cbuffer PerImageCB
 };
 
 
-void d_getIllumination(int2 ipos, float4 val)
-{
-    accumDerivBuf4(daIllumination, ipos, val, gIllumination);
-}
+
 
 void d_getLinearZAndNormal(int2 ipos, float4 val)
 {
@@ -71,16 +68,17 @@ void d_getHistoryLength(int2 ipos, float val)
     accumDerivBuf4(daHistoryLen, ipos, float4(val, 0.0, 0.0, 0.0), gIllumination);
 }
 
-void d_getMoments(int2 ipos, float2 val)
+void d_getIllumination(int2 ipos, int nsi, float4 val)
 {
-    accumDerivBuf4(daMoments, ipos, float4(val, 0.0, 0.0), gIllumination);
+    accumDerivBuf4(daIllumination, ipos, val, gIllumination, nsi);
 }
 
-[BackwardDerivative(d_getIllumination)]
-float4 getIllumination(int2 ipos)
+void d_getMoments(int2 ipos, int nsi, float2 val)
 {
-    return gIllumination[ipos];
+    accumDerivBuf4(daMoments, ipos, float4(val, 0.0, 0.0), gIllumination, nsi);
 }
+
+
 
 [BackwardDerivative(d_getLinearZAndNormal)]
 float4 getLinearZAndNormal(int2 ipos)
@@ -94,8 +92,14 @@ float getHistoryLength(int2 ipos)
     return gHistoryLength[ipos].x;
 }
 
+[BackwardDerivative(d_getIllumination)]
+float4 getIllumination(int2 ipos, int nsi)
+{
+    return gIllumination[ipos];
+}
+
 [BackwardDerivative(d_getMoments)]
-float2 getMoments(int2 ipos)
+float2 getMoments(int2 ipos, int nsi)
 {
     return gMoments[ipos].xy;
 }
@@ -108,13 +112,16 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float historyParam, float3 lumi
     float h = getHistoryLength(ipos).x;
     int2 screenSize = getTextureDims(gHistoryLength, 0);
 
+    int nsi_i = 0;
+    int nsi_m = 0;
+
     if (h < historyParam) // not enough temporal history available
     {
         float sumWIllumination = 0.0;
         float3 sumIllumination = float3(0.0, 0.0, 0.0);
         float2 sumMoments = float2(0.0, 0.0);
 
-        const float4 illuminationCenter = getIllumination(ipos);
+        const float4 illuminationCenter = getIllumination(ipos, nsi_i++);
         const float lIlluminationCenter = dot(illuminationCenter.rgb, luminanceParams);
 
         const float2 zCenter = getLinearZAndNormal(ipos).xy;
@@ -138,10 +145,13 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float historyParam, float3 lumi
                 const bool samePixel = (xx == 0 && yy == 0);
                 const float kernel = 1.0;
 
+                int force_nsi_i = nsi_i++;
+                int force_nsi_m = nsi_m++;
+
                 if (inside)
                 {
-                    const float3 illuminationP = getIllumination(p).rgb;
-                    const float2 momentsP = getMoments(p).xy;
+                    const float3 illuminationP = getIllumination(p, force_nsi_i).rgb;
+                    const float2 momentsP = getMoments(p, force_nsi_m).xy;
                     const float lIlluminationP = dot(illuminationP.rgb, luminanceParams);
                     const float zP = getLinearZAndNormal(p).x;
                     const float3 nP = oct_to_ndir_snorm(getLinearZAndNormal(p).zw);
@@ -176,6 +186,6 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float historyParam, float3 lumi
     else
     {
         // do nothing, pass data unmodified
-        return getIllumination(ipos);
+        return getIllumination(ipos, nsi_i++);
     }
 }

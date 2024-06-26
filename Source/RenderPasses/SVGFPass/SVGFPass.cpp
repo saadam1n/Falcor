@@ -184,6 +184,8 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mReprojectState.pPrevIllum = createFullscreenTexture(pDevice);
 
     // set filter moments params
+    mFilterMomentsState.pdaHistoryLen = createAccumulationBuffer(pDevice);
+
     mFilterMomentsState.dvSigmaL = dvSigmaL;
     mFilterMomentsState.dvSigmaZ = dvSigmaZ;
     mFilterMomentsState.dvSigmaN = dvSigmaN;
@@ -195,12 +197,8 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     }
 
     mFilterMomentsState.dvVarianceBoostFactor = 4.0;
-    mFilterMomentsState.pdaIllumination = createAccumulationBuffer(pDevice);
-    mFilterMomentsState.pdaMoments = createAccumulationBuffer(pDevice);
 
-    mFilterMomentsState.pdaSigmaL = createAccumulationBuffer(pDevice);
-    mFilterMomentsState.pdaSigmaZ = createAccumulationBuffer(pDevice);
-    mFilterMomentsState.pdaSigmaN = createAccumulationBuffer(pDevice);
+    mFilterMomentsState.pdaSigma = createAccumulationBuffer(pDevice);
 
     mFilterMomentsState.pdaLuminanceParams = createAccumulationBuffer(pDevice);
     mFilterMomentsState.pdaVarianceBoostFactor = createAccumulationBuffer(pDevice);
@@ -249,7 +247,6 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     }
 
 
-    mAtrousState.pdaHistoryLen = createAccumulationBuffer(pDevice);
 
     // set final modulate state vars
     mFinalModulateState.pdaIllumination = createAccumulationBuffer(pDevice);
@@ -521,7 +518,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 
     mDelta = 0.05f;
 
-    float& valToChange = mAtrousState.mIterationState[mDerivativeInteration].dvKernel[0];
+    float& valToChange = mReprojectState.dvAlpha;
     float oldval = valToChange;
 
     valToChange = oldval - mDelta;
@@ -552,7 +549,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext)
 {
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[mDerivativeInteration].pdaKernel;
+    perImageCB["drBackwardsDiffBuffer"] = mReprojectState.pdaAlpha;
     perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
     perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
     perImageCB["delta"] = mDelta;
@@ -672,8 +669,6 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
     auto perImageCB = mAtrousState.dPass->getRootVar()["PerImageCB"];
     auto perImageCB_D = mAtrousState.dPass->getRootVar()["PerImageCB_D"];
 
-    pRenderContext->clearUAV(mAtrousState.pdaHistoryLen->getUAV().get(), Falcor::uint4(0));
-
     perImageCB["gAlbedo"]        = pAlbedoTexture;
     perImageCB["gLinearZAndNormal"]       = mpLinearZAndNormalFbo->getColorTexture(0);
 
@@ -761,12 +756,12 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
     perImageCB["gLinearZAndNormal"]          = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gMoments"]          = mpCurReprojFbo->getColorTexture(1);
 
-    pRenderContext->clearUAV(mFilterMomentsState.pdaIllumination->getUAV().get(), Falcor::uint4(0));
-    pRenderContext->clearUAV(mFilterMomentsState.pdaMoments->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(pdaRawOutputBuffer[0]->getUAV().get(), Falcor::uint4(0));
+    pRenderContext->clearUAV(pdaRawOutputBuffer[1]->getUAV().get(), Falcor::uint4(0));
 
-    perImageCB["daIllumination"]     = mFilterMomentsState.pdaIllumination;
-    perImageCB["daHistoryLen"]    = mAtrousState.pdaHistoryLen;
-    perImageCB["daMoments"]          = mFilterMomentsState.pdaMoments;
+    perImageCB["daIllumination"]     = pdaRawOutputBuffer[0];
+    perImageCB["daMoments"]          = pdaRawOutputBuffer[1];
+    perImageCB["daHistoryLen"]    = mFilterMomentsState.pdaHistoryLen;
 
     perImageCB["dvSigmaL"] = mFilterMomentsState.dvSigmaL;
     perImageCB["dvSigmaZ"] = mFilterMomentsState.dvSigmaZ;
@@ -782,15 +777,16 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
     auto perImageCB_D = mFilterMomentsState.dPass->getRootVar()["PerImageCB_D"];
 
     perImageCB_D["drIllumination"] = pdaCompactedBuffer[0];
-    perImageCB_D["daSigmaL"] = mFilterMomentsState.pdaSigmaL;
-    perImageCB_D["daSigmaZ"] = mFilterMomentsState.pdaSigmaZ;
-    perImageCB_D["daSigmaN"] = mFilterMomentsState.pdaSigmaN;
+    perImageCB_D["daSigma"] = mFilterMomentsState.pdaSigma;
 
     perImageCB_D["daVarianceBoostFactor"] = mFilterMomentsState.pdaVarianceBoostFactor;
     perImageCB_D["daLuminanceParams"] = mFilterMomentsState.pdaLuminanceParams;
     perImageCB_D["daWeightFunctionParams"] = mFilterMomentsState.pdaWeightFunctionParams;
 
     mFilterMomentsState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
+
+    runCompactingPass(pRenderContext, 0, 50);
+    runCompactingPass(pRenderContext, 1, 49);
 }
 
 void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture,
@@ -873,9 +869,9 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
 
     auto perImageCB_D = mReprojectState.dPass->getRootVar()["PerImageCB_D"];
 
-    perImageCB_D["drIllumination"] = mFilterMomentsState.pdaIllumination;
-    perImageCB_D["drHistoryLen"] = mAtrousState.pdaHistoryLen;
-    perImageCB_D["drMoments"] = mFilterMomentsState.pdaMoments;
+    perImageCB_D["drIllumination"] = pdaCompactedBuffer[0];
+    perImageCB_D["drMoments"] = pdaCompactedBuffer[1];
+    perImageCB_D["drHistoryLen"] = mFilterMomentsState.pdaHistoryLen;
 
     pRenderContext->clearUAV(mReprojectState.pdaLuminanceParams->getUAV().get(), Falcor::uint4(0));
     pRenderContext->clearUAV(mReprojectState.pdaReprojKernel->getUAV().get(), Falcor::uint4(0));
@@ -944,8 +940,8 @@ void SVGFPass::renderUI(Gui::Widgets& widget)
     widget.text("");
     widget.text("How much history should be used?");
     widget.text("    (alpha; 0 = full reuse; 1 = no reuse)");
-    dirty |= (int)widget.var("Alpha", dummyVal, 0.0f, 1.0f, 0.001f);
-    dirty |= (int)widget.var("Moments Alpha", dummyVal, 0.0f, 1.0f, 0.001f);
+    dirty |= (int)widget.var("Alpha", mReprojectState.dvAlpha, 0.0f, 1.0f, 0.001f);
+    dirty |= (int)widget.var("Moments Alpha", mReprojectState.dvMomentsAlpha, 0.0f, 1.0f, 0.001f);
 
     if (dirty)
         mBuffersNeedClear = true;
