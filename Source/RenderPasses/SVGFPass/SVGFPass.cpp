@@ -250,7 +250,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
 
     for (int i = 0; i < 2; i++)
     {
-        pdaPingPongSumBuffer[i] = createAccumulationBuffer(pDevice, sizeof(float4), true);
+        pdaPingPongSumBuffer[i] = createAccumulationBuffer(pDevice, sizeof(float4));
     }
 
 
@@ -261,7 +261,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
 
     FALCOR_ASSERT(mFinalModulateState.pdaIllumination &&  mFinalModulateState.pdrFilteredImage);
 
-    mReadbackBuffer = make_ref<Buffer>(pDevice, sizeof(int4) * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::ReadBack, nullptr);
+    mReadbackBuffer = createAccumulationBuffer(pDevice, sizeof(float4), true);
 
     mAtrousState.mSaveIllum = createFullscreenTexture(pDevice, ResourceFormat::RGBA32Int);
 }
@@ -550,8 +550,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
     std::cout << "Bwd Diff Sum:\t" << getTexSum(pRenderContext, mpDerivativeVerifyFbo->getColorTexture(2)) << std::endl;
 
 
-    // now find the sum using the other thing
-    uint2 dim = uint2(screenWidth, screenHeight);
+    int numRemaining = numPixels;
     for (int i = 0; i < 3; i++)
     {
         // clear the output buffer
@@ -565,21 +564,19 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
         summingCB["dstBuf"] = pdaPingPongSumBuffer[1];
         summingCB["dstOffset"] = 0;
 
-        dim = (dim + uint2(31, 31)) / uint2(32);
-        uint3 disptachSize = uint3(dim * uint2(32), 1);
-
-        std::cout << "Dispatching " << disptachSize.x << " " << disptachSize.y << " " << disptachSize.z << std::endl;
-
-        summingPass->execute(pRenderContext, disptachSize);
+        summingPass->execute(pRenderContext, numRemaining, 1);
+        // round up divide
+        numRemaining = (numRemaining + 127) / 128;
 
         std::swap(pdaPingPongSumBuffer[0], pdaPingPongSumBuffer[1]);
     }
 
     // written results will be the first index
-    float4* ptr = (float4*)pdaPingPongSumBuffer[0]->map();
-    std::cout << "Seg Tree Sum:\t" << ptr[0].x << std::endl;
+    pRenderContext->copyBufferRegion(mReadbackBuffer.get(), 0, pdaPingPongSumBuffer[0].get(), 0, sizeof(float4) * 1);
+    float4* ptr = (float4*)mReadbackBuffer->map();
+    std::cout << "Par Redc Sum:\t" << ptr[0].x << std::endl;
 
-    pdaPingPongSumBuffer[0]->unmap();
+    mReadbackBuffer->unmap();
 
     std::cout << std::endl;
 }

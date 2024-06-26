@@ -2,30 +2,39 @@ import SVGFCommon;
 
 cbuffer SummingCB
 {
-    int2 screenDim;
-
     RWByteAddressBuffer srcBuf;
     int srcOffset;
 
     RWByteAddressBuffer dstBuf;
     int dstOffset;
-
-    Texture2D gAlbedo;
 };
 
-[numthreads(32, 32, 1)]
+float4 read(int idx)
+{
+    int address = sizeof(float4) * idx + srcOffset;
+
+    uint status;
+    uint4 raw = srcBuf.Load4(address, status);
+
+    return reinterpret<float4>(raw);
+}
+
+void write(int idx, float4 val)
+{
+    int address = sizeof(float4) * idx + dstOffset;
+
+    uint4 raw = reinterpret<uint4>(val);
+    dstBuf.Store4(uint(address), raw);
+}
+
+groupshared float4 sum[128];
+
+[numthreads(128, 1, 1)]
 void main(uint3 threadId: SV_GroupThreadID, uint3 groupId: SV_GroupID, uint3 globalId : SV_DispatchThreadID)
 {
-    shared float4 sum[32 * 32];
+    sum[threadId.x] = read(globalId.x);
 
-    // idx is also the linear thread ID
-    int idx = threadId.y * 32 + threadId.x;
-
-    const int2 ipos = globalId.xy;
-
-    sum[idx] = readDerivBuf4(srcBuf, ipos, gAlbedo, 0, srcOffset);
-
-    // "construct" a segment tree to find the sum of all elements in sum in O(logn) "wall clock" time
+    // parallel reduction
     for (int i = 0; i < 10; i++)
     {
         // sync threads
@@ -33,16 +42,14 @@ void main(uint3 threadId: SV_GroupThreadID, uint3 groupId: SV_GroupID, uint3 glo
 
         int shift = (1 << i);
 
-        if (idx % (2 * shift) == 0)
+        if (threadId.x % (2 * shift) == 0)
         {
-            int rd = idx + shift;
-            sum[idx] += sum[rd];
+            sum[threadId.x] += sum[threadId.x + shift];
         }
     }
 
-    if (idx == 0)
+    if (threadId.x == 0)
     {
-        int2 storeIpos = int2(groupId.xy);
-        accumDerivBuf4(dstBuf, storeIpos, sum[0], gAlbedo, 0, dstOffset);
+        write(groupId.x, sum[0]);
     }
 }
