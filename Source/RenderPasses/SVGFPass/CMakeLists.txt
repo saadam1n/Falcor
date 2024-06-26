@@ -6,6 +6,7 @@ target_sources(SVGFPass PRIVATE
     SVGFAtrousS.ps.slang
 
     SVGFBufferCompacting.ps.slang
+    SVGFBufferSumming.cs.slang
     SVGFCommon.slang
 
     SVGFFilterMomentsC.slang

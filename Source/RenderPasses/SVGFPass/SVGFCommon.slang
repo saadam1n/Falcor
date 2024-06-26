@@ -135,8 +135,8 @@ const uint getBufIdx4(int2 ipos, Texture2D tex, int idx) {
 //#define ATOMIC_STORE
 
 // tex is a texture with equal dimensions to rwaddrbuff
-void accumDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Texture2D tex, int idx = 0) {
-    const uint base_addr = getBufIdx4(ipos, tex, idx);
+void accumDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Texture2D tex, int idx = 0, int offset = 0) {
+    const uint base_addr = getBufIdx4(ipos, tex, idx) + offset;
 
     //int4 a = quantVal4(val);
     const int4 a = reinterpret<int4>(val);
@@ -153,8 +153,8 @@ void accumDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Textu
     #endif
 }
 
-const float4 readDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex, int idx = 0) {
-    const uint base_addr = getBufIdx4(ipos, tex, idx);
+const float4 readDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex, int idx = 0, int offset = 0) {
+    const uint base_addr = getBufIdx4(ipos, tex, idx) + offset;
 
     uint status;
     const uint4 temp = rwaddrbuff.Load4(base_addr, status);

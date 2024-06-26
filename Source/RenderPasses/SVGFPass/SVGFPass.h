@@ -87,7 +87,7 @@ private:
 
     void computeDerivVerification(RenderContext* pRenderContext);
 
-    ref<Buffer> createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem = sizeof(int4));
+    ref<Buffer> createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem = sizeof(int4), bool need_readback = false);
     ref<Texture> createFullscreenTexture(ref<Device> pDevice, ResourceFormat fmt = ResourceFormat::RGBA32Float);
 
     bool mBuffersNeedClear = false;
@@ -97,7 +97,7 @@ private:
     int32_t mFilterIterations    = 4;
     int32_t mFeedbackTap         = 1;
     float   mVarainceEpsilon     = 1e-4f;
-    int mDerivativeInteration;
+    int mDerivativeIteration;
 
     // SVGF passes
     ref<FullScreenPass> mpPackLinearZAndNormal;
@@ -129,6 +129,9 @@ private:
     ref<Buffer> pdaRawOutputBuffer[2];
     ref<Buffer> pdaCompactedBuffer[2];
     void runCompactingPass(RenderContext* pRenderContext, int idx, int n);
+
+    ref<ComputePass> summingPass;
+    ref<Buffer> pdaPingPongSumBuffer[2];
 
     // we want to optimize parameters per pass to get a little bit of extra tuning
     // da is short for derivative accum

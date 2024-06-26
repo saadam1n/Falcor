@@ -47,6 +47,7 @@ namespace
     const char kAtrousShaderD[]               = "RenderPasses/SVGFPass/SVGFAtrousD.ps.slang";
 
     const char kBufferShaderCompacting[]      = "RenderPasses/SVGFPass/SVGFBufferCompacting.ps.slang";
+    const char kBufferShaderSumming[]      = "RenderPasses/SVGFPass/SVGFBufferSumming.cs.slang";
 
     const char kFilterMomentShaderS[]         = "RenderPasses/SVGFPass/SVGFFilterMomentsS.ps.slang";
     const char kFilterMomentShaderD[]         = "RenderPasses/SVGFPass/SVGFFilterMomentsD.ps.slang";
@@ -120,7 +121,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
 
     mFilterIterations = 4;
     mFeedbackTap = -1;
-    mDerivativeInteration = 0;
+    mDerivativeIteration = 0;
 
     mpPackLinearZAndNormal = FullScreenPass::create(mpDevice, kPackLinearZAndNormalShader);
     mpReprojection = FullScreenPass::create(mpDevice, kReprojectShaderS);
@@ -138,6 +139,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mReprojectState.dPass = FullScreenPass::create(mpDevice, kReprojectShaderD);
 
     compactingPass = FullScreenPass::create(mpDevice, kBufferShaderCompacting);
+    summingPass = ComputePass::create(mpDevice, kBufferShaderSumming);
 
     FALCOR_ASSERT(
         mFinalModulateState.dPass &&
@@ -246,6 +248,10 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         pdaCompactedBuffer[i] = createAccumulationBuffer(pDevice);
     }
 
+    for (int i = 0; i < 2; i++)
+    {
+        pdaPingPongSumBuffer[i] = createAccumulationBuffer(pDevice, sizeof(float4), true);
+    }
 
 
     // set final modulate state vars
@@ -335,8 +341,8 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
 }
 
 
-ref<Buffer> SVGFPass::createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem) {
-    return make_ref<Buffer>(pDevice, bytes_per_elem * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr);
+ref<Buffer> SVGFPass::createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem, bool need_reaback) {
+    return make_ref<Buffer>(pDevice, bytes_per_elem * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, need_reaback ? MemoryType::ReadBack : MemoryType::DeviceLocal, nullptr);
 }
 
 ref<Texture> SVGFPass::createFullscreenTexture(ref<Device> pDevice, ResourceFormat fmt)
@@ -518,7 +524,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 
     mDelta = 0.05f;
 
-    float& valToChange = mReprojectState.dvAlpha;
+    float& valToChange = mAtrousState.mIterationState[mDerivativeIteration].dvSigmaL;
     float oldval = valToChange;
 
     valToChange = oldval - mDelta;
@@ -542,6 +548,39 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 
     std::cout << "Fwd Diff Sum:\t" << getTexSum(pRenderContext, mpDerivativeVerifyFbo->getColorTexture(1)) << std::endl;
     std::cout << "Bwd Diff Sum:\t" << getTexSum(pRenderContext, mpDerivativeVerifyFbo->getColorTexture(2)) << std::endl;
+
+
+    // now find the sum using the other thing
+    uint2 dim = uint2(screenWidth, screenHeight);
+    for (int i = 0; i < 3; i++)
+    {
+        // clear the output buffer
+        pRenderContext->clearUAV(pdaPingPongSumBuffer[1]->getUAV().get(), Falcor::uint4(0));
+
+        auto summingCB = summingPass->getRootVar()["SummingCB"];
+
+        summingCB["srcBuf"] = (i == 0 ? mAtrousState.mIterationState[mDerivativeIteration].pdaSigma : pdaPingPongSumBuffer[0]);
+        summingCB["srcOffset"] = 0;
+
+        summingCB["dstBuf"] = pdaPingPongSumBuffer[1];
+        summingCB["dstOffset"] = 0;
+
+        dim = (dim + uint2(31, 31)) / uint2(32);
+        uint3 disptachSize = uint3(dim * uint2(32), 1);
+
+        std::cout << "Dispatching " << disptachSize.x << " " << disptachSize.y << " " << disptachSize.z << std::endl;
+
+        summingPass->execute(pRenderContext, disptachSize);
+
+        std::swap(pdaPingPongSumBuffer[0], pdaPingPongSumBuffer[1]);
+    }
+
+    // written results will be the first index
+    float4* ptr = (float4*)pdaPingPongSumBuffer[0]->map();
+    std::cout << "Seg Tree Sum:\t" << ptr[0].x << std::endl;
+
+    pdaPingPongSumBuffer[0]->unmap();
+
     std::cout << std::endl;
 }
 
@@ -549,7 +588,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext)
 {
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mReprojectState.pdaAlpha;
+    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[mDerivativeIteration].pdaSigma;
     perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
     perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
     perImageCB["delta"] = mDelta;
@@ -930,7 +969,7 @@ void SVGFPass::renderUI(Gui::Widgets& widget)
     dirty |= (int)widget.var("Iterations", mFilterIterations, 1, 10, 1);
     dirty |= (int)widget.var("Feedback", mFeedbackTap, -1, mFilterIterations - 2, 1);
 
-    widget.var("mDI", mDerivativeInteration, 0, mFilterIterations - 1, 1);
+    widget.var("mDI", mDerivativeIteration, 0, mFilterIterations - 1, 1);
 
     widget.text("");
     widget.text("Contol edge stopping on bilateral fitler");
