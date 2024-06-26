@@ -126,9 +126,9 @@ private:
     ref<Fbo> mpFinalFbo;
 
     ref<FullScreenPass> compactingPass;
-    ref<Buffer> pdaRawOutputBuffer;
-    ref<Buffer> pdaCompactedBuffer;
-    void runCompactingPass(RenderContext* pRenderContext, int n);
+    ref<Buffer> pdaRawOutputBuffer[2];
+    ref<Buffer> pdaCompactedBuffer[2];
+    void runCompactingPass(RenderContext* pRenderContext, int idx, int n);
 
     // we want to optimize parameters per pass to get a little bit of extra tuning
     // da is short for derivative accum
