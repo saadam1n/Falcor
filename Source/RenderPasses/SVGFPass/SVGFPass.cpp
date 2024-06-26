@@ -609,7 +609,6 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
     auto perImageCB = mpAtrous->getRootVar()["PerImageCB"];
 
     perImageCB["gAlbedo"] = pAlbedoTexture;
-    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
 
     for (int iteration = 0; iteration < mFilterIterations; iteration++)
@@ -672,11 +671,7 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
     pRenderContext->clearUAV(mAtrousState.pdaHistoryLen->getUAV().get(), Falcor::uint4(0));
 
     perImageCB["gAlbedo"]        = pAlbedoTexture;
-    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
     perImageCB["gLinearZAndNormal"]       = mpLinearZAndNormalFbo->getColorTexture(0);
-
-
-
 
     for (int iteration = mFilterIterations - 1; iteration >= 0; iteration--)
     {
