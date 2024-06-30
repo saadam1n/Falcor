@@ -152,7 +152,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
 
     float3 dvLuminanceParams = float3(0.3333);
 
-    float   dvSigmaL              = 1.0f;
+    float   dvSigmaL              = 10.0f;
     float   dvSigmaZ              = 1.0;
     float   dvSigmaN              = 128.0f;
     float   dvAlpha               = 0.05f;
