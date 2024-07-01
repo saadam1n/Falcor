@@ -115,17 +115,11 @@ private:
 
     // SVGF parameters
     bool    mFilterEnabled       = true;
-    int32_t mFilterIterations    = 4;
-    int32_t mFeedbackTap         = 1;
-    float   mVarainceEpsilon     = 1e-4f;
-    int mDerivativeIteration;
+    int32_t mFilterIterations    =  4;
+    int32_t mFeedbackTap         = -1;
+    float   mVarainceEpsilon     =  1e-4f;
+    int mDerivativeIteration     =  0;
 
-    // SVGF passes
-    ref<FullScreenPass> mpPackLinearZAndNormal;
-    ref<FullScreenPass> mpReprojection;
-    ref<FullScreenPass> mpFilterMoments;
-    ref<FullScreenPass> mpAtrous;
-    ref<FullScreenPass> mpFinalModulate;
 
     ref<Buffer> mReadbackBuffer;
 
@@ -158,7 +152,7 @@ private:
     // da is short for derivative accum
 
     struct {
-
+        ref<FullScreenPass> sPass;
     } mPackLinearZAndNormalState;
 
     struct {
@@ -182,6 +176,7 @@ private:
         float dvParams[4];
         float dvKernel[3];
 
+        ref<FullScreenPass> sPass;
         ref<FullScreenPass> dPass;
     } mReprojectState;
 
@@ -205,6 +200,7 @@ private:
 
         float dvVarianceBoostFactor;
 
+        ref<FullScreenPass> sPass;
         ref<FullScreenPass> dPass;
     } mFilterMomentsState;
 
@@ -235,6 +231,7 @@ private:
 
         std::vector<PerIterationState> mIterationState;
 
+        ref<FullScreenPass> sPass;
         ref<FullScreenPass> dPass;
     } mAtrousState;
 
@@ -245,6 +242,7 @@ private:
         ref<Buffer> pdaIllumination;
         ref<Buffer> pdrFilteredImage;
 
+        ref<FullScreenPass> sPass;
         ref<FullScreenPass> dPass;
     } mFinalModulateState;
 };

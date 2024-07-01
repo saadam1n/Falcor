@@ -91,12 +91,21 @@ namespace
     const char kOutputFdCol[] = "FdCol";
     const char kOutputBdCol[] = "BdCol";
 
-        // set common stuff first
+    // set common stuff first
     const size_t screenWidth = 1920;
     const size_t screenHeight = 1080;
     const size_t numPixels = screenWidth * screenHeight;
 
-    }
+    const float3 dvLuminanceParams = float3(0.3333);
+
+    const float   dvSigmaL              = 10.0f;
+    const float   dvSigmaZ              = 1.0;
+    const float   dvSigmaN              = 128.0f;
+    const float   dvAlpha               = 0.05f;
+    const float   dvMomentsAlpha        = 0.2f;
+
+    const float dvWeightFunctionParams[3] {1.0, 1.0, 1.0};
+}
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
@@ -136,48 +145,29 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         else logWarning("Unknown field '{}' in SVGFPass dictionary.", key);
     }
 
-    mFilterIterations = 4;
-    mFeedbackTap = -1;
-    mDerivativeIteration = 0;
 
-    mpPackLinearZAndNormal = FullScreenPass::create(mpDevice, kPackLinearZAndNormalShader);
-    mpReprojection = FullScreenPass::create(mpDevice, kReprojectShaderS);
-    mpAtrous = FullScreenPass::create(mpDevice, kAtrousShaderS);
-    mpFilterMoments = FullScreenPass::create(mpDevice, kFilterMomentShaderS);
-    mpFinalModulate = FullScreenPass::create(mpDevice, kFinalModulateShaderS);
+    mPackLinearZAndNormalState.sPass = FullScreenPass::create(mpDevice, kPackLinearZAndNormalShader);
+
+    mReprojectState.sPass = FullScreenPass::create(mpDevice, kReprojectShaderS);
+    mReprojectState.dPass = FullScreenPass::create(mpDevice, kReprojectShaderD);
+
+    mFilterMomentsState.sPass = FullScreenPass::create(mpDevice, kFilterMomentShaderS);
+    mFilterMomentsState.dPass = FullScreenPass::create(mpDevice, kFilterMomentShaderD);
+
+    mAtrousState.sPass = FullScreenPass::create(mpDevice, kAtrousShaderS);
+    mAtrousState.dPass = FullScreenPass::create(mpDevice, kAtrousShaderD);
+
+    mFinalModulateState.sPass = FullScreenPass::create(mpDevice, kFinalModulateShaderS);
+    mFinalModulateState.dPass = FullScreenPass::create(mpDevice, kFinalModulateShaderD);
+
+    compactingPass = FullScreenPass::create(mpDevice, kBufferShaderCompacting);
+    summingPass = ComputePass::create(mpDevice, kBufferShaderSumming);
+
 
     mpDerivativeVerify = FullScreenPass::create(mpDevice, kDerivativeVerifyShader);
     mpFuncOutputLower =  make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
     mpFuncOutputUpper =  make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
 
-    mFinalModulateState.dPass = FullScreenPass::create(mpDevice, kFinalModulateShaderD);
-    mAtrousState.dPass = FullScreenPass::create(mpDevice, kAtrousShaderD);
-    mFilterMomentsState.dPass = FullScreenPass::create(mpDevice, kFilterMomentShaderD);
-    mReprojectState.dPass = FullScreenPass::create(mpDevice, kReprojectShaderD);
-
-    compactingPass = FullScreenPass::create(mpDevice, kBufferShaderCompacting);
-    summingPass = ComputePass::create(mpDevice, kBufferShaderSumming);
-
-    FALCOR_ASSERT(
-        mFinalModulateState.dPass &&
-        mAtrousState.dPass &&
-        mFilterMomentsState.dPass &&
-        mReprojectState.dPass
-    );
-
-    FALCOR_ASSERT(mpPackLinearZAndNormal && mpReprojection && mpAtrous && mpFilterMoments && mpFinalModulate);
-
-    float3 dvLuminanceParams = float3(0.3333);
-
-    float   dvSigmaL              = 10.0f;
-    float   dvSigmaZ              = 1.0;
-    float   dvSigmaN              = 128.0f;
-    float   dvAlpha               = 0.05f;
-    float   dvMomentsAlpha        = 0.2f;
-
-    float dvWeightFunctionParams[3] {1.0, 1.0, 1.0};
-
-    // set pack linear z and normal params
 
 
     // set reproj params
@@ -475,11 +465,11 @@ void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, const SVGFRenderData
         computeAtrousDecomposition(pRenderContext, renderData.pAlbedoTexture, shouldCollectDerivatives);
 
         // Compute albedo * filtered illumination and add emission back in.
-        auto perImageCB = mpFinalModulate->getRootVar()["PerImageCB"];
+        auto perImageCB = mFinalModulateState.sPass->getRootVar()["PerImageCB"];
         perImageCB["gAlbedo"] = renderData.pAlbedoTexture;
         perImageCB["gEmission"] = renderData.pEmissionTexture;
         perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
-        mpFinalModulate->execute(pRenderContext, mpFinalFbo);
+        mFinalModulateState.sPass->execute(pRenderContext, mpFinalFbo);
 
         if (shouldCollectDerivatives)
         {
@@ -517,7 +507,7 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    runTrainingAndTesting(pRenderContext, renderData);
+    runDerivativeTest(pRenderContext, renderData); 
 }
 
 void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData)
@@ -654,7 +644,7 @@ void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Text
 
 void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, bool nonFiniteDiffPass)
 {
-    auto perImageCB = mpAtrous->getRootVar()["PerImageCB"];
+    auto perImageCB = mAtrousState.sPass->getRootVar()["PerImageCB"];
 
     perImageCB["gAlbedo"] = pAlbedoTexture;
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
@@ -694,7 +684,7 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
         perImageCB["gStepSize"] = 1 << iteration;
 
 
-        mpAtrous->execute(pRenderContext, curTargetFbo);
+        mAtrousState.sPass->execute(pRenderContext, curTargetFbo);
 
         // store the filtered color for the feedback path
         if (nonFiniteDiffPass && iteration == std::min(mFeedbackTap, mFilterIterations - 1))
@@ -773,7 +763,7 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
 
 void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
 {
-    auto perImageCB = mpFilterMoments->getRootVar()["PerImageCB"];
+    auto perImageCB = mFilterMomentsState.sPass->getRootVar()["PerImageCB"];
 
     perImageCB["gIllumination"] = mpCurReprojFbo->getColorTexture(0);
     perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
@@ -791,7 +781,7 @@ void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
         perImageCB["dvWeightFunctionParams"][i] = mFilterMomentsState.dvWeightFunctionParams[i];
     }
 
-    mpFilterMoments->execute(pRenderContext, mpPingPongFbo[0]);
+    mFilterMomentsState.sPass->execute(pRenderContext, mpPingPongFbo[0]);
 }
 
 void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
@@ -844,7 +834,7 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> p
                                    ref<Texture> pDebugTexture
     )
 {
-    auto perImageCB = mpReprojection->getRootVar()["PerImageCB"];
+    auto perImageCB = mReprojectState.sPass->getRootVar()["PerImageCB"];
 
     // Setup textures for our reprojection shader pass
     perImageCB["gMotion"] = pMotionVectorTexture;
@@ -872,7 +862,7 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> p
         perImageCB["dvReprojParams"][i] = mReprojectState.dvParams[i];
     }
 
-    mpReprojection->execute(pRenderContext, mpCurReprojFbo);
+    mReprojectState.sPass->execute(pRenderContext, mpCurReprojFbo);
 
     // save a copy of our past filtration for backwards differentiation
     pRenderContext->blit(mpFilteredPastFbo->getColorTexture(0)->getSRV(), mReprojectState.pPrevIllum->getRTV());
@@ -956,12 +946,11 @@ void SVGFPass::runCompactingPass(RenderContext* pRenderContext, int idx, int n)
 // copy of it to refer to in the next frame.)
 void SVGFPass::computeLinearZAndNormal(RenderContext* pRenderContext, ref<Texture> pLinearZTexture, ref<Texture> pWorldNormalTexture)
 {
-    auto perImageCB = mpPackLinearZAndNormal->getRootVar()["PerImageCB"];
+    auto perImageCB = mPackLinearZAndNormalState.sPass->getRootVar()["PerImageCB"];
     perImageCB["gLinearZ"] = pLinearZTexture;
     perImageCB["gNormal"] = pWorldNormalTexture;
 
-    mpPackLinearZAndNormal->execute(pRenderContext, mpLinearZAndNormalFbo);
-
+    mPackLinearZAndNormalState.sPass->execute(pRenderContext, mpLinearZAndNormalFbo);
 }
 
 void SVGFPass::renderUI(Gui::Widgets& widget)
