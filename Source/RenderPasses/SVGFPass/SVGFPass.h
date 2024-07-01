@@ -46,6 +46,8 @@ struct SVGFRenderData
     ref<Texture> pOutputTexture;
     ref<Texture> pDebugTexture;
     ref<Texture> pDerivVerifyTexture;
+
+    SVGFRenderData(const RenderData& renderData);
 };
 
 class SVGFPass : public RenderPass
@@ -71,6 +73,9 @@ public:
 private:
     ref<Scene> pScene;
 
+    void runDerivativeTest(RenderContext* pRenderContext, const RenderData& renderData);
+    void runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData);
+
     void allocateFbos(uint2 dim, RenderContext* pRenderContext);
     void clearBuffers(RenderContext* pRenderContext, const SVGFRenderData& renderData);
 
@@ -88,7 +93,7 @@ private:
     void computeFilteredMoments(RenderContext* pRenderContext);
     void computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, bool nonFiniteDiffPass);
 
-    void executeWithDerivatives(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool shouldCalcDerivatives);
+    void runSvgfFilter(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool shouldCollectDerivatives);
     void computeDerivatives(RenderContext* pRenderContext, const SVGFRenderData& renderData);
     void computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pResultantImage, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture);
     void computeDerivAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, ref<Texture> pOutputTexture);
@@ -101,7 +106,7 @@ private:
                              ref<Texture> pDebugTexture
         );
 
-    void computeDerivVerification(RenderContext* pRenderContext);
+    void computeDerivVerification(RenderContext* pRenderContext, const SVGFRenderData& renderData);
 
     ref<Buffer> createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem = sizeof(int4), bool need_readback = false);
     ref<Texture> createFullscreenTexture(ref<Device> pDevice, ResourceFormat fmt = ResourceFormat::RGBA32Float);

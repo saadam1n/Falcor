@@ -67,20 +67,20 @@ namespace
     const char kAlpha[] = "Alpha";
     const char kMomentsAlpha[] = "MomentsAlpha";
 
-// Input buffer names
-const char kInputBufferAlbedo[] = "Albedo";
-const char kInputBufferColor[] = "Color";
-const char kInputBufferEmission[] = "Emission";
-const char kInputBufferWorldPosition[] = "WorldPosition";
-const char kInputBufferWorldNormal[] = "WorldNormal";
-const char kInputBufferPosNormalFwidth[] = "PositionNormalFwidth";
-const char kInputBufferLinearZ[] = "LinearZ";
-const char kInputBufferMotionVector[] = "MotionVec";
+    // Input buffer names
+    const char kInputBufferAlbedo[] = "Albedo";
+    const char kInputBufferColor[] = "Color";
+    const char kInputBufferEmission[] = "Emission";
+    const char kInputBufferWorldPosition[] = "WorldPosition";
+    const char kInputBufferWorldNormal[] = "WorldNormal";
+    const char kInputBufferPosNormalFwidth[] = "PositionNormalFwidth";
+    const char kInputBufferLinearZ[] = "LinearZ";
+    const char kInputBufferMotionVector[] = "MotionVec";
 
-// Internal buffer names
-const char kInternalBufferPreviousLinearZAndNormal[] = "Previous Linear Z and Packed Normal";
-const char kInternalBufferPreviousLighting[] = "Previous Lighting";
-const char kInternalBufferPreviousMoments[] = "Previous Moments";
+    // Internal buffer names
+    const char kInternalBufferPreviousLinearZAndNormal[] = "Previous Linear Z and Packed Normal";
+    const char kInternalBufferPreviousLighting[] = "Previous Lighting";
+    const char kInternalBufferPreviousMoments[] = "Previous Moments";
 
     // Output buffer name
     const char kOutputBufferFilteredImage[] = "Filtered image";
@@ -102,6 +102,23 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 {
     registry.registerClass<RenderPass, SVGFPass>();
 }
+
+
+SVGFRenderData::SVGFRenderData(const RenderData& renderData) {
+    pAlbedoTexture = renderData.getTexture(kInputBufferAlbedo);
+    pColorTexture = renderData.getTexture(kInputBufferColor);
+    pEmissionTexture = renderData.getTexture(kInputBufferEmission);
+    pWorldPositionTexture = renderData.getTexture(kInputBufferWorldPosition);
+    pWorldNormalTexture = renderData.getTexture(kInputBufferWorldNormal);
+    pPosNormalFwidthTexture = renderData.getTexture(kInputBufferPosNormalFwidth);
+    pLinearZTexture = renderData.getTexture(kInputBufferLinearZ);
+    pMotionVectorTexture = renderData.getTexture(kInputBufferMotionVector);
+    pPrevLinearZAndNormalTexture = renderData.getTexture(kInternalBufferPreviousLinearZAndNormal);
+    pOutputTexture = renderData.getTexture(kOutputBufferFilteredImage);
+    pDebugTexture = renderData.getTexture(kOutputDebugBuffer);
+    pDerivVerifyTexture = renderData.getTexture(kOutputDerivVerifyBuf);
+}
+
 
 SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
@@ -416,7 +433,7 @@ void SVGFPass::compile(RenderContext* pRenderContext, const CompileData& compile
     mBuffersNeedClear = true;
 }
 
-void SVGFPass::executeWithDerivatives(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool shouldCalcDerivatives)
+void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool shouldCollectDerivatives)
 {
     FALCOR_ASSERT(
         mpFilteredIlluminationFbo && mpFilteredIlluminationFbo->getWidth() == pAlbedoTexture->getWidth() &&
@@ -455,7 +472,7 @@ void SVGFPass::executeWithDerivatives(RenderContext* pRenderContext, const SVGFR
         // in mpPingPongFbo[0].  Along the way (or at the end, depending on
         // the value of mFeedbackTap), save the filtered illumination for
         // next time into mpFilteredPastFbo.
-        computeAtrousDecomposition(pRenderContext, renderData.pAlbedoTexture, shouldCalcDerivatives);
+        computeAtrousDecomposition(pRenderContext, renderData.pAlbedoTexture, shouldCollectDerivatives);
 
         // Compute albedo * filtered illumination and add emission back in.
         auto perImageCB = mpFinalModulate->getRootVar()["PerImageCB"];
@@ -464,12 +481,9 @@ void SVGFPass::executeWithDerivatives(RenderContext* pRenderContext, const SVGFR
         perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
         mpFinalModulate->execute(pRenderContext, mpFinalFbo);
 
-        if (shouldCalcDerivatives)
+        if (shouldCollectDerivatives)
         {
             computeDerivatives(pRenderContext, renderData);
-
-            computeDerivVerification(pRenderContext);
-            pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(0)->getSRV(), renderData.pDerivVerifyTexture->getRTV());
 
             // Swap resources so we're ready for next frame.
             // only do it though if we are calculating derivaitves so we don't screw up our results from the finite diff pass
@@ -503,23 +517,26 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    runTrainingAndTesting(pRenderContext, renderData);
+}
+
+void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData)
+{
     if(!pScene)
         return;
 
-    SVGFRenderData svgfrd;
+    SVGFRenderData svgfrd(renderData);
 
-    svgfrd.pAlbedoTexture = renderData.getTexture(kInputBufferAlbedo);
-    svgfrd.pColorTexture = renderData.getTexture(kInputBufferColor);
-    svgfrd.pEmissionTexture = renderData.getTexture(kInputBufferEmission);
-    svgfrd.pWorldPositionTexture = renderData.getTexture(kInputBufferWorldPosition);
-    svgfrd.pWorldNormalTexture = renderData.getTexture(kInputBufferWorldNormal);
-    svgfrd.pPosNormalFwidthTexture = renderData.getTexture(kInputBufferPosNormalFwidth);
-    svgfrd.pLinearZTexture = renderData.getTexture(kInputBufferLinearZ);
-    svgfrd.pMotionVectorTexture = renderData.getTexture(kInputBufferMotionVector);
-    svgfrd.pPrevLinearZAndNormalTexture = renderData.getTexture(kInternalBufferPreviousLinearZAndNormal);
-    svgfrd.pOutputTexture = renderData.getTexture(kOutputBufferFilteredImage);
-    svgfrd.pDebugTexture = renderData.getTexture(kOutputDebugBuffer);
-    svgfrd.pDerivVerifyTexture = renderData.getTexture(kOutputDerivVerifyBuf);
+    runSvgfFilter(pRenderContext, svgfrd, true);
+}
+
+
+void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    if(!pScene)
+        return;
+
+    SVGFRenderData svgfrd(renderData);
 
     mDelta = 0.05f;
 
@@ -527,19 +544,20 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
     float oldval = valToChange;
 
     valToChange = oldval - mDelta;
-    executeWithDerivatives(pRenderContext, svgfrd, false);
+    runSvgfFilter(pRenderContext, svgfrd, false);
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), mpFuncOutputLower->getRTV());
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), renderData.getTexture(kOutputFuncLower)->getRTV());
 
 
     valToChange = oldval + mDelta;
-    executeWithDerivatives(pRenderContext, svgfrd, false);
+    runSvgfFilter(pRenderContext, svgfrd, false);
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), mpFuncOutputUpper->getRTV());
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(),  renderData.getTexture(kOutputFuncUpper)->getRTV());
-
+     
     valToChange = oldval;
-
-    executeWithDerivatives(pRenderContext, svgfrd, true);
+     
+    runSvgfFilter(pRenderContext, svgfrd, true);
+    computeDerivVerification(pRenderContext, svgfrd);
     pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(1)->getSRV(),  renderData.getTexture(kOutputFdCol)->getRTV());
     pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(2)->getSRV(),  renderData.getTexture(kOutputBdCol)->getRTV());
 
@@ -580,7 +598,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
     std::cout << std::endl;
 }
 
-void SVGFPass::computeDerivVerification(RenderContext* pRenderContext)
+void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVGFRenderData& renderData)
 {
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
@@ -590,6 +608,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext)
     perImageCB["delta"] = mDelta;
 
     mpDerivativeVerify->execute(pRenderContext, mpDerivativeVerifyFbo);
+    pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(0)->getSRV(), renderData.pDerivVerifyTexture->getRTV());
 }
 
 
