@@ -32,6 +32,22 @@
 
 using namespace Falcor;
 
+struct SVGFRenderData
+{
+    ref<Texture> pAlbedoTexture;
+    ref<Texture> pColorTexture;
+    ref<Texture> pEmissionTexture;
+    ref<Texture> pWorldPositionTexture;
+    ref<Texture> pWorldNormalTexture;
+    ref<Texture> pPosNormalFwidthTexture;
+    ref<Texture> pLinearZTexture;
+    ref<Texture> pMotionVectorTexture;
+    ref<Texture> pPrevLinearZAndNormalTexture;
+    ref<Texture> pOutputTexture;
+    ref<Texture> pDebugTexture;
+    ref<Texture> pDerivVerifyTexture;
+};
+
 class SVGFPass : public RenderPass
 {
 public:
@@ -56,7 +72,7 @@ private:
     ref<Scene> pScene;
 
     void allocateFbos(uint2 dim, RenderContext* pRenderContext);
-    void clearBuffers(RenderContext* pRenderContext, const RenderData& renderData);
+    void clearBuffers(RenderContext* pRenderContext, const SVGFRenderData& renderData);
 
     void computeLinearZAndNormal(RenderContext* pRenderContext, ref<Texture> pLinearZTexture,
                                  ref<Texture> pWorldNormalTexture);
@@ -72,8 +88,8 @@ private:
     void computeFilteredMoments(RenderContext* pRenderContext);
     void computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, bool nonFiniteDiffPass);
 
-    void executeWithDerivatives(RenderContext* pRenderContext, const RenderData& renderData, bool shouldCalcDerivatives);
-    void computeDerivatives(RenderContext* pRenderContext, const RenderData& renderData);
+    void executeWithDerivatives(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool shouldCalcDerivatives);
+    void computeDerivatives(RenderContext* pRenderContext, const SVGFRenderData& renderData);
     void computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pResultantImage, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture);
     void computeDerivAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, ref<Texture> pOutputTexture);
     void computeDerivFilteredMoments(RenderContext* pRenderContext);
