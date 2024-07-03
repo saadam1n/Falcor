@@ -34,6 +34,10 @@ using namespace Falcor;
 
 struct SVGFRenderData
 {
+public:
+    SVGFRenderData() = default;
+    SVGFRenderData(const RenderData& renderData);
+
     ref<Texture> pAlbedoTexture;
     ref<Texture> pColorTexture;
     ref<Texture> pEmissionTexture;
@@ -47,7 +51,24 @@ struct SVGFRenderData
     ref<Texture> pDebugTexture;
     ref<Texture> pDerivVerifyTexture;
 
-    SVGFRenderData(const RenderData& renderData);
+    // only used in training
+    ref<Texture> pReferenceTexture;
+};
+
+struct SVGFTrainingDataset : public SVGFRenderData
+{
+public:
+    SVGFTrainingDataset(ref<Device> pDevice, const std::string& folder);
+    bool loadNext(RenderContext* pRenderContext);
+
+private:
+    // the folder containing the dataset
+    std::string mFolder;
+    // whatever sample we are reading from
+    int mSampleIdx;
+
+    std::string getSampleBufferPath(const std::string& buffer) const;
+    void loadSampleBuffer(RenderContext* pRenderContext, ref<Texture> tex, const std::string& buffer);
 };
 
 class SVGFPass : public RenderPass
@@ -108,9 +129,6 @@ private:
 
     void computeDerivVerification(RenderContext* pRenderContext, const SVGFRenderData& renderData);
 
-    ref<Buffer> createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem = sizeof(int4), bool need_readback = false);
-    ref<Texture> createFullscreenTexture(ref<Device> pDevice, ResourceFormat fmt = ResourceFormat::RGBA32Float);
-
     bool mBuffersNeedClear = false;
 
     // SVGF parameters
@@ -119,7 +137,6 @@ private:
     int32_t mFeedbackTap         = -1;
     float   mVarainceEpsilon     =  1e-4f;
     int mDerivativeIteration     =  0;
-
 
     ref<Buffer> mReadbackBuffer;
 
@@ -147,6 +164,8 @@ private:
 
     ref<ComputePass> summingPass;
     ref<Buffer> pdaPingPongSumBuffer[2];
+
+    SVGFTrainingDataset mTrainingDataset;
 
     // we want to optimize parameters per pass to get a little bit of extra tuning
     // da is short for derivative accum
@@ -234,9 +253,6 @@ private:
         ref<FullScreenPass> sPass;
         ref<FullScreenPass> dPass;
     } mAtrousState;
-
-
-
 
     struct {
         ref<Buffer> pdaIllumination;

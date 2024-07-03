@@ -91,6 +91,17 @@ namespace
     const char kOutputFdCol[] = "FdCol";
     const char kOutputBdCol[] = "BdCol";
 
+    // Stuff from dataset
+    const std::string kDatasetReference = "Reference";
+    const std::string kDatasetColor = "Color";
+    const std::string kDatasetAlbedo = "Albedo";
+    const std::string kDatasetEmission = "Emission";
+    const std::string kDatasetWorldPosition = "WorldPosition";
+    const std::string kDatasetWorldNormal = "WorldNormal";
+    const std::string kDatasetPositionNormalFwidth = "PositionNormalFwidth";
+    const std::string kDatasetLinearZ = "LinearZ";
+    const std::string kDatasetMotionVec = "MotionVec";
+
     // set common stuff first
     const size_t screenWidth = 1920;
     const size_t screenHeight = 1080;
@@ -113,6 +124,15 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 }
 
 
+ref<Buffer> createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem = sizeof(float4), bool need_reaback = false) {
+    return make_ref<Buffer>(pDevice, bytes_per_elem * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, need_reaback ? MemoryType::ReadBack : MemoryType::DeviceLocal, nullptr);
+}
+
+ref<Texture> createFullscreenTexture(ref<Device> pDevice, ResourceFormat fmt = ResourceFormat::RGBA32Float)
+{
+    return make_ref<Texture>(pDevice, Resource::Type::Texture2D, fmt, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, nullptr);
+}
+
 SVGFRenderData::SVGFRenderData(const RenderData& renderData) {
     pAlbedoTexture = renderData.getTexture(kInputBufferAlbedo);
     pColorTexture = renderData.getTexture(kInputBufferColor);
@@ -128,8 +148,61 @@ SVGFRenderData::SVGFRenderData(const RenderData& renderData) {
     pDerivVerifyTexture = renderData.getTexture(kOutputDerivVerifyBuf);
 }
 
+SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, const std::string& folder) : mFolder(folder), mSampleIdx(0) {
+    pReferenceTexture = createFullscreenTexture(pDevice);
+    pAlbedoTexture = createFullscreenTexture(pDevice);
+    pColorTexture = createFullscreenTexture(pDevice);
+    pEmissionTexture = createFullscreenTexture(pDevice);
+    pWorldPositionTexture = createFullscreenTexture(pDevice);
+    pWorldNormalTexture = createFullscreenTexture(pDevice);
+    pPosNormalFwidthTexture = createFullscreenTexture(pDevice);
+    pLinearZTexture = createFullscreenTexture(pDevice);
+    pMotionVectorTexture = createFullscreenTexture(pDevice);
+    pPrevLinearZAndNormalTexture = createFullscreenTexture(pDevice);
+    pOutputTexture = createFullscreenTexture(pDevice);
+    pDebugTexture = createFullscreenTexture(pDevice);
+    pDerivVerifyTexture = createFullscreenTexture(pDevice);
+}
 
-SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
+bool SVGFTrainingDataset::loadNext(RenderContext* pRenderContext)
+{
+    // check if we have more samples to read
+    if (!std::filesystem::exists(getSampleBufferPath(kDatasetColor)))
+    {
+        mSampleIdx = 0;
+        return false;
+    }
+
+    // continue with loading of samples
+    loadSampleBuffer(pRenderContext, pReferenceTexture, kDatasetReference);
+    loadSampleBuffer(pRenderContext, pColorTexture, kDatasetColor);
+    loadSampleBuffer(pRenderContext, pAlbedoTexture, kDatasetAlbedo);
+    loadSampleBuffer(pRenderContext, pEmissionTexture, kDatasetEmission);
+    loadSampleBuffer(pRenderContext, pWorldPositionTexture, kDatasetWorldPosition);
+    loadSampleBuffer(pRenderContext, pWorldNormalTexture, kDatasetWorldNormal);
+    loadSampleBuffer(pRenderContext, pPosNormalFwidthTexture, kDatasetPositionNormalFwidth);
+    loadSampleBuffer(pRenderContext, pLinearZTexture, kDatasetLinearZ);
+    loadSampleBuffer(pRenderContext, pMotionVectorTexture, kDatasetMotionVec);
+
+    mSampleIdx++;
+
+    // indicate to callee that we this sample was successfully read
+    return true;
+}
+
+std::string SVGFTrainingDataset::getSampleBufferPath(const std::string& buffer) const
+{
+    return mFolder + "/" + std::to_string(mSampleIdx) + "-" + buffer + ".exr";
+}
+
+void SVGFTrainingDataset::loadSampleBuffer(RenderContext* pRenderContext, ref<Texture> tex, const std::string& buffer)
+{
+    auto bitmap = Bitmap::createFromFile(getSampleBufferPath(buffer), true);
+    pRenderContext->updateSubresourceData(tex.get(), 0, (const void*)bitmap->getData());
+}
+
+
+SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), mTrainingDataset(pDevice, "C:/FalcorFiles/Dataset0")
 {
 
     for (const auto& [key, value] : props)
@@ -345,17 +418,6 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
     mBuffersNeedClear = true;
 }
 
-
-ref<Buffer> SVGFPass::createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem, bool need_reaback) {
-    return make_ref<Buffer>(pDevice, bytes_per_elem * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, need_reaback ? MemoryType::ReadBack : MemoryType::DeviceLocal, nullptr);
-}
-
-ref<Texture> SVGFPass::createFullscreenTexture(ref<Device> pDevice, ResourceFormat fmt)
-{
-    return make_ref<Texture>(pDevice, Resource::Type::Texture2D, fmt, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, nullptr);
-}
-
-
 Properties SVGFPass::getProperties() const
 {
     Properties dict;
@@ -507,17 +569,20 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    runDerivativeTest(pRenderContext, renderData); 
+    runTrainingAndTesting(pRenderContext, renderData); 
 }
 
 void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    if(!pScene)
-        return;
+    //if(!pScene)
+    //    return;
 
     SVGFRenderData svgfrd(renderData);
+    while(!mTrainingDataset.loadNext(pRenderContext));
 
-    runSvgfFilter(pRenderContext, svgfrd, true);
+    runSvgfFilter(pRenderContext, mTrainingDataset, false);
+
+    pRenderContext->blit(mTrainingDataset.pReferenceTexture->getSRV(), svgfrd.pOutputTexture->getRTV());
 }
 
 
