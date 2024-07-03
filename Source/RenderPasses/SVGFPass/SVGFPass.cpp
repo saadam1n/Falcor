@@ -325,6 +325,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     {
         pdaPingPongSumBuffer[i] = createAccumulationBuffer(pDevice, sizeof(float4));
     }
+    pdaGradientBuffer = createAccumulationBuffer(pDevice, sizeof(float4));
 
 
     // set final modulate state vars
@@ -573,17 +574,17 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
         mTrained = true;
     }
 
-    //if(!pScene) return;
+    if(!pScene) return;
 
     SVGFRenderData svgfrd(renderData);
 
-    runSvgfFilter(pRenderContext, mTrainingDataset, false);
-    pRenderContext->blit(mTrainingDataset.pOutputTexture->getSRV(), svgfrd.pOutputTexture->getRTV());
+    runSvgfFilter(pRenderContext, svgfrd, false);
 }
 
 void SVGFPass::trainFilter(RenderContext* pRenderContext)
 {
     const int K_NUM_EPOCHS = 16;
+    const float K_GRADIENT_ADJUSTMENT = 1.0f;
 
     for (int epoch = 0; epoch < K_NUM_EPOCHS; epoch++)
     {
@@ -592,6 +593,30 @@ void SVGFPass::trainFilter(RenderContext* pRenderContext)
             runSvgfFilter(pRenderContext, mTrainingDataset, true);
         }
 
+        // now accumulate everything
+        for (int i = 0; i < mParameterReflector.size(); i++)
+        {
+            int offset = i * sizeof(float4);
+            reduceParameter(pRenderContext, *mParameterReflector[i].mAddress, offset);
+        }
+
+        // now wait for it to execute and download it
+        pRenderContext->copyBufferRegion(mReadbackBuffer.get(), 0, pdaGradientBuffer.get(), 0, mParameterReflector.size() * sizeof(float4));
+        pRenderContext->submit(true);
+        float4* gradient = (float4*)mReadbackBuffer->map();
+
+        for (int i = 0; i < mParameterReflector.size(); i++)
+        {
+            int offset = i * sizeof(float4);
+            auto& pmi = mParameterReflector[i];
+
+            for (int j = 0; j < pmi.mNumElements; j++)
+            {
+                pmi.mAddress->dv[j] -= K_GRADIENT_ADJUSTMENT * gradient[offset][j];
+            }
+        }
+
+        mReadbackBuffer->unmap();
     }
 }
 
@@ -1011,6 +1036,41 @@ void SVGFPass::runCompactingPass(RenderContext* pRenderContext, int idx, int n)
     compactingCB["elements"] = n;
     // compact the raw output
     compactingPass->execute(pRenderContext, mpDummyFullscreenFbo);
+}
+
+void SVGFPass::reduceParameter(RenderContext* pRenderContext, SVGFParameter<float4>& param, int offset)
+{
+    const int K_NUM_ITERATIONS = 3;
+
+    int numRemaining = numPixels;
+    for (int i = 0; i < K_NUM_ITERATIONS; i++)
+    {
+        // clear the output buffer
+        pRenderContext->clearUAV(pdaPingPongSumBuffer[1]->getUAV().get(), Falcor::uint4(0));
+
+        auto summingCB = summingPass->getRootVar()["SummingCB"];
+
+        summingCB["srcBuf"] = (i == 0 ? param.da : pdaPingPongSumBuffer[0]);
+        summingCB["srcOffset"] = 0;
+
+        if (i != K_NUM_ITERATIONS - 1)
+        {
+            // if it is the last pass, write out output to a particular location
+            summingCB["dstBuf"] = pdaGradientBuffer;
+            summingCB["dstOffset"] = offset;
+        }
+        else
+        {
+            summingCB["dstBuf"] = pdaPingPongSumBuffer[1];
+            summingCB["dstOffset"] = 0;
+        }
+
+        summingPass->execute(pRenderContext, numRemaining, 1);
+        // round up divide
+        numRemaining = (numRemaining + 127) / 128;
+
+        std::swap(pdaPingPongSumBuffer[0], pdaPingPongSumBuffer[1]);
+    }
 }
 
 

@@ -176,10 +176,11 @@ private:
     ref<Buffer> pdaRawOutputBuffer[2];
     ref<Buffer> pdaCompactedBuffer[2];
     void runCompactingPass(RenderContext* pRenderContext, int idx, int n);
-    //void compactParameter
 
     ref<ComputePass> summingPass;
     ref<Buffer> pdaPingPongSumBuffer[2];
+    ref<Buffer> pdaGradientBuffer;
+    void reduceParameter(RenderContext* pRenderContext, SVGFParameter<float4>& param, int offset);
 
     SVGFTrainingDataset mTrainingDataset;
 
