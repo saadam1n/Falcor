@@ -71,6 +71,18 @@ private:
     void loadSampleBuffer(RenderContext* pRenderContext, ref<Texture> tex, const std::string& buffer);
 };
 
+template<typename T>
+struct SVGFParameter
+{
+    ref<Buffer> da;
+    T dv;
+
+    void clearBuffer(RenderContext* pRenderContext)
+    {
+        pRenderContext->clearUAV(da->getUAV().get(), uint4(0));
+    }
+};
+
 class SVGFPass : public RenderPass
 {
 public:
@@ -93,6 +105,9 @@ public:
 
 private:
     ref<Scene> pScene;
+
+    bool mTrained = false;
+    void trainFilter(RenderContext* pRenderContext);
 
     void runDerivativeTest(RenderContext* pRenderContext, const RenderData& renderData);
     void runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData);
@@ -161,11 +176,32 @@ private:
     ref<Buffer> pdaRawOutputBuffer[2];
     ref<Buffer> pdaCompactedBuffer[2];
     void runCompactingPass(RenderContext* pRenderContext, int idx, int n);
+    //void compactParameter
 
     ref<ComputePass> summingPass;
     ref<Buffer> pdaPingPongSumBuffer[2];
 
     SVGFTrainingDataset mTrainingDataset;
+
+    struct ParameterMetaInfo
+    {
+        // float4 is max allowed size
+        SVGFParameter<float4>* mAddress;
+        int mNumElements;
+    };
+    std::vector<ParameterMetaInfo> mParameterReflector;
+
+    //  manually registers parameter (but it still is auto trained)
+    void registerParameterManual(SVGFParameter<float4>* param, int cnt);
+
+    // registers parameter into list of parameters so we automatically train it
+    template<typename T>
+    void registerParameter(SVGFParameter<T>& param)
+    {
+        registerParameterManual((SVGFParameter<float4>*)&param, sizeof(T) / sizeof(float));
+    }
+
+
 
     // we want to optimize parameters per pass to get a little bit of extra tuning
     // da is short for derivative accum
@@ -181,19 +217,13 @@ private:
 
         ref<Texture> pPrevIllum;
 
-        ref<Buffer> pdaLuminanceParams;
-        ref<Buffer> pdaReprojKernel;
-        ref<Buffer> pdaReprojParams;
-        ref<Buffer> pdaAlpha;
-        ref<Buffer> pdaMomentsAlpha;
+        SVGFParameter<float> mAlpha;
+        SVGFParameter<float> mMomentsAlpha;
 
-        float dvAlpha;
-        float dvMomentsAlpha;
+        SVGFParameter<float3> mLuminanceParams;
 
-        float3 dvLuminanceParams;
-
-        float dvParams[4];
-        float dvKernel[3];
+        SVGFParameter<float[4]> mParams;
+        SVGFParameter<float[3]> mKernel;
 
         ref<FullScreenPass> sPass;
         ref<FullScreenPass> dPass;
@@ -204,20 +234,12 @@ private:
 
         ref<Texture> pLumVarTex;
 
-        ref<Buffer> pdaVarianceBoostFactor;
-        ref<Buffer> pdaLuminanceParams;
-        ref<Buffer> pdaWeightFunctionParams;
+        SVGFParameter<float3> mSigma;
 
-        ref<Buffer> pdaSigma;
+        SVGFParameter<float3> mLuminanceParams;
+        SVGFParameter<float[3]> mWeightFunctionParams;
 
-        float   dvSigmaL;
-        float   dvSigmaZ;
-        float   dvSigmaN;
-
-        float3 dvLuminanceParams;
-        float dvWeightFunctionParams[3];
-
-        float dvVarianceBoostFactor;
+        SVGFParameter<float> mVarianceBoostFactor;
 
         ref<FullScreenPass> sPass;
         ref<FullScreenPass> dPass;
@@ -229,21 +251,13 @@ private:
         {
             ref<Texture> pgIllumination; // saved illumination for this iteration
 
-            ref<Buffer> pdaKernel;
-            ref<Buffer> pdaVarianceKernel;
-            ref<Buffer> pdaLuminanceParams;
-            ref<Buffer> pdaWeightFunctionParams;
-            ref<Buffer> pdaSigma;
+            SVGFParameter<float3> mSigma;
 
-            float   dvSigmaL;
-            float   dvSigmaZ;
-            float   dvSigmaN;
+            SVGFParameter<float[3]> mWeightFunctionParams;
+            SVGFParameter<float3> mLuminanceParams;
 
-            float dvWeightFunctionParams[3];
-            float3 dvLuminanceParams;
-
-            float dvVarianceKernel[2][2];
-            float dvKernel[3];
+            SVGFParameter<float[2][2]> mVarianceKernel;
+            SVGFParameter<float[3]> mKernel;
         };
 
         ref<Texture> mSaveIllum;

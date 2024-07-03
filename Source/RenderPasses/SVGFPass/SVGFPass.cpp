@@ -115,6 +115,11 @@ namespace
     const float   dvAlpha               = 0.05f;
     const float   dvMomentsAlpha        = 0.2f;
 
+    // x is L
+    // y is Z
+    // z is N
+    const float3  dvSigma = float3(dvSigmaL, dvSigmaZ, dvSigmaN);
+
     const float dvWeightFunctionParams[3] {1.0, 1.0, 1.0};
 }
 
@@ -201,7 +206,6 @@ void SVGFTrainingDataset::loadSampleBuffer(RenderContext* pRenderContext, ref<Te
     pRenderContext->updateSubresourceData(tex.get(), 0, (const void*)bitmap->getData());
 }
 
-
 SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), mTrainingDataset(pDevice, "C:/FalcorFiles/Dataset0")
 {
 
@@ -241,85 +245,74 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mpFuncOutputLower =  make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
     mpFuncOutputUpper =  make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
 
-
-
     // set reproj params
-    mReprojectState.dvLuminanceParams = dvLuminanceParams;
-    mReprojectState.dvAlpha = dvAlpha;
-    mReprojectState.dvMomentsAlpha = dvMomentsAlpha;
+    mReprojectState.mLuminanceParams.dv = dvLuminanceParams;
+    registerParameter(mReprojectState.mLuminanceParams);
 
-    mReprojectState.dvParams[0] = 32.0;
-    mReprojectState.dvParams[1] = 1.0;
-    mReprojectState.dvParams[2] = 10.0;
-    mReprojectState.dvParams[3] = 16.0;
+    mReprojectState.mAlpha.dv = dvAlpha;
+    registerParameter(mReprojectState.mAlpha);
 
-    mReprojectState.dvKernel[0] = 1.0;
-    mReprojectState.dvKernel[1] = 1.0;
-    mReprojectState.dvKernel[2] = 1.0;
+    mReprojectState.mMomentsAlpha.dv = dvMomentsAlpha;
+    registerParameter(mReprojectState.mMomentsAlpha);
 
-    mReprojectState.pdaLuminanceParams = createAccumulationBuffer(pDevice);
-    mReprojectState.pdaReprojKernel = createAccumulationBuffer(pDevice);
-    mReprojectState.pdaReprojParams = createAccumulationBuffer(pDevice);
-    mReprojectState.pdaAlpha = createAccumulationBuffer(pDevice);
-    mReprojectState.pdaMomentsAlpha = createAccumulationBuffer(pDevice);
+    mReprojectState.mParams.dv[0] = 32.0;
+    mReprojectState.mParams.dv[1] = 1.0;
+    mReprojectState.mParams.dv[2] = 10.0;
+    mReprojectState.mParams.dv[3] = 16.0;
+    registerParameter(mReprojectState.mParams);
+
+    mReprojectState.mKernel.dv[0] = 1.0;
+    mReprojectState.mKernel.dv[1] = 1.0;
+    mReprojectState.mKernel.dv[2] = 1.0;
+    registerParameter(mReprojectState.mKernel);
 
     mReprojectState.pPrevIllum = createFullscreenTexture(pDevice);
 
     // set filter moments params
     mFilterMomentsState.pdaHistoryLen = createAccumulationBuffer(pDevice);
 
-    mFilterMomentsState.dvSigmaL = dvSigmaL;
-    mFilterMomentsState.dvSigmaZ = dvSigmaZ;
-    mFilterMomentsState.dvSigmaN = dvSigmaN;
+    mFilterMomentsState.mSigma.dv = dvSigma;
+    registerParameter(mFilterMomentsState.mSigma);
 
-    mFilterMomentsState.dvLuminanceParams = dvLuminanceParams;
+    mFilterMomentsState.mLuminanceParams.dv = dvLuminanceParams;
+    registerParameter(mFilterMomentsState.mLuminanceParams);
 
     for (int i = 0; i < 3; i++) {
-        mFilterMomentsState.dvWeightFunctionParams[i] = dvWeightFunctionParams[i];
+        mFilterMomentsState.mWeightFunctionParams.dv[i] = dvWeightFunctionParams[i];
     }
+    registerParameter(mFilterMomentsState.mWeightFunctionParams);
 
-    mFilterMomentsState.dvVarianceBoostFactor = 4.0;
-
-    mFilterMomentsState.pdaSigma = createAccumulationBuffer(pDevice);
-
-    mFilterMomentsState.pdaLuminanceParams = createAccumulationBuffer(pDevice);
-    mFilterMomentsState.pdaVarianceBoostFactor = createAccumulationBuffer(pDevice);
-    mFilterMomentsState.pdaWeightFunctionParams = createAccumulationBuffer(pDevice);
+    mFilterMomentsState.mVarianceBoostFactor.dv = 4.0;
+    registerParameter(mFilterMomentsState.mVarianceBoostFactor);
 
     // Set atrous state vars
 
     mAtrousState.mIterationState.resize(mFilterIterations);
     for (auto& iterationState : mAtrousState.mIterationState)
     {
-        iterationState.dvSigmaL = dvSigmaL;
-        iterationState.dvSigmaZ = dvSigmaZ;
-        iterationState.dvSigmaN = dvSigmaN;
+        iterationState.mSigma.dv = dvSigma;
+        registerParameter(iterationState.mSigma);
 
         for (int i = 0; i < 3; i++) {
-            iterationState.dvWeightFunctionParams[i] = dvWeightFunctionParams[i];
+            iterationState.mWeightFunctionParams.dv[i] = dvWeightFunctionParams[i];
         }
+        registerParameter(iterationState.mWeightFunctionParams);
 
-        iterationState.dvLuminanceParams = dvLuminanceParams;
+        iterationState.mLuminanceParams.dv = dvLuminanceParams;
+        registerParameter(iterationState.mLuminanceParams);
 
-        iterationState.dvKernel[0] = 1.0;
-        iterationState.dvKernel[1] = 2.0f / 3.0f;
-        iterationState.dvKernel[2] = 1.0f / 6.0f;
+        iterationState.mKernel.dv[0] = 1.0;
+        iterationState.mKernel.dv[1] = 2.0f / 3.0f;
+        iterationState.mKernel.dv[2] = 1.0f / 6.0f;
+        registerParameter(iterationState.mKernel);
 
-        iterationState.dvVarianceKernel[0][0] = 1.0 / 4.0;
-        iterationState.dvVarianceKernel[0][1] = 1.0 / 8.0;
-        iterationState.dvVarianceKernel[1][0] = 1.0 / 8.0;
-        iterationState.dvVarianceKernel[1][1] = 1.0 / 16.0;
+        iterationState.mVarianceKernel.dv[0][0] = 1.0 / 4.0;
+        iterationState.mVarianceKernel.dv[0][1] = 1.0 / 8.0;
+        iterationState.mVarianceKernel.dv[1][0] = 1.0 / 8.0;
+        iterationState.mVarianceKernel.dv[1][1] = 1.0 / 16.0;
+        registerParameter(iterationState.mVarianceKernel);
 
         iterationState.pgIllumination = createFullscreenTexture(pDevice);
-
-
-        iterationState.pdaSigma = createAccumulationBuffer(pDevice);
-        iterationState.pdaKernel = createAccumulationBuffer(pDevice);
-        iterationState.pdaVarianceKernel = createAccumulationBuffer(pDevice);
-        iterationState.pdaLuminanceParams = createAccumulationBuffer(pDevice);
-        iterationState.pdaWeightFunctionParams = createAccumulationBuffer(pDevice);
-
-
     }
 
     for (int i = 0; i < 2; i++)
@@ -569,33 +562,48 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    runTrainingAndTesting(pRenderContext, renderData); 
+    runDerivativeTest(pRenderContext, renderData); 
 }
 
 void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    //if(!pScene)
-    //    return;
+    if (!mTrained)
+    {
+        trainFilter(pRenderContext);
+        mTrained = true;
+    }
+
+    if(!pScene) return;
 
     SVGFRenderData svgfrd(renderData);
-    while(!mTrainingDataset.loadNext(pRenderContext));
 
     runSvgfFilter(pRenderContext, mTrainingDataset, false);
+}
 
-    pRenderContext->blit(mTrainingDataset.pReferenceTexture->getSRV(), svgfrd.pOutputTexture->getRTV());
+void SVGFPass::trainFilter(RenderContext* pRenderContext)
+{
+    const int K_NUM_EPOCHS = 16;
+
+    for (int epoch = 0; epoch < K_NUM_EPOCHS; epoch++)
+    {
+        while (mTrainingDataset.loadNext(pRenderContext))
+        {
+            runSvgfFilter(pRenderContext, mTrainingDataset, true);
+        }
+
+    }
 }
 
 
 void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    if(!pScene)
-        return;
+    if(!pScene) return;
 
     SVGFRenderData svgfrd(renderData);
 
     mDelta = 0.05f;
 
-    float& valToChange = mAtrousState.mIterationState[mDerivativeIteration].dvSigmaL;
+    float& valToChange = mAtrousState.mIterationState[mDerivativeIteration].mSigma.dv.x;
     float oldval = valToChange;
 
     valToChange = oldval - mDelta;
@@ -630,7 +638,7 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
 
         auto summingCB = summingPass->getRootVar()["SummingCB"];
 
-        summingCB["srcBuf"] = (i == 0 ? mAtrousState.mIterationState[mDerivativeIteration].pdaSigma : pdaPingPongSumBuffer[0]);
+        summingCB["srcBuf"] = (i == 0 ? mAtrousState.mIterationState[mDerivativeIteration].mSigma.da : pdaPingPongSumBuffer[0]);
         summingCB["srcOffset"] = 0;
 
         summingCB["dstBuf"] = pdaPingPongSumBuffer[1];
@@ -657,7 +665,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVG
 {
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[mDerivativeIteration].pdaSigma;
+    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[mDerivativeIteration].mSigma.da;
     perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
     perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
     perImageCB["delta"] = mDelta;
@@ -719,23 +727,23 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
 
         auto& curIterationState = mAtrousState.mIterationState[iteration];
 
-        perImageCB["dvSigmaL"] = curIterationState.dvSigmaL;
-        perImageCB["dvSigmaZ"] = curIterationState.dvSigmaZ;
-        perImageCB["dvSigmaN"] = curIterationState.dvSigmaN;
+        perImageCB["dvSigmaL"] = curIterationState.mSigma.dv.x;
+        perImageCB["dvSigmaZ"] = curIterationState.mSigma.dv.y;
+        perImageCB["dvSigmaN"] = curIterationState.mSigma.dv.z; 
 
-        perImageCB["dvLuminanceParams"] = curIterationState.dvLuminanceParams;
+        perImageCB["dvLuminanceParams"] = curIterationState.mLuminanceParams.dv;
 
         for (int i = 0; i < 3; i++) {
-            perImageCB["dvWeightFunctionParams"][i] = curIterationState.dvWeightFunctionParams[i];
+            perImageCB["dvWeightFunctionParams"][i] = curIterationState.mWeightFunctionParams.dv[i]; 
         }
 
         for (int i = 0; i < 3; i++) {
-            perImageCB["dvKernel"][i] = curIterationState.dvKernel[i];
+            perImageCB["dvKernel"][i] = curIterationState.mKernel.dv[i];
         }
 
         for (int i = 0; i < 2; i++) {
             for (int j = 0; j < 2; j++) {
-                perImageCB["dvVarianceKernel"][i][j] = curIterationState.dvVarianceKernel[i][j];
+                perImageCB["dvVarianceKernel"][i][j] = curIterationState.mVarianceKernel.dv[i][j];
             }
         }
 
@@ -778,38 +786,39 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
     {
         auto& curIterationState = mAtrousState.mIterationState[iteration];
 
-        pRenderContext->clearUAV(curIterationState.pdaSigma->getUAV().get(), Falcor::uint4(0));
-        pRenderContext->clearUAV(curIterationState.pdaKernel->getUAV().get(), Falcor::uint4(0));
-        pRenderContext->clearUAV(curIterationState.pdaVarianceKernel->getUAV().get(), Falcor::uint4(0));
-        pRenderContext->clearUAV(curIterationState.pdaLuminanceParams->getUAV().get(), Falcor::uint4(0));
-        pRenderContext->clearUAV(curIterationState.pdaWeightFunctionParams->getUAV().get(), Falcor::uint4(0));
+        curIterationState.mSigma.clearBuffer(pRenderContext);
+        curIterationState.mKernel.clearBuffer(pRenderContext);
+        curIterationState.mKernel.clearBuffer(pRenderContext);
+        curIterationState.mVarianceKernel.clearBuffer(pRenderContext);
+        curIterationState.mLuminanceParams.clearBuffer(pRenderContext);
+        curIterationState.mWeightFunctionParams.clearBuffer(pRenderContext);
 
         // clear raw output
         pRenderContext->clearUAV(pdaRawOutputBuffer[0]->getUAV().get(), Falcor::uint4(0));
 
-        perImageCB_D["daSigma"] = curIterationState.pdaSigma;
-        perImageCB_D["daKernel"] = curIterationState.pdaKernel;
-        perImageCB_D["daVarianceKernel"] = curIterationState.pdaVarianceKernel;
-        perImageCB_D["daLuminanceParams"] = curIterationState.pdaLuminanceParams;
-        perImageCB_D["daWeightFunctionParams"] = curIterationState.pdaWeightFunctionParams;
+        perImageCB_D["daSigma"] = curIterationState.mSigma.da;
+        perImageCB_D["daKernel"] = curIterationState.mKernel.da;
+        perImageCB_D["daVarianceKernel"] = curIterationState.mVarianceKernel.da;
+        perImageCB_D["daLuminanceParams"] = curIterationState.mLuminanceParams.da;
+        perImageCB_D["daWeightFunctionParams"] = curIterationState.mWeightFunctionParams.da;
 
-        perImageCB["dvSigmaL"] = curIterationState.dvSigmaL;
-        perImageCB["dvSigmaZ"] = curIterationState.dvSigmaZ;
-        perImageCB["dvSigmaN"] = curIterationState.dvSigmaN;
+        perImageCB["dvSigmaL"] = curIterationState.mSigma.dv.x;
+        perImageCB["dvSigmaZ"] = curIterationState.mSigma.dv.y;
+        perImageCB["dvSigmaN"] = curIterationState.mSigma.dv.z;
 
-        perImageCB["dvLuminanceParams"] = curIterationState.dvLuminanceParams;
+        perImageCB["dvLuminanceParams"] = curIterationState.mLuminanceParams.dv;
 
         for (int i = 0; i < 3; i++) {
-            perImageCB["dvWeightFunctionParams"][i] = curIterationState.dvWeightFunctionParams[i];
+            perImageCB["dvWeightFunctionParams"][i] = curIterationState.mWeightFunctionParams.dv[i];
         }
 
         for (int i = 0; i < 3; i++) {
-            perImageCB["dvKernel"][i] = curIterationState.dvKernel[i];
+            perImageCB["dvKernel"][i] = curIterationState.mKernel.dv[i];
         }
 
         for (int i = 0; i < 2; i++) {
             for (int j = 0; j < 2; j++) {
-                perImageCB["dvVarianceKernel"][i][j] = curIterationState.dvVarianceKernel[i][j];
+                perImageCB["dvVarianceKernel"][i][j] = curIterationState.mVarianceKernel.dv[i][j];
             }
         }
 
@@ -835,15 +844,15 @@ void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gMoments"] = mpCurReprojFbo->getColorTexture(1);
 
-    perImageCB["dvSigmaL"] = mFilterMomentsState.dvSigmaL;
-    perImageCB["dvSigmaZ"] = mFilterMomentsState.dvSigmaZ;
-    perImageCB["dvSigmaN"] = mFilterMomentsState.dvSigmaN;
+    perImageCB["dvSigmaL"] = mFilterMomentsState.mSigma.dv.x;
+    perImageCB["dvSigmaZ"] = mFilterMomentsState.mSigma.dv.y;
+    perImageCB["dvSigmaN"] = mFilterMomentsState.mSigma.dv.z;
 
-    perImageCB["dvLuminanceParams"] =mFilterMomentsState. dvLuminanceParams;
-    perImageCB["dvVarianceBoostFactor"] = mFilterMomentsState.dvVarianceBoostFactor;
+    perImageCB["dvLuminanceParams"] = mFilterMomentsState. mLuminanceParams.dv;
+    perImageCB["dvVarianceBoostFactor"] = mFilterMomentsState.mVarianceBoostFactor.dv;
 
     for (int i = 0; i < 3; i++) {
-        perImageCB["dvWeightFunctionParams"][i] = mFilterMomentsState.dvWeightFunctionParams[i];
+        perImageCB["dvWeightFunctionParams"][i] = mFilterMomentsState.mWeightFunctionParams.dv[i];
     }
 
     mFilterMomentsState.sPass->execute(pRenderContext, mpPingPongFbo[0]);
@@ -865,25 +874,25 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
     perImageCB["daMoments"]          = pdaRawOutputBuffer[1];
     perImageCB["daHistoryLen"]    = mFilterMomentsState.pdaHistoryLen;
 
-    perImageCB["dvSigmaL"] = mFilterMomentsState.dvSigmaL;
-    perImageCB["dvSigmaZ"] = mFilterMomentsState.dvSigmaZ;
-    perImageCB["dvSigmaN"] = mFilterMomentsState.dvSigmaN;
+    perImageCB["dvSigmaL"] = mFilterMomentsState.mSigma.dv.x;
+    perImageCB["dvSigmaZ"] = mFilterMomentsState.mSigma.dv.y;
+    perImageCB["dvSigmaN"] = mFilterMomentsState.mSigma.dv.z;
 
-    perImageCB["dvLuminanceParams"] =mFilterMomentsState. dvLuminanceParams;
-    perImageCB["dvVarianceBoostFactor"] = mFilterMomentsState.dvVarianceBoostFactor;
+    perImageCB["dvLuminanceParams"] =mFilterMomentsState.mLuminanceParams.dv;
+    perImageCB["dvVarianceBoostFactor"] = mFilterMomentsState.mVarianceBoostFactor.dv;
 
     for (int i = 0; i < 3; i++) {
-        perImageCB["dvWeightFunctionParams"][i] = mFilterMomentsState.dvWeightFunctionParams[i];
+        perImageCB["dvWeightFunctionParams"][i] = mFilterMomentsState.mWeightFunctionParams.dv[i];
     }
 
     auto perImageCB_D = mFilterMomentsState.dPass->getRootVar()["PerImageCB_D"];
 
     perImageCB_D["drIllumination"] = pdaCompactedBuffer[0];
-    perImageCB_D["daSigma"] = mFilterMomentsState.pdaSigma;
+    perImageCB_D["daSigma"] = mFilterMomentsState.mSigma.da;
 
-    perImageCB_D["daVarianceBoostFactor"] = mFilterMomentsState.pdaVarianceBoostFactor;
-    perImageCB_D["daLuminanceParams"] = mFilterMomentsState.pdaLuminanceParams;
-    perImageCB_D["daWeightFunctionParams"] = mFilterMomentsState.pdaWeightFunctionParams;
+    perImageCB_D["daVarianceBoostFactor"] = mFilterMomentsState.mVarianceBoostFactor.da;
+    perImageCB_D["daLuminanceParams"] = mFilterMomentsState.mLuminanceParams.da;
+    perImageCB_D["daWeightFunctionParams"] = mFilterMomentsState.mWeightFunctionParams.da;
 
     mFilterMomentsState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 
@@ -914,17 +923,17 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> p
     perImageCB["gPrevHistoryLength"] = mpPrevReprojFbo->getColorTexture(2);
 
     // Setup variables for our reprojection pass
-    perImageCB["dvAlpha"] = mReprojectState.dvAlpha;
-    perImageCB["dvMomentsAlpha"] = mReprojectState.dvMomentsAlpha;
+    perImageCB["dvAlpha"] = mReprojectState.mAlpha.dv;
+    perImageCB["dvMomentsAlpha"] = mReprojectState.mMomentsAlpha.dv;
 
-    perImageCB["dvLuminanceParams"] = mReprojectState.dvLuminanceParams;
+    perImageCB["dvLuminanceParams"] = mReprojectState.mLuminanceParams.dv;
 
     for (int i = 0; i < 3; i++) {
-        perImageCB["dvReprojKernel"][i] = mReprojectState.dvKernel[i];
+        perImageCB["dvReprojKernel"][i] = mReprojectState.mKernel.dv[i];
     }
 
     for (int i = 0; i < 4; i++) {
-        perImageCB["dvReprojParams"][i] = mReprojectState.dvParams[i];
+        perImageCB["dvReprojParams"][i] = mReprojectState.mParams.dv[i];
     }
 
     mReprojectState.sPass->execute(pRenderContext, mpCurReprojFbo);
@@ -956,17 +965,17 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
     perImageCB["gPrevHistoryLength"] = mpPrevReprojFbo->getColorTexture(2);
 
     // Setup variables for our reprojection pass
-    perImageCB["dvAlpha"] = mReprojectState.dvAlpha;
-    perImageCB["dvMomentsAlpha"] = mReprojectState.dvMomentsAlpha;
+    perImageCB["dvAlpha"] = mReprojectState.mAlpha.dv;
+    perImageCB["dvMomentsAlpha"] = mReprojectState.mMomentsAlpha.dv;
 
-    perImageCB["dvLuminanceParams"] = mReprojectState.dvLuminanceParams;
+    perImageCB["dvLuminanceParams"] = mReprojectState.mLuminanceParams.dv;
 
     for (int i = 0; i < 3; i++) {
-        perImageCB["dvReprojKernel"][i] = mReprojectState.dvKernel[i];
+        perImageCB["dvReprojKernel"][i] = mReprojectState.mKernel.dv[i];
     }
 
     for (int i = 0; i < 4; i++) {
-        perImageCB["dvReprojParams"][i] = mReprojectState.dvParams[i];
+        perImageCB["dvReprojParams"][i] = mReprojectState.mParams.dv[i];
     }
 
     auto perImageCB_D = mReprojectState.dPass->getRootVar()["PerImageCB_D"];
@@ -975,17 +984,17 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
     perImageCB_D["drMoments"] = pdaCompactedBuffer[1];
     perImageCB_D["drHistoryLen"] = mFilterMomentsState.pdaHistoryLen;
 
-    pRenderContext->clearUAV(mReprojectState.pdaLuminanceParams->getUAV().get(), Falcor::uint4(0));
-    pRenderContext->clearUAV(mReprojectState.pdaReprojKernel->getUAV().get(), Falcor::uint4(0));
-    pRenderContext->clearUAV(mReprojectState.pdaReprojParams->getUAV().get(), Falcor::uint4(0));
-    pRenderContext->clearUAV(mReprojectState.pdaAlpha->getUAV().get(), Falcor::uint4(0));
-    pRenderContext->clearUAV(mReprojectState.pdaMomentsAlpha->getUAV().get(), Falcor::uint4(0));
+    mReprojectState.mLuminanceParams.clearBuffer(pRenderContext);
+    mReprojectState.mKernel.clearBuffer(pRenderContext);
+    mReprojectState.mParams.clearBuffer(pRenderContext);
+    mReprojectState.mAlpha.clearBuffer(pRenderContext);
+    mReprojectState.mMomentsAlpha.clearBuffer(pRenderContext);
 
-    perImageCB_D["daLuminanceParams"] = mReprojectState.pdaLuminanceParams;
-    perImageCB_D["daReprojKernel"] = mReprojectState.pdaReprojKernel;
-    perImageCB_D["daReprojParams"] = mReprojectState.pdaReprojParams;
-    perImageCB_D["daAlpha"] = mReprojectState.pdaAlpha;
-    perImageCB_D["daMomentsAlpha"] = mReprojectState.pdaMomentsAlpha;
+    perImageCB_D["daLuminanceParams"] = mReprojectState.mLuminanceParams.da;
+    perImageCB_D["daReprojKernel"] = mReprojectState.mKernel.da;
+    perImageCB_D["daReprojParams"] = mReprojectState.mParams.da;
+    perImageCB_D["daAlpha"] = mReprojectState.mAlpha.da;
+    perImageCB_D["daMomentsAlpha"] = mReprojectState.mMomentsAlpha.da;
 
     mReprojectState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 }
@@ -1003,6 +1012,14 @@ void SVGFPass::runCompactingPass(RenderContext* pRenderContext, int idx, int n)
     compactingPass->execute(pRenderContext, mpDummyFullscreenFbo);
 }
 
+
+void SVGFPass::registerParameterManual(SVGFParameter<float4>* param, int cnt)
+{
+    param->da = createAccumulationBuffer(mpDevice);
+
+    ParameterMetaInfo pmi{param, cnt};
+    mParameterReflector.push_back(pmi);
+}
 
 // Extracts linear z and its derivative from the linear Z texture and packs
 // the normal from the world normal texture and packes them into the FBO.
@@ -1041,8 +1058,8 @@ void SVGFPass::renderUI(Gui::Widgets& widget)
     widget.text("");
     widget.text("How much history should be used?");
     widget.text("    (alpha; 0 = full reuse; 1 = no reuse)");
-    dirty |= (int)widget.var("Alpha", mReprojectState.dvAlpha, 0.0f, 1.0f, 0.001f);
-    dirty |= (int)widget.var("Moments Alpha", mReprojectState.dvMomentsAlpha, 0.0f, 1.0f, 0.001f);
+    dirty |= (int)widget.var("Alpha", mReprojectState.mAlpha.dv, 0.0f, 1.0f, 0.001f);
+    dirty |= (int)widget.var("Moments Alpha", mReprojectState.mMomentsAlpha.dv, 0.0f, 1.0f, 0.001f);
 
     if (dirty)
         mBuffersNeedClear = true;
