@@ -537,11 +537,10 @@ void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, const SVGFRenderData
             std::swap(mpCurReprojFbo, mpPrevReprojFbo);
             pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(),
                                     renderData.pPrevLinearZAndNormalTexture->getRTV());
-
-            // Blit into the output texture.
-            pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), renderData.pOutputTexture->getRTV());
         }
 
+        // Blit into the output texture.
+        pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), renderData.pOutputTexture->getRTV());
     }
     else
     {
@@ -567,9 +566,10 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
     runTrainingAndTesting(pRenderContext, renderData); 
 }
 
+int frame_idx = 0;
 void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    if (!mTrained)
+    if (false && !mTrained)
     {
         trainFilter(pRenderContext);
         mTrained = true;
@@ -580,6 +580,8 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
     SVGFRenderData svgfrd(renderData);
 
     runSvgfFilter(pRenderContext, svgfrd, true);
+
+    svgfrd.pOutputTexture->captureToFile(0, 0, "C:/FalcorFiles/FrameDump2/" + std::to_string(frame_idx++) + ".exr", Falcor::Bitmap::FileFormat::ExrFile, Falcor::Bitmap::ExportFlags::None, false);
 }
 
 void SVGFPass::trainFilter(RenderContext* pRenderContext)
@@ -614,6 +616,7 @@ void SVGFPass::trainFilter(RenderContext* pRenderContext)
 
             for (int j = 0; j < pmi.mNumElements; j++)
             {
+                std::cout << "Adjusting by " << K_GRADIENT_ADJUSTMENT * gradient[i][j] << std::endl;
                 pmi.mAddress->dv[j] -= K_GRADIENT_ADJUSTMENT * gradient[i][j];
             }
         }
@@ -1081,7 +1084,7 @@ void SVGFPass::reduceParameter(RenderContext* pRenderContext, SVGFParameter<floa
         summingCB["srcBuf"] = (i == 0 ? param.da : pdaPingPongSumBuffer[0]);
         summingCB["srcOffset"] = 0;
 
-        if (i != K_NUM_ITERATIONS - 1)
+        if (i == K_NUM_ITERATIONS - 1)
         {
             // if it is the last pass, write out output to a particular location
             summingCB["dstBuf"] = pdaGradientBuffer;

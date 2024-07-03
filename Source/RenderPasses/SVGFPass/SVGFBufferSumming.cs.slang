@@ -44,7 +44,18 @@ void main(uint3 threadId: SV_GroupThreadID, uint3 groupId: SV_GroupID, uint3 glo
 
         if (threadId.x % (2 * shift) == 0)
         {
-            sum[threadId.x] += sum[threadId.x + shift];
+            float4 r = sum[threadId.x + shift];
+
+            for (int j = 0; j < 4; j++)
+            {
+                // nan protection
+                if (isnan(r[j]))
+                {
+                    r[j] = 0.0;
+                }
+            }
+
+            sum[threadId.x] += r;
         }
     }
 
