@@ -562,7 +562,7 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    runDerivativeTest(pRenderContext, renderData); 
+    runTrainingAndTesting(pRenderContext, renderData); 
 }
 
 void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData)
@@ -573,11 +573,12 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
         mTrained = true;
     }
 
-    if(!pScene) return;
+    //if(!pScene) return;
 
     SVGFRenderData svgfrd(renderData);
 
     runSvgfFilter(pRenderContext, mTrainingDataset, false);
+    pRenderContext->blit(mTrainingDataset.pOutputTexture->getSRV(), svgfrd.pOutputTexture->getRTV());
 }
 
 void SVGFPass::trainFilter(RenderContext* pRenderContext)
