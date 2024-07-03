@@ -32,16 +32,15 @@
 
 namespace {
 
-    const std::string kInputReference = "Reference";
-    const std::string kInputColor = "Color";
-
-    const std::string kInputAlbedo = "Albedo";
-    const std::string kInputEmission = "Emission";
-    const std::string kInputWorldPosition = "WorldPosition";
-    const std::string kInputWorldNormal = "WorldNormal";
-    const std::string kInputPositionNormalFwidth = "PositionNormalFwidth";
-    const std::string kInputLinearZ = "LinearZ";
-    const std::string kInputMotionVec = "MotionVec";
+    const std::string kDatasetReference = "Reference";
+    const std::string kDatasetColor = "Color";
+    const std::string kDatasetAlbedo = "Albedo";
+    const std::string kDatasetEmission = "Emission";
+    const std::string kDatasetWorldPosition = "WorldPosition";
+    const std::string kDatasetWorldNormal = "WorldNormal";
+    const std::string kDatasetPositionNormalFwidth = "PositionNormalFwidth";
+    const std::string kDatasetLinearZ = "LinearZ";
+    const std::string kDatasetMotionVec = "MotionVec";
 
     // we need this because falcor will not execute passes that don't have any marked outputs
     const std::string kOutputDummy = "dummyOut";
@@ -86,15 +85,15 @@ RenderPassReflection DatasetSaver::reflect(const CompileData& compileData)
     // Define the required resources here
     RenderPassReflection reflector;
 
-    reflector.addInput(kInputReference, "ground truth image");
-    reflector.addInput(kInputColor, "image generated in real time w/ 1 spp");
-    reflector.addInput(kInputAlbedo, "albedo input from path tracer");
-    reflector.addInput(kInputEmission, "emission input from gbuffer");
-    reflector.addInput(kInputWorldPosition, "world pos input from gbuffer");
-    reflector.addInput(kInputWorldNormal, "world normal input from gbuffer");
-    reflector.addInput(kInputPositionNormalFwidth, "idk something from gbuffer");
-    reflector.addInput(kInputLinearZ, "depth buffer from gbuffer");
-    reflector.addInput(kInputMotionVec, "motion vec from gbuffer");
+    reflector.addInput(kDatasetReference, "ground truth image");
+    reflector.addInput(kDatasetColor, "image generated in real time w/ 1 spp");
+    reflector.addInput(kDatasetAlbedo, "albedo input from path tracer");
+    reflector.addInput(kDatasetEmission, "emission input from gbuffer");
+    reflector.addInput(kDatasetWorldPosition, "world pos input from gbuffer");
+    reflector.addInput(kDatasetWorldNormal, "world normal input from gbuffer");
+    reflector.addInput(kDatasetPositionNormalFwidth, "idk something from gbuffer");
+    reflector.addInput(kDatasetLinearZ, "depth buffer from gbuffer");
+    reflector.addInput(kDatasetMotionVec, "motion vec from gbuffer");
 
     reflector.addOutput(kOutputDummy, "dummy output");
 
@@ -112,15 +111,15 @@ void DatasetSaver::execute(RenderContext* pRenderContext, const RenderData& rend
     {
         setStorageKey(std::to_string(currentStorageIndex++));
 
-        storeImage(pRenderContext, renderData, kInputReference);
-        storeImage(pRenderContext, renderData, kInputColor);
-        storeImage(pRenderContext, renderData, kInputAlbedo);
-        storeImage(pRenderContext, renderData, kInputEmission);
-        storeImage(pRenderContext, renderData, kInputWorldPosition);
-        storeImage(pRenderContext, renderData, kInputWorldNormal);
-        storeImage(pRenderContext, renderData, kInputPositionNormalFwidth);
-        storeImage(pRenderContext, renderData, kInputLinearZ);
-        storeImage(pRenderContext, renderData, kInputMotionVec);
+        storeImage(pRenderContext, renderData, kDatasetReference);
+        storeImage(pRenderContext, renderData, kDatasetColor);
+        storeImage(pRenderContext, renderData, kDatasetAlbedo);
+        storeImage(pRenderContext, renderData, kDatasetEmission);
+        storeImage(pRenderContext, renderData, kDatasetWorldPosition);
+        storeImage(pRenderContext, renderData, kDatasetWorldNormal);
+        storeImage(pRenderContext, renderData, kDatasetPositionNormalFwidth);
+        storeImage(pRenderContext, renderData, kDatasetLinearZ);
+        storeImage(pRenderContext, renderData, kDatasetMotionVec);
     }
 }
 
