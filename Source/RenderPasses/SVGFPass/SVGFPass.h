@@ -130,7 +130,8 @@ private:
     void computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, bool updateInternalBuffers);
 
     void runSvgfFilter(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool shouldCollectDerivatives);
-    void computeDerivatives(RenderContext* pRenderContext, const SVGFRenderData& renderData);
+    void computeDerivatives(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool useLoss);
+    void computeLoss(RenderContext* pRenderContext, const SVGFRenderData& renderData);
     void computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pResultantImage, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture);
     void computeDerivAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, ref<Texture> pOutputTexture);
     void computeDerivFilteredMoments(RenderContext* pRenderContext);
@@ -202,8 +203,6 @@ private:
         registerParameterManual((SVGFParameter<float4>*)&param, sizeof(T) / sizeof(float));
     }
 
-
-
     // we want to optimize parameters per pass to get a little bit of extra tuning
     // da is short for derivative accum
 
@@ -271,9 +270,14 @@ private:
 
     struct {
         ref<Buffer> pdaIllumination;
-        ref<Buffer> pdrFilteredImage;
 
         ref<FullScreenPass> sPass;
         ref<FullScreenPass> dPass;
     } mFinalModulateState;
+
+    struct
+    {
+        ref<Buffer> pdaFilteredImage;
+        ref<FullScreenPass> dPass;
+    } mLossState;
 };

@@ -7,7 +7,10 @@ target_sources(SVGFPass PRIVATE
 
     SVGFBufferCompacting.ps.slang
     SVGFBufferSumming.cs.slang
+
     SVGFCommon.slang
+
+    SVGFDerivativeVerify.ps.slang
 
     SVGFFilterMomentsC.slang
     SVGFFilterMomentsD.ps.slang
@@ -17,6 +20,8 @@ target_sources(SVGFPass PRIVATE
     SVGFFinalModulateD.ps.slang
     SVGFFinalModulateS.ps.slang
 
+    SVGFLoss.ps.slang
+
     SVGFPackLinearZAndNormal.ps.slang
     SVGFPass.cpp
     SVGFPass.h
@@ -25,7 +30,6 @@ target_sources(SVGFPass PRIVATE
     SVGFReprojectD.ps.slang
     SVGFReprojectS.ps.slang
 
-    SVGFDerivativeVerify.ps.slang
 )
 
 target_copy_shaders(SVGFPass RenderPasses/SVGFPass)

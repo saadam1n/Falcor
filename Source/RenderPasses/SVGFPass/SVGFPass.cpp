@@ -47,7 +47,9 @@ namespace
     const char kAtrousShaderD[]               = "RenderPasses/SVGFPass/SVGFAtrousD.ps.slang";
 
     const char kBufferShaderCompacting[]      = "RenderPasses/SVGFPass/SVGFBufferCompacting.ps.slang";
-    const char kBufferShaderSumming[]      = "RenderPasses/SVGFPass/SVGFBufferSumming.cs.slang";
+    const char kBufferShaderSumming[]         = "RenderPasses/SVGFPass/SVGFBufferSumming.cs.slang";
+
+    const char kDerivativeVerifyShader[]      = "RenderPasses/SVGFPass/SVGFDerivativeVerify.ps.slang";
 
     const char kFilterMomentShaderS[]         = "RenderPasses/SVGFPass/SVGFFilterMomentsS.ps.slang";
     const char kFilterMomentShaderD[]         = "RenderPasses/SVGFPass/SVGFFilterMomentsD.ps.slang";
@@ -55,7 +57,7 @@ namespace
     const char kFinalModulateShaderS[]        = "RenderPasses/SVGFPass/SVGFFinalModulateS.ps.slang";
     const char kFinalModulateShaderD[]        = "RenderPasses/SVGFPass/SVGFFinalModulateD.ps.slang";
 
-    const char kDerivativeVerifyShader[]      = "RenderPasses/SVGFPass/SVGFDerivativeVerify.ps.slang";
+    const char kLossShader[]                  = "RenderPasses/SVGFPass/SVGFLoss.ps.slang";
 
     // Names of valid entries in the parameter dictionary.
     const char kEnabled[] = "Enabled";
@@ -240,6 +242,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     compactingPass = FullScreenPass::create(mpDevice, kBufferShaderCompacting);
     summingPass = ComputePass::create(mpDevice, kBufferShaderSumming);
 
+    mLossState.dPass = FullScreenPass::create(mpDevice, kLossShader);
 
     mpDerivativeVerify = FullScreenPass::create(mpDevice, kDerivativeVerifyShader);
     mpFuncOutputLower =  make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
@@ -330,10 +333,10 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
 
     // set final modulate state vars
     mFinalModulateState.pdaIllumination = createAccumulationBuffer(pDevice);
-    mFinalModulateState.pdrFilteredImage = createAccumulationBuffer(pDevice);
 
+    // set loss vars
+    mLossState.pdaFilteredImage = createAccumulationBuffer(pDevice);
 
-    FALCOR_ASSERT(mFinalModulateState.pdaIllumination &&  mFinalModulateState.pdrFilteredImage);
 
     mReadbackBuffer = createAccumulationBuffer(pDevice, sizeof(float4), true);
 
@@ -561,7 +564,7 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    runDerivativeTest(pRenderContext, renderData); 
+    runTrainingAndTesting(pRenderContext, renderData); 
 }
 
 void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData)
@@ -588,8 +591,9 @@ void SVGFPass::trainFilter(RenderContext* pRenderContext)
     {
         while (mTrainingDataset.loadNext(pRenderContext))
         {
-            runSvgfFilter(pRenderContext, mTrainingDataset, true);
-            computeDerivatives(pRenderContext, mTrainingDataset);
+            // for now, we won't have temporal SVGF
+            runSvgfFilter(pRenderContext, mTrainingDataset, false);
+            computeDerivatives(pRenderContext, mTrainingDataset, true);
         }
 
         // now accumulate everything
@@ -644,7 +648,7 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
     valToChange = oldval;
      
     runSvgfFilter(pRenderContext, svgfrd, true);
-    computeDerivatives(pRenderContext, svgfrd);
+    computeDerivatives(pRenderContext, svgfrd, false);
     computeDerivVerification(pRenderContext, svgfrd);
     pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(1)->getSRV(),  renderData.getTexture(kOutputFdCol)->getRTV());
     pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(2)->getSRV(),  renderData.getTexture(kOutputBdCol)->getRTV());
@@ -701,12 +705,24 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVG
 
 
 // I'll move parts of this off to other function as need be
-void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const SVGFRenderData& renderData)
+void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool useLoss)
 {
     ref<Texture> pIllumTexture = mpPingPongFbo[0]->getColorTexture(0);
 
 
     if (mFilterEnabled) {
+        if (useLoss)
+        {
+            computeLoss(pRenderContext, renderData);
+        }
+        else
+        {
+            // set everything to 1.0 (except the alpha channel)
+            float4 defaultDerivative = float4(1.0, 1.0, 1.0, 0.0);
+            uint4* dPtr = (uint4*)&defaultDerivative;
+            pRenderContext->clearUAV(mLossState.pdaFilteredImage->getUAV().get(), *dPtr);
+        }
+
         computeDerivFinalModulate(pRenderContext, renderData.pOutputTexture, pIllumTexture, renderData.pAlbedoTexture, renderData.pEmissionTexture);
 
         // now, the derivative is stored in mFinalModulateState.pdaIllum
@@ -725,6 +741,19 @@ void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const SVGFRende
     }
 }
 
+void SVGFPass::computeLoss(RenderContext* pRenderContext, const SVGFRenderData& renderData)
+{
+    auto perImageCB = mLossState.dPass->getRootVar()["PerImageCB"];
+
+    perImageCB["filteredImage"] = renderData.pOutputTexture;
+    perImageCB["referenceImage"] = renderData.pReferenceTexture;
+
+    perImageCB["pdaFilteredImage"] = mLossState.pdaFilteredImage;
+
+    mLossState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
+}
+
+
 void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pOutputTexture, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture) {
     pRenderContext->clearUAV(mFinalModulateState.pdaIllumination->getUAV().get(), Falcor::uint4(0));
 
@@ -735,7 +764,7 @@ void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Text
     perImageCB["daIllumination"] = mFinalModulateState.pdaIllumination;
 
     auto perImageCB_D = mFinalModulateState.dPass->getRootVar()["PerImageCB_D"];
-    perImageCB_D["drFilteredImage"] =  mFinalModulateState.pdrFilteredImage; // uh placehold for now
+    perImageCB_D["drFilteredImage"] =  mLossState.pdaFilteredImage;
 
     mFinalModulateState.dPass->execute(pRenderContext, mpDerivativeVerifyFbo);
 }
