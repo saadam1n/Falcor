@@ -479,7 +479,7 @@ void SVGFPass::compile(RenderContext* pRenderContext, const CompileData& compile
     mBuffersNeedClear = true;
 }
 
-void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool shouldCollectDerivatives)
+void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool updateInternalBuffers)
 {
     FALCOR_ASSERT(
         mpFilteredIlluminationFbo && mpFilteredIlluminationFbo->getWidth() == pAlbedoTexture->getWidth() &&
@@ -518,7 +518,7 @@ void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, const SVGFRenderData
         // in mpPingPongFbo[0].  Along the way (or at the end, depending on
         // the value of mFeedbackTap), save the filtered illumination for
         // next time into mpFilteredPastFbo.
-        computeAtrousDecomposition(pRenderContext, renderData.pAlbedoTexture, shouldCollectDerivatives);
+        computeAtrousDecomposition(pRenderContext, renderData.pAlbedoTexture, updateInternalBuffers);
 
         // Compute albedo * filtered illumination and add emission back in.
         auto perImageCB = mFinalModulateState.sPass->getRootVar()["PerImageCB"];
@@ -527,10 +527,8 @@ void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, const SVGFRenderData
         perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
         mFinalModulateState.sPass->execute(pRenderContext, mpFinalFbo);
 
-        if (shouldCollectDerivatives)
+        if (updateInternalBuffers)
         {
-            computeDerivatives(pRenderContext, renderData);
-
             // Swap resources so we're ready for next frame.
             // only do it though if we are calculating derivaitves so we don't screw up our results from the finite diff pass
             std::swap(mpCurReprojFbo, mpPrevReprojFbo);
@@ -563,7 +561,7 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    runTrainingAndTesting(pRenderContext, renderData); 
+    runDerivativeTest(pRenderContext, renderData); 
 }
 
 void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData)
@@ -578,7 +576,7 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
 
     SVGFRenderData svgfrd(renderData);
 
-    runSvgfFilter(pRenderContext, svgfrd, false);
+    runSvgfFilter(pRenderContext, svgfrd, true);
 }
 
 void SVGFPass::trainFilter(RenderContext* pRenderContext)
@@ -591,6 +589,7 @@ void SVGFPass::trainFilter(RenderContext* pRenderContext)
         while (mTrainingDataset.loadNext(pRenderContext))
         {
             runSvgfFilter(pRenderContext, mTrainingDataset, true);
+            computeDerivatives(pRenderContext, mTrainingDataset);
         }
 
         // now accumulate everything
@@ -607,12 +606,11 @@ void SVGFPass::trainFilter(RenderContext* pRenderContext)
 
         for (int i = 0; i < mParameterReflector.size(); i++)
         {
-            int offset = i * sizeof(float4);
             auto& pmi = mParameterReflector[i];
 
             for (int j = 0; j < pmi.mNumElements; j++)
             {
-                pmi.mAddress->dv[j] -= K_GRADIENT_ADJUSTMENT * gradient[offset][j];
+                pmi.mAddress->dv[j] -= K_GRADIENT_ADJUSTMENT * gradient[i][j];
             }
         }
 
@@ -646,6 +644,7 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
     valToChange = oldval;
      
     runSvgfFilter(pRenderContext, svgfrd, true);
+    computeDerivatives(pRenderContext, svgfrd);
     computeDerivVerification(pRenderContext, svgfrd);
     pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(1)->getSRV(),  renderData.getTexture(kOutputFdCol)->getRTV());
     pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(2)->getSRV(),  renderData.getTexture(kOutputBdCol)->getRTV());
