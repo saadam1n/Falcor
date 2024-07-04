@@ -208,6 +208,8 @@ void SVGFTrainingDataset::loadSampleBuffer(RenderContext* pRenderContext, ref<Te
     pRenderContext->updateSubresourceData(tex.get(), 0, (const void*)bitmap->getData());
 }
 
+#define registerParameter(x) registerParameterUM(x, #x)
+
 SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), mTrainingDataset(pDevice, "C:/FalcorFiles/Dataset0")
 {
 
@@ -269,7 +271,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mReprojectState.mKernel.dv[2] = 1.0;
     registerParameter(mReprojectState.mKernel);
 
-    mReprojectState.pPrevIllum = createFullscreenTexture(pDevice);
+    mReprojectState.pPrevFiltered = createFullscreenTexture(pDevice);
 
     // set filter moments params
     mFilterMomentsState.pdaHistoryLen = createAccumulationBuffer(pDevice);
@@ -569,7 +571,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 int frame_idx = 0;
 void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    if (false && !mTrained)
+    if (!mTrained)
     {
         trainFilter(pRenderContext);
         mTrained = true;
@@ -581,16 +583,22 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
 
     runSvgfFilter(pRenderContext, svgfrd, true);
 
-    svgfrd.pOutputTexture->captureToFile(0, 0, "C:/FalcorFiles/FrameDump2/" + std::to_string(frame_idx++) + ".exr", Falcor::Bitmap::FileFormat::ExrFile, Falcor::Bitmap::ExportFlags::None, false);
+    svgfrd.pOutputTexture->captureToFile(0, 0, "C:/FalcorFiles/FrameDump3/" + std::to_string(frame_idx++) + ".exr", Falcor::Bitmap::FileFormat::ExrFile, Falcor::Bitmap::ExportFlags::None, false);
 }
 
 void SVGFPass::trainFilter(RenderContext* pRenderContext)
 {
-    const int K_NUM_EPOCHS = 16;
-    const float K_GRADIENT_ADJUSTMENT = 1.0f;
+    const int K_NUM_EPOCHS = 512;
+    const float K_GRADIENT_ADJUSTMENT = 0.000002f;
 
     for (int epoch = 0; epoch < K_NUM_EPOCHS; epoch++)
     {
+        // first clear all our buffers
+        for (int i = 0; i < mParameterReflector.size(); i++)
+        {
+            mParameterReflector[i].mAddress->clearBuffer(pRenderContext);
+        }
+
         while (mTrainingDataset.loadNext(pRenderContext))
         {
             // for now, we won't have temporal SVGF
@@ -608,20 +616,29 @@ void SVGFPass::trainFilter(RenderContext* pRenderContext)
         // now wait for it to execute and download it
         pRenderContext->copyBufferRegion(mReadbackBuffer.get(), 0, pdaGradientBuffer.get(), 0, mParameterReflector.size() * sizeof(float4));
         pRenderContext->submit(true);
-        float4* gradient = (float4*)mReadbackBuffer->map();
 
-        for (int i = 0; i < mParameterReflector.size(); i++)
+        // adjust values
         {
-            auto& pmi = mParameterReflector[i];
+            float4* gradient = (float4*)mReadbackBuffer->map();
 
-            for (int j = 0; j < pmi.mNumElements; j++)
+            std::cout << "Running epoch " << epoch << "\n";
+            for (int i = 0; i < mParameterReflector.size(); i++)
             {
-                std::cout << "Adjusting by " << K_GRADIENT_ADJUSTMENT * gradient[i][j] << std::endl;
-                pmi.mAddress->dv[j] -= K_GRADIENT_ADJUSTMENT * gradient[i][j];
+                auto& pmi = mParameterReflector[i];
+
+                for (int j = 0; j < pmi.mNumElements; j++)
+                {
+                    std::cout << "\tAdjusting\t" << pmi.name << "\tby " << K_GRADIENT_ADJUSTMENT * gradient[i][j] << "\n";
+                    pmi.mAddress->dv[j] -= K_GRADIENT_ADJUSTMENT * gradient[i][j];
+                }
             }
+            std::cout << "\n\n\n\n\n\n" << std::endl;
+
+            mReadbackBuffer->unmap();
         }
 
-        mReadbackBuffer->unmap();
+        // keep a copy of our output
+        //mTrainingDataset.pOutputTexture->captureToFile(0, 0, "C:/FalcorFiles/TrainingDump/" + std::to_string(epoch) + ".exr", Falcor::Bitmap::FileFormat::ExrFile, Falcor::Bitmap::ExportFlags::None, false);
     }
 }
 
@@ -772,7 +789,7 @@ void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Text
     mFinalModulateState.dPass->execute(pRenderContext, mpDerivativeVerifyFbo);
 }
 
-void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, bool nonFiniteDiffPass)
+void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, bool updateInternalBuffers)
 {
     auto perImageCB = mAtrousState.sPass->getRootVar()["PerImageCB"];
 
@@ -807,8 +824,7 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
 
         ref<Fbo> curTargetFbo = mpPingPongFbo[1];
         // keep a copy of our input for backwards differation
-        if(nonFiniteDiffPass)
-            pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), curIterationState.pgIllumination->getRTV());
+        pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), curIterationState.pgIllumination->getRTV());
 
         perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
         perImageCB["gStepSize"] = 1 << iteration;
@@ -817,7 +833,7 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
         mAtrousState.sPass->execute(pRenderContext, curTargetFbo);
 
         // store the filtered color for the feedback path
-        if (nonFiniteDiffPass && iteration == std::min(mFeedbackTap, mFilterIterations - 1))
+        if (updateInternalBuffers && iteration == std::min(mFeedbackTap, mFilterIterations - 1))
         {
             pRenderContext->blit(curTargetFbo->getColorTexture(0)->getSRV(), mpFilteredPastFbo->getRenderTargetView(0));
         }
@@ -825,7 +841,7 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
         std::swap(mpPingPongFbo[0], mpPingPongFbo[1]);
     }
 
-    if (nonFiniteDiffPass && mFeedbackTap < 0)
+    if (updateInternalBuffers && mFeedbackTap < 0)
     {
         pRenderContext->blit(mpCurReprojFbo->getColorTexture(0)->getSRV(), mpFilteredPastFbo->getRenderTargetView(0));
     }
@@ -842,13 +858,6 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
     for (int iteration = mFilterIterations - 1; iteration >= 0; iteration--)
     {
         auto& curIterationState = mAtrousState.mIterationState[iteration];
-
-        curIterationState.mSigma.clearBuffer(pRenderContext);
-        curIterationState.mKernel.clearBuffer(pRenderContext);
-        curIterationState.mKernel.clearBuffer(pRenderContext);
-        curIterationState.mVarianceKernel.clearBuffer(pRenderContext);
-        curIterationState.mLuminanceParams.clearBuffer(pRenderContext);
-        curIterationState.mWeightFunctionParams.clearBuffer(pRenderContext);
 
         // clear raw output
         pRenderContext->clearUAV(pdaRawOutputBuffer[0]->getUAV().get(), Falcor::uint4(0));
@@ -996,7 +1005,7 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> p
     mReprojectState.sPass->execute(pRenderContext, mpCurReprojFbo);
 
     // save a copy of our past filtration for backwards differentiation
-    pRenderContext->blit(mpFilteredPastFbo->getColorTexture(0)->getSRV(), mReprojectState.pPrevIllum->getRTV());
+    pRenderContext->blit(mpFilteredPastFbo->getColorTexture(0)->getSRV(), mReprojectState.pPrevFiltered->getRTV());
 }
 
 void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture,
@@ -1015,7 +1024,7 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
     perImageCB["gEmission"]      = pEmissionTexture;
     perImageCB["gAlbedo"]        = pAlbedoTexture;
     perImageCB["gPositionNormalFwidth"] = pPositionNormalFwidthTexture;
-    perImageCB["gPrevIllum"]     = mReprojectState.pPrevIllum;
+    perImageCB["gPrevIllum"]     = mReprojectState.pPrevFiltered;
     perImageCB["gPrevMoments"]   = mpPrevReprojFbo->getColorTexture(1);
     perImageCB["gLinearZAndNormal"]       = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gPrevLinearZAndNormal"]   = pPrevLinearZTexture;
@@ -1040,12 +1049,6 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
     perImageCB_D["drIllumination"] = pdaCompactedBuffer[0];
     perImageCB_D["drMoments"] = pdaCompactedBuffer[1];
     perImageCB_D["drHistoryLen"] = mFilterMomentsState.pdaHistoryLen;
-
-    mReprojectState.mLuminanceParams.clearBuffer(pRenderContext);
-    mReprojectState.mKernel.clearBuffer(pRenderContext);
-    mReprojectState.mParams.clearBuffer(pRenderContext);
-    mReprojectState.mAlpha.clearBuffer(pRenderContext);
-    mReprojectState.mMomentsAlpha.clearBuffer(pRenderContext);
 
     perImageCB_D["daLuminanceParams"] = mReprojectState.mLuminanceParams.da;
     perImageCB_D["daReprojKernel"] = mReprojectState.mKernel.da;
@@ -1105,11 +1108,11 @@ void SVGFPass::reduceParameter(RenderContext* pRenderContext, SVGFParameter<floa
 }
 
 
-void SVGFPass::registerParameterManual(SVGFParameter<float4>* param, int cnt)
+void SVGFPass::registerParameterManual(SVGFParameter<float4>* param, int cnt, const std::string& name)
 {
     param->da = createAccumulationBuffer(mpDevice);
 
-    ParameterMetaInfo pmi{param, cnt};
+    ParameterMetaInfo pmi{param, cnt, name};
     mParameterReflector.push_back(pmi);
 }
 

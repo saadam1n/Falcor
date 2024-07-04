@@ -34,6 +34,15 @@ void main(uint3 threadId: SV_GroupThreadID, uint3 groupId: SV_GroupID, uint3 glo
 {
     sum[threadId.x] = read(globalId.x);
 
+    for (int i = 0; i < 4; i++)
+    {
+        if (isnan(sum[threadId.x][i]))
+        {
+            // clear any nans
+            sum[threadId.x][i] = 0.0f;
+        }
+    }
+
     // parallel reduction
     for (int i = 0; i < 10; i++)
     {
@@ -44,18 +53,7 @@ void main(uint3 threadId: SV_GroupThreadID, uint3 groupId: SV_GroupID, uint3 glo
 
         if (threadId.x % (2 * shift) == 0)
         {
-            float4 r = sum[threadId.x + shift];
-
-            for (int j = 0; j < 4; j++)
-            {
-                // nan protection
-                if (isnan(r[j]))
-                {
-                    r[j] = 0.0;
-                }
-            }
-
-            sum[threadId.x] += r;
+            sum[threadId.x] += sum[threadId.x + shift];
         }
     }
 

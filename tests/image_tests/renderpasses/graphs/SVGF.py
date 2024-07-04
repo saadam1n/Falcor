@@ -32,6 +32,8 @@ def render_graph_SVGF():
     g.markOutput("SVGFPass.FdCol")
     g.markOutput("SVGFPass.BdCol")
 
+    #g.markOutput("ToneMapper.dst")
+
     g.markOutput("ToneMapper.dst")
     g.markOutput("SVGFPass.Filtered image")
     g.markOutput("SVGFPass.DebugBuf")

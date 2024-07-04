@@ -129,7 +129,7 @@ private:
     void computeFilteredMoments(RenderContext* pRenderContext);
     void computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, bool updateInternalBuffers);
 
-    void runSvgfFilter(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool shouldCollectDerivatives);
+    void runSvgfFilter(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool updateInternalBuffers);
     void computeDerivatives(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool useLoss);
     void computeLoss(RenderContext* pRenderContext, const SVGFRenderData& renderData);
     void computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pResultantImage, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture);
@@ -190,17 +190,18 @@ private:
         // float4 is max allowed size
         SVGFParameter<float4>* mAddress;
         int mNumElements;
+        std::string name;
     };
     std::vector<ParameterMetaInfo> mParameterReflector;
 
     //  manually registers parameter (but it still is auto trained)
-    void registerParameterManual(SVGFParameter<float4>* param, int cnt);
+    void registerParameterManual(SVGFParameter<float4>* param, int cnt, const std::string& name);
 
     // registers parameter into list of parameters so we automatically train it
     template<typename T>
-    void registerParameter(SVGFParameter<T>& param)
+    void registerParameterUM(SVGFParameter<T>& param, const std::string& name)
     {
-        registerParameterManual((SVGFParameter<float4>*)&param, sizeof(T) / sizeof(float));
+        registerParameterManual((SVGFParameter<float4>*)&param, sizeof(T) / sizeof(float), name);
     }
 
     // we want to optimize parameters per pass to get a little bit of extra tuning
@@ -215,7 +216,7 @@ private:
         ref<Texture> ptHistoryLen;
         ref<Texture> ptMoments;
 
-        ref<Texture> pPrevIllum;
+        ref<Texture> pPrevFiltered;
 
         SVGFParameter<float> mAlpha;
         SVGFParameter<float> mMomentsAlpha;

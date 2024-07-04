@@ -43,7 +43,13 @@ float computeWeight(
     const float weightZ       = (phiDepth == 0) ? 0.0f : abs(depthCenter - depthP) / phiDepth;
     const float weightLillum  = weightParams[1] * abs(luminanceIllumCenter - luminanceIllumP) / phiIllum;
 
-    const float weightIllum   = exp(-weightParams[2] * (max(weightLillum, 0.0) + max(weightZ, 0.0))) * weightNormal;
+    float weightIllum   = exp(-weightParams[2] * (max(weightLillum, 0.0) + max(weightZ, 0.0))) * weightNormal;
+
+    // nan protection, I am not sure if this is the source of nans
+    if (isnan(weightIllum))
+    {
+        weightIllum = 0.0f; 
+    }
 
     return weightIllum;
 }
