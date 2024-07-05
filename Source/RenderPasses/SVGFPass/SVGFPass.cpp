@@ -92,6 +92,8 @@ namespace
     const char kOutputFuncUpper[] = "FuncUpper";
     const char kOutputFdCol[] = "FdCol";
     const char kOutputBdCol[] = "BdCol";
+    const char kOutputReference[] = "Reference";
+    const char kOutputLoss[] = "Loss";
 
     // Stuff from dataset
     const std::string kDatasetReference = "Reference";
@@ -153,10 +155,13 @@ SVGFRenderData::SVGFRenderData(const RenderData& renderData) {
     pOutputTexture = renderData.getTexture(kOutputBufferFilteredImage);
     pDebugTexture = renderData.getTexture(kOutputDebugBuffer);
     pDerivVerifyTexture = renderData.getTexture(kOutputDerivVerifyBuf);
+    pLossTexture = renderData.getTexture(kOutputLoss);
+    pReferenceTexture = renderData.getTexture(kOutputReference);
 }
 
 SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, const std::string& folder) : mFolder(folder), mSampleIdx(0) {
     pReferenceTexture = createFullscreenTexture(pDevice);
+    pLossTexture = createFullscreenTexture(pDevice);
     pAlbedoTexture = createFullscreenTexture(pDevice);
     pColorTexture = createFullscreenTexture(pDevice);
     pEmissionTexture = createFullscreenTexture(pDevice);
@@ -339,11 +344,14 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     // set loss vars
     mLossState.pdaFilteredImage = createAccumulationBuffer(pDevice);
 
-
-    mReadbackBuffer = createAccumulationBuffer(pDevice, sizeof(float4), true);
+    for (int i = 0; i < 2; i++)
+    {
+        mReadbackBuffer[i] = createAccumulationBuffer(pDevice, sizeof(float4), true);
+    }
 
     mAtrousState.mSaveIllum = createFullscreenTexture(pDevice, ResourceFormat::RGBA32Int);
 
+    mpParallelReduction = std::make_unique<ParallelReduction>(mpDevice);
 }
 
 void SVGFPass::clearBuffers(RenderContext* pRenderContext, const SVGFRenderData& renderData)
@@ -475,6 +483,8 @@ RenderPassReflection SVGFPass::reflect(const CompileData& compileData)
     reflector.addOutput(kOutputFuncUpper, "Func upper").format(ResourceFormat::RGBA32Float);
     reflector.addOutput(kOutputFdCol, "FdCol").format(ResourceFormat::RGBA32Float);
     reflector.addOutput(kOutputBdCol, "BdCol").format(ResourceFormat::RGBA32Float);
+    reflector.addOutput(kOutputReference, "Reference").format(ResourceFormat::RGBA32Float);
+    reflector.addOutput(kOutputLoss, "Loss").format(ResourceFormat::RGBA32Float);
 
     return reflector;
 }
@@ -569,10 +579,18 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
     runTrainingAndTesting(pRenderContext, renderData); 
 }
 
-int frame_idx = 0;
+int frame_idx = -1;
 void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData)
 {
     SVGFRenderData svgfrd(renderData);
+
+    if (frame_idx == -1)
+    {
+        mTrainingDataset.loadNext(pRenderContext);
+        mTrainingDataset.loadNext(pRenderContext);
+        frame_idx++;
+    }
+
 
     if (frame_idx == 256 && !mTrained)
     {
@@ -585,7 +603,7 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
         runEpoch(pRenderContext);
         // display current results to screen
         pRenderContext->blit(mTrainingDataset.pOutputTexture->getSRV(), svgfrd.pOutputTexture->getRTV());
-        pRenderContext->blit(mTrainingDataset.pDebugTexture->getSRV(), svgfrd.pDebugTexture->getRTV());
+        pRenderContext->blit(mTrainingDataset.pLossTexture->getSRV(), svgfrd.pLossTexture->getRTV());
     }
     else
     {
@@ -594,8 +612,15 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
         runSvgfFilter(pRenderContext, svgfrd, true);
 
         // compute loss so we can see it on the screen
-        svgfrd.pReferenceTexture = mTrainingDataset.pReferenceTexture;
+        pRenderContext->blit(mTrainingDataset.pReferenceTexture->getSRV(), svgfrd.pReferenceTexture->getRTV());
         computeLoss(pRenderContext, svgfrd);
+
+        float4 loss;
+        mpParallelReduction->execute(pRenderContext, svgfrd.pLossTexture, ParallelReduction::Type::Sum, &loss, mReadbackBuffer[1]);
+
+        // wait for all pending actions to execute
+        pRenderContext->submit(true);
+        std::cout << "Total loss: " << loss.x + loss.y + loss.z << "\n";
 
         frame_idx++;
     }
@@ -603,8 +628,13 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
 
 void SVGFPass::runEpoch(RenderContext* pRenderContext)
 {
-    const int K_NUM_EPOCHS = 128;
-    const float K_GRADIENT_ADJUSTMENT = 0.2f / numPixels;
+    const int K_NUM_EPOCHS = 32;
+
+    const float K_LEARNING_RATE_C1 = 500.0f;
+    const float K_LEARNING_RATE_C2 = numPixels;
+    const float K_LEARNING_RATE_C3 = numPixels * 26;
+
+    const float learningRate = K_LEARNING_RATE_C1 / (K_LEARNING_RATE_C2 + K_LEARNING_RATE_C3 * mEpoch);
 
     if(mEpoch < K_NUM_EPOCHS)
     {
@@ -629,12 +659,17 @@ void SVGFPass::runEpoch(RenderContext* pRenderContext)
         }
 
         // now wait for it to execute and download it
-        pRenderContext->copyBufferRegion(mReadbackBuffer.get(), 0, pdaGradientBuffer.get(), 0, mParameterReflector.size() * sizeof(float4));
+        pRenderContext->copyBufferRegion(mReadbackBuffer[0].get(), 0, pdaGradientBuffer.get(), 0, mParameterReflector.size() * sizeof(float4));
+
+        float4 loss;
+        mpParallelReduction->execute(pRenderContext, mTrainingDataset.pLossTexture, ParallelReduction::Type::Sum, &loss, mReadbackBuffer[1]);
+
+        // wait for all pending actions to execute
         pRenderContext->submit(true);
 
         // adjust values
         {
-            float4* gradient = (float4*)mReadbackBuffer->map();
+            float4* gradient = (float4*)mReadbackBuffer[0]->map();
 
             std::cout << "Running epoch " << mEpoch << "\n";
             for (int i = 0; i < mParameterReflector.size(); i++)
@@ -642,12 +677,15 @@ void SVGFPass::runEpoch(RenderContext* pRenderContext)
                 auto& pmi = mParameterReflector[i];
 
                 // train only the atrous stages now
-                // if(pmi.name.find("iterationState") == std::string::npos) continue;
+                //if(pmi.name.find("VarianceKernel") != std::string::npos) continue;
+                //if(pmi.name.find("WeightFunctionParams") != std::string::npos) continue;
+                if(pmi.name.find("Reproj") != std::string::npos) continue;
+                if(pmi.name.find("Filter") != std::string::npos) continue;
 
                 for (int j = 0; j < pmi.mNumElements; j++)
                 {
-                    std::cout << "\tAdjusting\t" << pmi.name << "\tby " << K_GRADIENT_ADJUSTMENT * gradient[i][j] << "\n";
-                    pmi.mAddress->dv[j] -= K_GRADIENT_ADJUSTMENT * gradient[i][j];
+                    //std::cout << "\tAdjusting\t" << pmi.name << "\tby " << learningRate * gradient[i][j] << "\n";
+                    pmi.mAddress->dv[j] -= learningRate * gradient[i][j];
 
                     // ensure greater than zero
                     if (pmi.mAddress->dv[j] < 0.0f)
@@ -656,9 +694,12 @@ void SVGFPass::runEpoch(RenderContext* pRenderContext)
                     }
                 }
             }
+
+            std::cout << "Total loss: " << loss.x + loss.y + loss.z << "\n";
+
             std::cout << "\n\n\n\n\n\n" << std::endl;
 
-            mReadbackBuffer->unmap();
+            mReadbackBuffer[0]->unmap();
         }
 
         // keep a copy of our output
@@ -731,11 +772,11 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
     }
 
     // written results will be the first index
-    pRenderContext->copyBufferRegion(mReadbackBuffer.get(), 0, pdaPingPongSumBuffer[0].get(), 0, sizeof(float4) * 1);
-    float4* ptr = (float4*)mReadbackBuffer->map();
+    pRenderContext->copyBufferRegion(mReadbackBuffer[0].get(), 0, pdaPingPongSumBuffer[0].get(), 0, sizeof(float4) * 1);
+    float4* ptr = (float4*)mReadbackBuffer[0]->map();
     std::cout << "Par Redc Sum:\t" << ptr[0].x << std::endl;
 
-    mReadbackBuffer->unmap();
+    mReadbackBuffer[0]->unmap();
 
     std::cout << std::endl;
 }
@@ -802,7 +843,7 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, const SVGFRenderData& 
 
     mLossState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 
-    pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(0)->getSRV(), renderData.pDebugTexture->getRTV());
+    pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(0)->getSRV(), renderData.pLossTexture->getRTV());
 }
 
 

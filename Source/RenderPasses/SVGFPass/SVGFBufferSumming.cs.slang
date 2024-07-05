@@ -39,7 +39,7 @@ void main(uint3 threadId: SV_GroupThreadID, uint3 groupId: SV_GroupID, uint3 glo
         if (isnan(sum[threadId.x][i]))
         {
             // clear any nans
-            sum[threadId.x][i] = 0.0f;
+            //sum[threadId.x][i] = 0.0f;
         }
     }
 

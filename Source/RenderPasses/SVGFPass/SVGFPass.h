@@ -29,6 +29,7 @@
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
 #include "Core/Pass/FullScreenPass.h"
+#include "Utils/Algorithm/ParallelReduction.h"
 
 using namespace Falcor;
 
@@ -53,6 +54,7 @@ public:
 
     // only used in training
     ref<Texture> pReferenceTexture;
+    ref<Texture> pLossTexture;
 };
 
 struct SVGFTrainingDataset : public SVGFRenderData
@@ -155,7 +157,7 @@ private:
     float   mVarainceEpsilon     =  1e-4f;
     int mDerivativeIteration     =  0;
 
-    ref<Buffer> mReadbackBuffer;
+    ref<Buffer> mReadbackBuffer[2];
 
     ref<FullScreenPass> mpDerivativeVerify;
     ref<Fbo> mpDerivativeVerifyFbo;
@@ -183,6 +185,8 @@ private:
     ref<Buffer> pdaPingPongSumBuffer[2];
     ref<Buffer> pdaGradientBuffer;
     void reduceParameter(RenderContext* pRenderContext, SVGFParameter<float4>& param, int offset);
+
+    std::unique_ptr<ParallelReduction> mpParallelReduction; 
 
     SVGFTrainingDataset mTrainingDataset;
 
