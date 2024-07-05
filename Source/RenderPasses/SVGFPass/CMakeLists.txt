@@ -7,6 +7,7 @@ target_sources(SVGFPass PRIVATE
 
     SVGFBufferCompacting.ps.slang
     SVGFBufferSumming.cs.slang
+    SVGFBufferToTexture.ps.slang
 
     SVGFCommon.slang
 

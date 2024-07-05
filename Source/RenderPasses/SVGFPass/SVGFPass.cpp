@@ -48,6 +48,7 @@ namespace
 
     const char kBufferShaderCompacting[]      = "RenderPasses/SVGFPass/SVGFBufferCompacting.ps.slang";
     const char kBufferShaderSumming[]         = "RenderPasses/SVGFPass/SVGFBufferSumming.cs.slang";
+    const char kBufferShaderToTexture[]       = "RenderPasses/SVGFPass/SVGFBufferToTexture.ps.slang";
 
     const char kDerivativeVerifyShader[]      = "RenderPasses/SVGFPass/SVGFDerivativeVerify.ps.slang";
 
@@ -248,6 +249,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
 
     compactingPass = FullScreenPass::create(mpDevice, kBufferShaderCompacting);
     summingPass = ComputePass::create(mpDevice, kBufferShaderSumming);
+    bufferToTexturePass = FullScreenPass::create(mpDevice, kBufferShaderToTexture);
 
     mLossState.dPass = FullScreenPass::create(mpDevice, kLossShader);
 
@@ -423,6 +425,13 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         mpDummyFullscreenFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
     }
 
+    {
+        Fbo::Desc desc;
+        desc.setSampleCount(0);
+        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
+        bufferToTextureFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+    }
+
     mBuffersNeedClear = true;
 }
 
@@ -576,7 +585,7 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    runTrainingAndTesting(pRenderContext, renderData); 
+    runDerivativeTest(pRenderContext, renderData); 
 }
 
 int frame_idx = -1;
@@ -679,12 +688,14 @@ void SVGFPass::runEpoch(RenderContext* pRenderContext)
                 // train only the atrous stages now
                 //if(pmi.name.find("VarianceKernel") != std::string::npos) continue;
                 //if(pmi.name.find("WeightFunctionParams") != std::string::npos) continue;
-                if(pmi.name.find("Reproj") != std::string::npos) continue;
-                if(pmi.name.find("Filter") != std::string::npos) continue;
+                //if(pmi.name.find("Reproj") != std::string::npos) continue;
+                //if(pmi.name.find("Filter") != std::string::npos) continue;
+
+                if(pmi.name.find("Reproj") == std::string::npos) continue;
 
                 for (int j = 0; j < pmi.mNumElements; j++)
                 {
-                    //std::cout << "\tAdjusting\t" << pmi.name << "\tby " << learningRate * gradient[i][j] << "\n";
+                    std::cout << "\tAdjusting\t" << pmi.name << "\tby " << learningRate * gradient[i][j] << "\n";
                     pmi.mAddress->dv[j] -= learningRate * gradient[i][j];
 
                     // ensure greater than zero
@@ -722,7 +733,8 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
 
     mDelta = 0.05f;
 
-    float& valToChange = mAtrousState.mIterationState[mDerivativeIteration].mSigma.dv.x;
+    //float& valToChange = mReprojectState.mAlpha.dv;
+    float& valToChange = mFilterMomentsState.mSigma.dv.x;
     float oldval = valToChange;
 
     valToChange = oldval - mDelta;
@@ -749,7 +761,15 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
     std::cout << "Fwd Diff Sum:\t" << getTexSum(pRenderContext, mpDerivativeVerifyFbo->getColorTexture(1)) << std::endl;
     std::cout << "Bwd Diff Sum:\t" << getTexSum(pRenderContext, mpDerivativeVerifyFbo->getColorTexture(2)) << std::endl;
 
+    float4 falcorTest = float4(0.0f);
 
+    mpParallelReduction->execute(pRenderContext, mpDerivativeVerifyFbo->getColorTexture(2), ParallelReduction::Type::Sum, &falcorTest, mReadbackBuffer[1]);
+
+    pRenderContext->submit(true);
+
+    std::cout << "Flr Redc Sum:\t" << falcorTest.x << std::endl;
+
+#if 0
     int numRemaining = numPixels;
     for (int i = 0; i < 3; i++)
     {
@@ -758,8 +778,9 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
 
         auto summingCB = summingPass->getRootVar()["SummingCB"];
 
-        summingCB["srcBuf"] = (i == 0 ? mAtrousState.mIterationState[mDerivativeIteration].mSigma.da : pdaPingPongSumBuffer[0]);
+        summingCB["srcBuf"] = (i == 0 ? mFilterMomentsState.mSigma.da : pdaPingPongSumBuffer[0]);
         summingCB["srcOffset"] = 0;
+        summingCB["srcMax"] = numRemaining;
 
         summingCB["dstBuf"] = pdaPingPongSumBuffer[1];
         summingCB["dstOffset"] = 0;
@@ -777,6 +798,7 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
     std::cout << "Par Redc Sum:\t" << ptr[0].x << std::endl;
 
     mReadbackBuffer[0]->unmap();
+#endif
 
     std::cout << std::endl;
 }
@@ -785,7 +807,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVG
 {
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[mDerivativeIteration].mSigma.da;
+    perImageCB["drBackwardsDiffBuffer"] = mFilterMomentsState.mSigma.da;
     perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
     perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
     perImageCB["delta"] = mDelta;
@@ -1145,8 +1167,13 @@ void SVGFPass::runCompactingPass(RenderContext* pRenderContext, int idx, int n)
     compactingPass->execute(pRenderContext, mpDummyFullscreenFbo);
 }
 
+#define USE_BUILTIN_PARALLEL_REDUCTION
 void SVGFPass::reduceParameter(RenderContext* pRenderContext, SVGFParameter<float4>& param, int offset)
 {
+#ifdef USE_BUILTIN_PARALLEL_REDUCTION
+    bufferToTexturePass->execute(pRenderContext, bufferToTextureFbo);
+    mpParallelReduction->execute<float4>(pRenderContext, bufferToTextureFbo->getColorTexture(0), ParallelReduction::Type::Sum, nullptr, mReadbackBuffer[0], offset);
+#else
     const int K_NUM_ITERATIONS = 3;
 
     int numRemaining = numPixels;
@@ -1178,6 +1205,7 @@ void SVGFPass::reduceParameter(RenderContext* pRenderContext, SVGFParameter<floa
 
         std::swap(pdaPingPongSumBuffer[0], pdaPingPongSumBuffer[1]);
     }
+#endif
 }
 
 

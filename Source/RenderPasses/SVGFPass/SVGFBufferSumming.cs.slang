@@ -4,6 +4,7 @@ cbuffer SummingCB
 {
     RWByteAddressBuffer srcBuf;
     int srcOffset;
+    int srcMax;
 
     RWByteAddressBuffer dstBuf;
     int dstOffset;
@@ -11,12 +12,28 @@ cbuffer SummingCB
 
 float4 read(int idx)
 {
+    if (idx > srcMax)
+    {
+        return float4(0.0f);
+    }
+
     int address = sizeof(float4) * idx + srcOffset;
 
     uint status;
     uint4 raw = srcBuf.Load4(address, status);
 
-    return reinterpret<float4>(raw);
+    float4 val = reinterpret<float4>(raw);
+
+    for (int i = 0; i < 4; i++)
+    {
+        if (isnan(val[i]))
+        {
+            // clear any nans
+            // val[i] = 0.0f;
+        }
+    }
+
+    return val;
 }
 
 void write(int idx, float4 val)
@@ -34,27 +51,17 @@ void main(uint3 threadId: SV_GroupThreadID, uint3 groupId: SV_GroupID, uint3 glo
 {
     sum[threadId.x] = read(globalId.x);
 
-    for (int i = 0; i < 4; i++)
-    {
-        if (isnan(sum[threadId.x][i]))
-        {
-            // clear any nans
-            //sum[threadId.x][i] = 0.0f;
-        }
-    }
-
     // parallel reduction
-    for (int i = 0; i < 10; i++)
+    int offset = 64;
+
+    while (offset > 0)
     {
-        // sync threads
-        GroupMemoryBarrierWithGroupSync();
-
-        int shift = (1 << i);
-
-        if (threadId.x % (2 * shift) == 0)
+        if (threadId.x < offset)
         {
-            sum[threadId.x] += sum[threadId.x + shift];
+            sum[threadId.x] += sum[threadId.x + offset];
         }
+
+        offset /= 2;
     }
 
     if (threadId.x == 0)

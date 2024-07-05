@@ -202,6 +202,9 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out
         if (nValid > 0)
         {
             valid = true;
+
+            totalWeight = max(totalWeight, 1e-6);
+
             prevIllum /= totalWeight;
             prevMoments /= totalWeight;
         }

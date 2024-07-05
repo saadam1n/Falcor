@@ -23,10 +23,9 @@ void main(FullScreenPassVsOut vsOut) {
     DifferentialPair<float> dpAlpha = diffPair(dvAlpha, 0.0);
     DifferentialPair<float> dpMomentsAlpha = diffPair(dvMomentsAlpha, 0.0);
 
-    REPROJ_OUT.Differential diffInput;
-
     const int2 ipos = int2(vsOut.posH.xy);
 
+    REPROJ_OUT.Differential diffInput;
     diffInput.OutIllumination = readDerivBuf4(drIllumination, ipos, gIllumination);
     diffInput.OutMoments = readDerivBuf4(drMoments, ipos, gIllumination).xy;
     diffInput.OutHistoryLength = readDerivBuf4(drHistoryLen, ipos, gIllumination).x;

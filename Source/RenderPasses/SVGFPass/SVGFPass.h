@@ -182,6 +182,8 @@ private:
     void runCompactingPass(RenderContext* pRenderContext, int idx, int n);
 
     ref<ComputePass> summingPass;
+    ref<FullScreenPass> bufferToTexturePass;
+    ref<Fbo> bufferToTextureFbo;
     ref<Buffer> pdaPingPongSumBuffer[2];
     ref<Buffer> pdaGradientBuffer;
     void reduceParameter(RenderContext* pRenderContext, SVGFParameter<float4>& param, int offset);
