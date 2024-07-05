@@ -585,7 +585,7 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    runDerivativeTest(pRenderContext, renderData); 
+    runTrainingAndTesting(pRenderContext, renderData); 
 }
 
 int frame_idx = -1;
@@ -668,11 +668,10 @@ void SVGFPass::runEpoch(RenderContext* pRenderContext)
         }
 
         // now wait for it to execute and download it
-        pRenderContext->copyBufferRegion(mReadbackBuffer[0].get(), 0, pdaGradientBuffer.get(), 0, mParameterReflector.size() * sizeof(float4));
+        // pRenderContext->copyBufferRegion(mReadbackBuffer[0].get(), 0, pdaGradientBuffer.get(), 0, mParameterReflector.size() * sizeof(float4));
 
         float4 loss;
         mpParallelReduction->execute(pRenderContext, mTrainingDataset.pLossTexture, ParallelReduction::Type::Sum, &loss, mReadbackBuffer[1]);
-
         // wait for all pending actions to execute
         pRenderContext->submit(true);
 
@@ -691,7 +690,7 @@ void SVGFPass::runEpoch(RenderContext* pRenderContext)
                 //if(pmi.name.find("Reproj") != std::string::npos) continue;
                 //if(pmi.name.find("Filter") != std::string::npos) continue;
 
-                if(pmi.name.find("Reproj") == std::string::npos) continue;
+                //if(pmi.name.find("Reproj") == std::string::npos) continue;
 
                 for (int j = 0; j < pmi.mNumElements; j++)
                 {
@@ -734,7 +733,7 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
     mDelta = 0.05f;
 
     //float& valToChange = mReprojectState.mAlpha.dv;
-    float& valToChange = mFilterMomentsState.mSigma.dv.x;
+    float& valToChange = mAtrousState.mIterationState[0].mSigma.dv.x;
     float oldval = valToChange;
 
     valToChange = oldval - mDelta;
@@ -807,7 +806,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVG
 {
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mFilterMomentsState.mSigma.da;
+    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[0].mSigma.da;
     perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
     perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
     perImageCB["delta"] = mDelta;
@@ -1171,6 +1170,10 @@ void SVGFPass::runCompactingPass(RenderContext* pRenderContext, int idx, int n)
 void SVGFPass::reduceParameter(RenderContext* pRenderContext, SVGFParameter<float4>& param, int offset)
 {
 #ifdef USE_BUILTIN_PARALLEL_REDUCTION
+    auto conversionCB = bufferToTexturePass->getRootVar()["ConversionCB"];
+
+    conversionCB["drIllumination"] = param.da;
+
     bufferToTexturePass->execute(pRenderContext, bufferToTextureFbo);
     mpParallelReduction->execute<float4>(pRenderContext, bufferToTextureFbo->getColorTexture(0), ParallelReduction::Type::Sum, nullptr, mReadbackBuffer[0], offset);
 #else

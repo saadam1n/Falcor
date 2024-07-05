@@ -1,6 +1,6 @@
 import SVGFCommon;
 
-cbuffer CompactingCB
+cbuffer ConversionCB
 {
     RWByteAddressBuffer drIllumination;
     Texture2D dummy;

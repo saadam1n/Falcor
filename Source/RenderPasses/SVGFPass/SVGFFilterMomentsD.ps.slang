@@ -16,7 +16,7 @@ cbuffer PerImageCB_D
 // compute moments
 void main(FullScreenPassVsOut vsOut)
 {
-    var dpVarianceBoostFactor = diffPair(dvVarianceBoostFactor, 1.0);
+    var dpVarianceBoostFactor = diffPair(dvVarianceBoostFactor, 0.0);
     var dpLuminanceParams = diffPair(dvLuminanceParams, float3(0.0));
     var dpWeightFunctionParams = diffPair(dvWeightFunctionParams, {0.0, 0.0, 0.0});
     var dpSigmaL = diffPair(dvSigmaL, 0.0);
