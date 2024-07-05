@@ -45,12 +45,6 @@ float computeWeight(
 
     float weightIllum   = exp(-weightParams[2] * (max(weightLillum, 0.0) + max(weightZ, 0.0))) * weightNormal;
 
-    // nan protection, I am not sure if this is the source of nans
-    if (isnan(weightIllum))
-    {
-        weightIllum = 0.0f; 
-    }
-
     return weightIllum;
 }
 

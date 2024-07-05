@@ -107,7 +107,8 @@ private:
     ref<Scene> pScene;
 
     bool mTrained = false;
-    void trainFilter(RenderContext* pRenderContext);
+    int mEpoch = 0;
+    void runEpoch(RenderContext* pRenderContext);
 
     void runDerivativeTest(RenderContext* pRenderContext, const RenderData& renderData);
     void runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData);

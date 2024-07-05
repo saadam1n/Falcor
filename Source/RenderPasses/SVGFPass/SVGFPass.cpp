@@ -199,7 +199,7 @@ bool SVGFTrainingDataset::loadNext(RenderContext* pRenderContext)
 
 std::string SVGFTrainingDataset::getSampleBufferPath(const std::string& buffer) const
 {
-    return mFolder + "/" + std::to_string(mSampleIdx) + "-" + buffer + ".exr";
+    return mFolder + std::to_string(mSampleIdx) + "-" + buffer + ".exr";
 }
 
 void SVGFTrainingDataset::loadSampleBuffer(RenderContext* pRenderContext, ref<Texture> tex, const std::string& buffer)
@@ -210,7 +210,7 @@ void SVGFTrainingDataset::loadSampleBuffer(RenderContext* pRenderContext, ref<Te
 
 #define registerParameter(x) registerParameterUM(x, #x)
 
-SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), mTrainingDataset(pDevice, "C:/FalcorFiles/Dataset0")
+SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), mTrainingDataset(pDevice, "C:/FalcorFiles/Dataset0/")
 {
 
     for (const auto& [key, value] : props)
@@ -343,6 +343,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mReadbackBuffer = createAccumulationBuffer(pDevice, sizeof(float4), true);
 
     mAtrousState.mSaveIllum = createFullscreenTexture(pDevice, ResourceFormat::RGBA32Int);
+
 }
 
 void SVGFPass::clearBuffers(RenderContext* pRenderContext, const SVGFRenderData& renderData)
@@ -571,27 +572,41 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 int frame_idx = 0;
 void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    if (!mTrained)
-    {
-        trainFilter(pRenderContext);
-        mTrained = true;
-    }
-
-    if(!pScene) return;
-
     SVGFRenderData svgfrd(renderData);
 
-    runSvgfFilter(pRenderContext, svgfrd, true);
+    if (frame_idx == 256 && !mTrained)
+    {
+        if (mEpoch == 0)
+        {
+            pRenderContext->blit(svgfrd.pPrevLinearZAndNormalTexture->getSRV(), mTrainingDataset.pPrevLinearZAndNormalTexture->getRTV());
+        }
 
-    svgfrd.pOutputTexture->captureToFile(0, 0, "C:/FalcorFiles/FrameDump3/" + std::to_string(frame_idx++) + ".exr", Falcor::Bitmap::FileFormat::ExrFile, Falcor::Bitmap::ExportFlags::None, false);
+
+        runEpoch(pRenderContext);
+        // display current results to screen
+        pRenderContext->blit(mTrainingDataset.pOutputTexture->getSRV(), svgfrd.pOutputTexture->getRTV());
+        pRenderContext->blit(mTrainingDataset.pDebugTexture->getSRV(), svgfrd.pDebugTexture->getRTV());
+    }
+    else
+    {
+        if(!pScene) return;
+
+        runSvgfFilter(pRenderContext, svgfrd, true);
+
+        // compute loss so we can see it on the screen
+        svgfrd.pReferenceTexture = mTrainingDataset.pReferenceTexture;
+        computeLoss(pRenderContext, svgfrd);
+
+        frame_idx++;
+    }
 }
 
-void SVGFPass::trainFilter(RenderContext* pRenderContext)
+void SVGFPass::runEpoch(RenderContext* pRenderContext)
 {
-    const int K_NUM_EPOCHS = 512;
-    const float K_GRADIENT_ADJUSTMENT = 0.000002f;
+    const int K_NUM_EPOCHS = 128;
+    const float K_GRADIENT_ADJUSTMENT = 0.2f / numPixels;
 
-    for (int epoch = 0; epoch < K_NUM_EPOCHS; epoch++)
+    if(mEpoch < K_NUM_EPOCHS)
     {
         // first clear all our buffers
         for (int i = 0; i < mParameterReflector.size(); i++)
@@ -621,15 +636,24 @@ void SVGFPass::trainFilter(RenderContext* pRenderContext)
         {
             float4* gradient = (float4*)mReadbackBuffer->map();
 
-            std::cout << "Running epoch " << epoch << "\n";
+            std::cout << "Running epoch " << mEpoch << "\n";
             for (int i = 0; i < mParameterReflector.size(); i++)
             {
                 auto& pmi = mParameterReflector[i];
+
+                // train only the atrous stages now
+                // if(pmi.name.find("iterationState") == std::string::npos) continue;
 
                 for (int j = 0; j < pmi.mNumElements; j++)
                 {
                     std::cout << "\tAdjusting\t" << pmi.name << "\tby " << K_GRADIENT_ADJUSTMENT * gradient[i][j] << "\n";
                     pmi.mAddress->dv[j] -= K_GRADIENT_ADJUSTMENT * gradient[i][j];
+
+                    // ensure greater than zero
+                    if (pmi.mAddress->dv[j] < 0.0f)
+                    {
+                        pmi.mAddress->dv[j] = 0.0f;
+                    }
                 }
             }
             std::cout << "\n\n\n\n\n\n" << std::endl;
@@ -639,6 +663,12 @@ void SVGFPass::trainFilter(RenderContext* pRenderContext)
 
         // keep a copy of our output
         //mTrainingDataset.pOutputTexture->captureToFile(0, 0, "C:/FalcorFiles/TrainingDump/" + std::to_string(epoch) + ".exr", Falcor::Bitmap::FileFormat::ExrFile, Falcor::Bitmap::ExportFlags::None, false);
+
+        mEpoch++;
+    }
+    else
+    {
+        mTrained = true;
     }
 }
 
@@ -771,6 +801,8 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, const SVGFRenderData& 
     perImageCB["pdaFilteredImage"] = mLossState.pdaFilteredImage;
 
     mLossState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
+
+    pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(0)->getSRV(), renderData.pDebugTexture->getRTV());
 }
 
 
