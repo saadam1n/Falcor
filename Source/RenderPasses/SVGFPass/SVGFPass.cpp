@@ -639,11 +639,10 @@ void SVGFPass::runEpoch(RenderContext* pRenderContext)
 {
     const int K_NUM_EPOCHS = 256;
 
-    const float K_LEARNING_RATE_C1 = 5000.0f;
-    const float K_LEARNING_RATE_C2 = numPixels;
-    const float K_LEARNING_RATE_C3 = numPixels / 20;
+    const float K_LRATE_NUMER = 50000.0f;
+    const float K_LRATE_DENOM = 10.0f;
 
-    const float learningRate = K_LEARNING_RATE_C1 / (K_LEARNING_RATE_C2 + K_LEARNING_RATE_C3 * mEpoch);
+    float learningRate = K_LRATE_NUMER / (K_LRATE_DENOM + mEpoch);
 
     if(mEpoch < K_NUM_EPOCHS)
     {
@@ -707,6 +706,7 @@ void SVGFPass::runEpoch(RenderContext* pRenderContext)
                 }
             }
 
+            std::cout << "Learning rate: " << learningRate << "\n";
             std::cout << "Total loss: " << loss.x + loss.y + loss.z << "\n";
 
             std::cout << "\n\n\n\n\n\n" << std::endl;
