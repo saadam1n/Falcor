@@ -637,11 +637,11 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
 
 void SVGFPass::runEpoch(RenderContext* pRenderContext)
 {
-    const int K_NUM_EPOCHS = 32;
+    const int K_NUM_EPOCHS = 256;
 
-    const float K_LEARNING_RATE_C1 = 500.0f;
+    const float K_LEARNING_RATE_C1 = 5000.0f;
     const float K_LEARNING_RATE_C2 = numPixels;
-    const float K_LEARNING_RATE_C3 = numPixels / 5;
+    const float K_LEARNING_RATE_C3 = numPixels / 20;
 
     const float learningRate = K_LEARNING_RATE_C1 / (K_LEARNING_RATE_C2 + K_LEARNING_RATE_C3 * mEpoch);
 
