@@ -10,5 +10,7 @@ void main(FullScreenPassVsOut vsOut) : SV_TARGET0
 {
     const int2 ipos = int2(vsOut.posH.xy);
 
-    __bwd_diff(final_mod)(vsOut,  float4(1.0f, 1.0f, 1.0f, 0.0f));
+    float4 dIllum = readDerivBuf4(drFilteredImage, ipos, gAlbedo);
+
+    __bwd_diff(final_mod)(vsOut, dIllum);
 }

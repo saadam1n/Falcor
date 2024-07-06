@@ -641,7 +641,7 @@ void SVGFPass::runEpoch(RenderContext* pRenderContext)
 
     const float K_LEARNING_RATE_C1 = 500.0f;
     const float K_LEARNING_RATE_C2 = numPixels;
-    const float K_LEARNING_RATE_C3 = numPixels * 26;
+    const float K_LEARNING_RATE_C3 = numPixels / 5;
 
     const float learningRate = K_LEARNING_RATE_C1 / (K_LEARNING_RATE_C2 + K_LEARNING_RATE_C3 * mEpoch);
 
@@ -689,6 +689,8 @@ void SVGFPass::runEpoch(RenderContext* pRenderContext)
                 //if(pmi.name.find("WeightFunctionParams") != std::string::npos) continue;
                 //if(pmi.name.find("Reproj") != std::string::npos) continue;
                 //if(pmi.name.find("Filter") != std::string::npos) continue;
+
+                //if(pmi.name.find("LuminanceParams") != std::string::npos) continue;
 
                 //if(pmi.name.find("Reproj") == std::string::npos) continue;
 
