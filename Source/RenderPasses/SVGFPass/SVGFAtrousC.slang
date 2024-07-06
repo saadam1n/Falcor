@@ -114,7 +114,7 @@ float4 atrous(FullScreenPassVsOut vsOut,
     // constant samplers to prevent the compiler from generating code which
     // fetches the sampler descriptor from memory for each texture access
     const float4 illuminationCenter = getIllumination(ipos, nsi++);
-    const float lIlluminationCenter = dot(illuminationCenter.rgb, float3(1.0f / 3.0f));
+    const float lIlluminationCenter = dot(illuminationCenter.rgb, luminanceParams);
 
     // variance, filtered using 3x3 gaussin blur
     const float var = computeVarianceCenter(screenSize, ipos, varianceKernel);
@@ -149,7 +149,7 @@ float4 atrous(FullScreenPassVsOut vsOut,
             if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
             {
                 const float4 illuminationP = getIllumination(p, force_nsi);
-                const float lIlluminationP = dot(illuminationP.rgb, float3(1.0f / 3.0f));
+                const float lIlluminationP = dot(illuminationP.rgb, luminanceParams);
                 const float zP = getLinearZAndNormal(p).x;
                 const float3 nP = oct_to_ndir_snorm(getLinearZAndNormal(p).zw);
 

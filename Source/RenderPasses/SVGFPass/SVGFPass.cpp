@@ -112,7 +112,7 @@ namespace
     const size_t screenHeight = 1080;
     const size_t numPixels = screenWidth * screenHeight;
 
-    const float3 dvLuminanceParams = float3(0.3333);
+    const float3 dvLuminanceParams = float3(0.2126f, 0.7152f, 0.0722f);
 
     const float   dvSigmaL              = 10.0f;
     const float   dvSigmaZ              = 1.0;
