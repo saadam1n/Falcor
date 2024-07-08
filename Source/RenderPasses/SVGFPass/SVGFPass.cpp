@@ -670,7 +670,7 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
 
 void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 {
-    const int K_NUM_EPOCHS = 256;
+    const int K_NUM_EPOCHS = 7;
 
     if(mEpoch < K_NUM_EPOCHS)
     {
@@ -710,26 +710,19 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
         {
             int batchSize = mDatasetIndex;
 
-            const float K_LRATE_NUMER = 11.5f;
-            const float K_LRATE_DENOM = 1.0f;
+            const float K_LRATE_NUMER = 11.5f * 20.0f * 20.0f;
+            const float K_LRATE_DENOM = 1.0f * 20.0f;
 
-            float learningRate = K_LRATE_NUMER / (K_LRATE_DENOM + mEpoch) / batchSize;
+            // skip the first few frames which probably don't have stablized derivatives
+            const int K_FRAME_SAMPLE_START = 6;
+            int sampledFrames = batchSize - K_FRAME_SAMPLE_START;
 
-            // now wait for it to execute and download it
-            float4 loss = float4(0.0f);
-            {
-                float4* perFrameLoss = (float4*)mReadbackBuffer[2]->map();
+            float learningRate = K_LRATE_NUMER / ((K_LRATE_DENOM + mEpoch) * sampledFrames);
 
-                for(int i = 0; i < batchSize; i++)
-                {
-                    loss += perFrameLoss[i] / float4(batchSize);
-                }
 
-                mReadbackBuffer[2]->unmap();
-            }
-            std::cout << "Total loss in epoch\t" << mEpoch << "\tacross " << batchSize << "\t frames was " << loss.r << std::endl;
 
             // adjust values
+            float max_adjustment = 0.0f;
             {
                 float4* gradient = (float4*)mReadbackBuffer[0]->map();
 
@@ -737,30 +730,48 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
                 {
                     auto& pmi = mParameterReflector[i];
 
-                    // sample only a few frames for stabilizes derivatives 
                     float4 totalGradient = float4(0.0f);
-                    for(int j = 4; j < batchSize; j++)
+                    for(int j = K_FRAME_SAMPLE_START; j < batchSize; j++)
                     {
                         totalGradient += gradient[j * mParameterReflector.size() + i];
                     }
 
                     for (int j = 0; j < pmi.mNumElements; j++)
                     {
-                        std::cout << "\tAdjusting by " << pmi.name << "\tby " << learningRate * totalGradient[j] << "\n";
-                        pmi.mAddress->dv[j] -= learningRate * totalGradient[j];
+                        float adjustment = -learningRate * totalGradient[j];
+                        std::cout << "\tAdjusting by " << pmi.name << "\tby " << adjustment << "\n";
+                        pmi.mAddress->dv[j] += adjustment;
 
                         // ensure greater than zero
                         if (pmi.mAddress->dv[j] < 0.0f)
                         {
                             pmi.mAddress->dv[j] = 0.0f;
                         }
+
+                        max_adjustment = std::max(max_adjustment, std::abs(adjustment));
                     }
                 }
 
-                std::cout << "\n\n\n\n\n\n";
-
                 mReadbackBuffer[0]->unmap();
             }
+            std::cout << "Max adjustment was " << max_adjustment << "\n";
+
+            // now wait for it to execute and download it
+            float4 loss = float4(0.0f);
+            {
+                float4* perFrameLoss = (float4*)mReadbackBuffer[2]->map();
+
+                for(int i = K_FRAME_SAMPLE_START; i < batchSize; i++)
+                {
+                    loss += perFrameLoss[i];
+                }
+
+                mReadbackBuffer[2]->unmap();
+            }
+            loss /= float4(sampledFrames);
+            std::cout << "Total loss in epoch\t" << mEpoch << "\tacross " << sampledFrames << "\t frames was " << loss.r << "\n";
+
+            std::cout << "\n\n\n\n\n\n";
 
             mDatasetIndex = 0;
             mEpoch++;
