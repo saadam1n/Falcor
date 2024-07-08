@@ -105,9 +105,9 @@ namespace
     const std::string kDatasetEmission = "Emission";
     const std::string kDatasetWorldPosition = "WorldPosition";
     const std::string kDatasetWorldNormal = "WorldNormal";
-    const std::string kDatasetPositionNormalFwidth = "PositionNormalFwidth";
+    const std::string kDatasetPosNormalFwidth = "PositionNormalFwidth";
     const std::string kDatasetLinearZ = "LinearZ";
-    const std::string kDatasetMotionVec = "MotionVec";
+    const std::string kDatasetMotionVector = "MotionVec";
 
     // set common stuff first
     const size_t screenWidth = 1920;
@@ -163,46 +163,70 @@ SVGFRenderData::SVGFRenderData(const RenderData& renderData) {
 }
 
 SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, const std::string& folder) : mFolder(folder), mSampleIdx(0) {
-    pReferenceTexture = createFullscreenTexture(pDevice);
+#define MarkDatasetTexture(x) p##x##Texture = createFullscreenTexture(pDevice); mTextureNameMappings[kDataset##x] = p##x##Texture;
+
+    MarkDatasetTexture(Reference);
+    MarkDatasetTexture(Albedo);
+    MarkDatasetTexture(Color);
+    MarkDatasetTexture(Emission);
+    MarkDatasetTexture(WorldPosition);
+    MarkDatasetTexture(WorldNormal);
+    MarkDatasetTexture(PosNormalFwidth);
+    MarkDatasetTexture(Reference);
+    MarkDatasetTexture(LinearZ);
+    MarkDatasetTexture(MotionVector);
+
     pLossTexture = createFullscreenTexture(pDevice);
-    pAlbedoTexture = createFullscreenTexture(pDevice);
-    pColorTexture = createFullscreenTexture(pDevice);
-    pEmissionTexture = createFullscreenTexture(pDevice);
-    pWorldPositionTexture = createFullscreenTexture(pDevice);
-    pWorldNormalTexture = createFullscreenTexture(pDevice);
-    pPosNormalFwidthTexture = createFullscreenTexture(pDevice);
-    pLinearZTexture = createFullscreenTexture(pDevice);
-    pMotionVectorTexture = createFullscreenTexture(pDevice);
     pPrevLinearZAndNormalTexture = createFullscreenTexture(pDevice);
     pOutputTexture = createFullscreenTexture(pDevice);
     pDebugTexture = createFullscreenTexture(pDevice);
     pDerivVerifyTexture = createFullscreenTexture(pDevice);
+
+    // preload all textures
+    std::map<std::string, std::future<Bitmap::UniqueConstPtr>> preloadTasks;
+    while(atValidIndex())
+    {
+        for(auto [buffer, tex] : mTextureNameMappings)
+        {
+            std::string path = getSampleBufferPath(buffer);
+            preloadTasks[path] = std::async(std::launch::async, &Bitmap::createFromFile, path, true, Falcor::Bitmap::ImportFlags::None);
+        }
+
+        mSampleIdx++;
+    }
+
+    mSampleIdx = 0;
+
+    for(auto& [path, bitmap] : preloadTasks)
+    {
+        mPreloadedBitmaps[path] = std::move(bitmap.get());
+    }
 }
 
 bool SVGFTrainingDataset::loadNext(RenderContext* pRenderContext)
 {
     // check if we have more samples to read
-    if (!std::filesystem::exists(getSampleBufferPath(kDatasetColor)))
+    if (!atValidIndex())
     {
         mSampleIdx = 0;
         return false;
     }
 
     // continue with loading of samples
-    loadSampleBuffer(pRenderContext, pReferenceTexture, kDatasetReference);
-    loadSampleBuffer(pRenderContext, pColorTexture, kDatasetColor);
-    loadSampleBuffer(pRenderContext, pAlbedoTexture, kDatasetAlbedo);
-    loadSampleBuffer(pRenderContext, pEmissionTexture, kDatasetEmission);
-    loadSampleBuffer(pRenderContext, pWorldPositionTexture, kDatasetWorldPosition);
-    loadSampleBuffer(pRenderContext, pWorldNormalTexture, kDatasetWorldNormal);
-    loadSampleBuffer(pRenderContext, pPosNormalFwidthTexture, kDatasetPositionNormalFwidth);
-    loadSampleBuffer(pRenderContext, pLinearZTexture, kDatasetLinearZ);
-    loadSampleBuffer(pRenderContext, pMotionVectorTexture, kDatasetMotionVec);
+    for(auto [buffer, tex] : mTextureNameMappings)
+    {
+        loadSampleBuffer(pRenderContext, tex, buffer);
+    }
 
     mSampleIdx++;
 
     // indicate to callee that we this sample was successfully read
     return true;
+}
+
+bool SVGFTrainingDataset::atValidIndex() const
+{
+    return std::filesystem::exists(getSampleBufferPath(kDatasetColor));
 }
 
 std::string SVGFTrainingDataset::getSampleBufferPath(const std::string& buffer) const
@@ -212,8 +236,16 @@ std::string SVGFTrainingDataset::getSampleBufferPath(const std::string& buffer) 
 
 void SVGFTrainingDataset::loadSampleBuffer(RenderContext* pRenderContext, ref<Texture> tex, const std::string& buffer)
 {
-    auto bitmap = Bitmap::createFromFile(getSampleBufferPath(buffer), true);
-    pRenderContext->updateSubresourceData(tex.get(), 0, (const void*)bitmap->getData());
+    std::string path = getSampleBufferPath(buffer);
+
+    if(mPreloadedBitmaps.count(path) == 0)
+    {
+        mPreloadedBitmaps[path] = std::move(Bitmap::createFromFile(path, true));
+    }
+
+    if(pRenderContext) {
+        pRenderContext->updateTextureData(tex.get(), (const void*)mPreloadedBitmaps[path]->getData());
+    }
 }
 
 #define registerParameter(x) registerParameterUM(x, #x)
@@ -602,31 +634,17 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    runTrainingAndTesting(pRenderContext, renderData); 
+    runTrainingAndTesting(pRenderContext, renderData);
+    std::cout.flush();
 }
 
-int frame_idx = -1;
 void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData)
 {
     SVGFRenderData svgfrd(renderData);
 
-    if (frame_idx == -1)
+    if (!mTrained)
     {
-        mTrainingDataset.loadNext(pRenderContext);
-        mTrainingDataset.loadNext(pRenderContext);
-        frame_idx++;
-    }
-
-
-    if (frame_idx == 256 && !mTrained)
-    {
-        if (mEpoch == 0)
-        {
-            pRenderContext->blit(svgfrd.pPrevLinearZAndNormalTexture->getSRV(), mTrainingDataset.pPrevLinearZAndNormalTexture->getRTV());
-        }
-
-
-        runEpoch(pRenderContext);
+        runNextTrainingTask(pRenderContext);
         // display current results to screen
         pRenderContext->blit(mTrainingDataset.pOutputTexture->getSRV(), svgfrd.pOutputTexture->getRTV());
         pRenderContext->blit(mTrainingDataset.pLossTexture->getSRV(), svgfrd.pLossTexture->getRTV());
@@ -642,103 +660,111 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
         computeLoss(pRenderContext, svgfrd);
 
         float4 loss;
-        mpParallelReduction->execute(pRenderContext, svgfrd.pLossTexture, ParallelReduction::Type::Sum, &loss, mReadbackBuffer[1]);
+        mpParallelReduction->execute(pRenderContext, svgfrd.pLossTexture, ParallelReduction::Type::Sum, &loss);
 
         // wait for all pending actions to execute
         pRenderContext->submit(true);
-        std::cout << "Total loss: " << loss.x + loss.y + loss.z << "\n";
-
-        frame_idx++;
+        std::cout << "Total loss: " << loss.x << "\n";
     }
 }
 
-void SVGFPass::runEpoch(RenderContext* pRenderContext)
+void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 {
     const int K_NUM_EPOCHS = 256;
 
-    const float K_LRATE_NUMER = 1000000.0f;
-    const float K_LRATE_DENOM = 100.0f;
-
-    float learningRate = K_LRATE_NUMER / (K_LRATE_DENOM + mEpoch);
-
     if(mEpoch < K_NUM_EPOCHS)
     {
-        // first clear all our buffers
-        for (int i = 0; i < mParameterReflector.size(); i++)
-        {
-            mParameterReflector[i].mAddress->clearBuffer(pRenderContext);
+        if (mDatasetIndex == 0) {
+            mBuffersNeedClear = true;
+
+            std::cout << "Running epoch\t" << mEpoch << "\n";
         }
 
-        int iterations;
-        for (iterations = 0; mTrainingDataset.loadNext(pRenderContext); iterations++)
-        {
-            // for now, we won't have temporal SVGF
-            runSvgfFilter(pRenderContext, mTrainingDataset, false);
+        if (mTrainingDataset.loadNext(pRenderContext)) {
+            std::cout << "\tOn Frame " << mDatasetIndex << "\n";
+            // first clear all our buffers
+            for (int i = 0; i < mParameterReflector.size(); i++)
+            {
+                mParameterReflector[i].mAddress->clearBuffer(pRenderContext);
+            }
+
+            runSvgfFilter(pRenderContext, mTrainingDataset, true);
             computeDerivatives(pRenderContext, mTrainingDataset, true);
 
             // now accumulate everything
-            int baseOffset = iterations * mParameterReflector.size() * sizeof(float4);
+            int baseOffset = mDatasetIndex * mParameterReflector.size() * sizeof(float4);
             for (int i = 0; i < mParameterReflector.size(); i++)
             {
                 int offset = i * sizeof(float4);
                 reduceParameter(pRenderContext, *mParameterReflector[i].mAddress, baseOffset + offset);
             }
 
-            mpParallelReduction->execute<float4>(pRenderContext, mTrainingDataset.pLossTexture, ParallelReduction::Type::Sum, nullptr, mReadbackBuffer[2], iterations * sizeof(float4));
+            mpParallelReduction->execute<float4>(pRenderContext, mTrainingDataset.pLossTexture, ParallelReduction::Type::Sum, nullptr, mReadbackBuffer[2], mDatasetIndex * sizeof(float4));
+
+            // keep a copy of our output
+            //mTrainingDataset.pOutputTexture->captureToFile(0, 0, "C:/FalcorFiles/TrainingDump/" + std::to_string(epoch) + ".exr", Falcor::Bitmap::FileFormat::ExrFile, Falcor::Bitmap::ExportFlags::None, false);
+
+            mDatasetIndex++;
         }
-
-
-        pRenderContext->submit(true);
-
-        // now wait for it to execute and download it
-        float4 loss = float4(0.0f);
+        else
         {
-            float4* perFrameLoss = (float4*)mReadbackBuffer[2]->map();
+            int batchSize = mDatasetIndex;
 
-            for(int i = 0; i < iterations; i++)
+            const float K_LRATE_NUMER = 11.5f;
+            const float K_LRATE_DENOM = 1.0f;
+
+            float learningRate = K_LRATE_NUMER / (K_LRATE_DENOM + mEpoch) / batchSize;
+
+            // now wait for it to execute and download it
+            float4 loss = float4(0.0f);
             {
-                loss += perFrameLoss[i];
-            }
+                float4* perFrameLoss = (float4*)mReadbackBuffer[2]->map();
 
-            mReadbackBuffer[2]->unmap();
-        }
-        std::cout << "Total loss in epoch\t" << mEpoch << "\twas " << loss.r << std::endl;
-
-        // adjust values
-        {
-            float4* gradient = (float4*)mReadbackBuffer[0]->map();
-
-            for (int i = 0; i < mParameterReflector.size(); i++)
-            {
-                auto& pmi = mParameterReflector[i];
-
-                float4 totalGradient = float4(0.0f);
-                for(int j = 0; j < iterations; j++)
+                for(int i = 0; i < batchSize; i++)
                 {
-                    totalGradient += gradient[j * mParameterReflector.size() + i];
+                    loss += perFrameLoss[i] / float4(batchSize);
                 }
 
-                for (int j = 0; j < pmi.mNumElements; j++)
-                {
-                    pmi.mAddress->dv[j] -= learningRate * totalGradient[j];
+                mReadbackBuffer[2]->unmap();
+            }
+            std::cout << "Total loss in epoch\t" << mEpoch << "\tacross " << batchSize << "\t frames was " << loss.r << std::endl;
 
-                    // ensure greater than zero
-                    if (pmi.mAddress->dv[j] < 0.0f)
+            // adjust values
+            {
+                float4* gradient = (float4*)mReadbackBuffer[0]->map();
+
+                for (int i = 0; i < mParameterReflector.size(); i++)
+                {
+                    auto& pmi = mParameterReflector[i];
+
+                    // sample only a few frames for stabilizes derivatives 
+                    float4 totalGradient = float4(0.0f);
+                    for(int j = 4; j < batchSize; j++)
                     {
-                        pmi.mAddress->dv[j] = 0.0f;
+                        totalGradient += gradient[j * mParameterReflector.size() + i];
+                    }
+
+                    for (int j = 0; j < pmi.mNumElements; j++)
+                    {
+                        std::cout << "\tAdjusting by " << pmi.name << "\tby " << learningRate * totalGradient[j] << "\n";
+                        pmi.mAddress->dv[j] -= learningRate * totalGradient[j];
+
+                        // ensure greater than zero
+                        if (pmi.mAddress->dv[j] < 0.0f)
+                        {
+                            pmi.mAddress->dv[j] = 0.0f;
+                        }
                     }
                 }
+
+                std::cout << "\n\n\n\n\n\n";
+
+                mReadbackBuffer[0]->unmap();
             }
 
-            std::cout << "\n\n\n\n\n\n" << std::endl;
-
-            mReadbackBuffer[0]->unmap();
+            mDatasetIndex = 0;
+            mEpoch++;
         }
-
-        // keep a copy of our output
-        //mTrainingDataset.pOutputTexture->captureToFile(0, 0, "C:/FalcorFiles/TrainingDump/" + std::to_string(epoch) + ".exr", Falcor::Bitmap::FileFormat::ExrFile, Falcor::Bitmap::ExportFlags::None, false);
-
-        mEpoch++;
     }
     else
     {
@@ -881,6 +907,9 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, const SVGFRenderData& 
     computeGaussian(pRenderContext, renderData.pReferenceTexture, mLossState.pReferenceGaussian, false);
     computeGaussian(pRenderContext, renderData.pOutputTexture, mLossState.pFilteredGaussian, true);
 
+    clearRawOutputBuffer(pRenderContext, 0);
+    clearRawOutputBuffer(pRenderContext, 1);
+
     auto perImageCB = mLossState.dPass->getRootVar()["PerImageCB"];
 
     perImageCB["filteredGaussian"] = mLossState.pFilteredGaussian;
@@ -933,17 +962,18 @@ void SVGFPass::computeDerivGaussian(RenderContext* pRenderContext)
     auto perImageCB = mLossState.dGaussianPass->getRootVar()["PerImageCB"];
     auto perImageCB_D = mLossState.dGaussianPass->getRootVar()["PerImageCB_D"];
 
+    clearRawOutputBuffer(pRenderContext, 0);
     perImageCB_D["drIllumination"] = pdaCompactedBuffer[0];
 
-    perImageCB["image"] = mLossState.pGaussianXInput;
-    perImageCB["yaxis"] = false;
+    perImageCB["image"] = mLossState.pGaussianYInput;
+    perImageCB["yaxis"] = true;
     perImageCB["pdaIllumination"] = pdaRawOutputBuffer[0];
     mLossState.dGaussianPass->execute(pRenderContext, mpDummyFullscreenFbo);
 
     runCompactingPass(pRenderContext, 0, 11);
 
-    perImageCB["image"] = mLossState.pGaussianYInput;
-    perImageCB["yaxis"] = true;
+    perImageCB["image"] = mLossState.pGaussianXInput;
+    perImageCB["yaxis"] = false;
     perImageCB["pdaIllumination"] = pdaRawOutputBuffer[1];
     mLossState.dGaussianPass->execute(pRenderContext, mpDummyFullscreenFbo);
 
@@ -1249,6 +1279,12 @@ void SVGFPass::runCompactingPass(RenderContext* pRenderContext, int idx, int n)
     // compact the raw output
     compactingPass->execute(pRenderContext, mpDummyFullscreenFbo);
 }
+
+void SVGFPass::clearRawOutputBuffer(RenderContext* pRenderContext, int idx)
+{
+    pRenderContext->clearUAV(pdaRawOutputBuffer[idx]->getUAV().get(), uint4(0));
+}
+
 
 #define USE_BUILTIN_PARALLEL_REDUCTION
 void SVGFPass::reduceParameter(RenderContext* pRenderContext, SVGFParameter<float4>& param, int offset)

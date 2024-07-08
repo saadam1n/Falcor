@@ -68,7 +68,12 @@ private:
     std::string mFolder;
     // whatever sample we are reading from
     int mSampleIdx;
+    // cache of preloaded bitmaps
+    std::map<std::string, Bitmap::UniqueConstPtr> mPreloadedBitmaps;
+    // cache of texture name to pointer mappings
+    std::map<std::string, ref<Texture>> mTextureNameMappings;
 
+    bool atValidIndex() const;
     std::string getSampleBufferPath(const std::string& buffer) const;
     void loadSampleBuffer(RenderContext* pRenderContext, ref<Texture> tex, const std::string& buffer);
 };
@@ -110,7 +115,7 @@ private:
 
     bool mTrained = false;
     int mEpoch = 0;
-    void runEpoch(RenderContext* pRenderContext);
+    void runNextTrainingTask(RenderContext* pRenderContext);
 
     void runDerivativeTest(RenderContext* pRenderContext, const RenderData& renderData);
     void runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData);
@@ -182,6 +187,7 @@ private:
     ref<Buffer> pdaRawOutputBuffer[2];
     ref<Buffer> pdaCompactedBuffer[2];
     void runCompactingPass(RenderContext* pRenderContext, int idx, int n);
+    void clearRawOutputBuffer(RenderContext* pRenderContext, int idx);
 
     ref<ComputePass> summingPass;
     ref<FullScreenPass> bufferToTexturePass;
@@ -191,6 +197,7 @@ private:
 
     std::unique_ptr<ParallelReduction> mpParallelReduction; 
 
+    int mDatasetIndex = 0;
     SVGFTrainingDataset mTrainingDataset;
 
     struct ParameterMetaInfo

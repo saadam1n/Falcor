@@ -38,9 +38,9 @@ namespace {
     const std::string kDatasetEmission = "Emission";
     const std::string kDatasetWorldPosition = "WorldPosition";
     const std::string kDatasetWorldNormal = "WorldNormal";
-    const std::string kDatasetPositionNormalFwidth = "PositionNormalFwidth";
+    const std::string kDatasetPosNormalFwidth = "PositionNormalFwidth";
     const std::string kDatasetLinearZ = "LinearZ";
-    const std::string kDatasetMotionVec = "MotionVec";
+    const std::string kDatasetMotionVector = "MotionVec";
 
     // we need this because falcor will not execute passes that don't have any marked outputs
     const std::string kOutputDummy = "dummyOut";
@@ -58,7 +58,7 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
     registry.registerClass<RenderPass, DatasetSaver>();
 }
 
-DatasetSaver::DatasetSaver(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), currentStorageIndex(0), mTargetSamples(1024 * 16)
+DatasetSaver::DatasetSaver(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), currentStorageIndex(0), mTargetSamples(1024 * 64)
 {
     for (const auto& [key, value] : props)
     {
@@ -91,9 +91,9 @@ RenderPassReflection DatasetSaver::reflect(const CompileData& compileData)
     reflector.addInput(kDatasetEmission, "emission input from gbuffer");
     reflector.addInput(kDatasetWorldPosition, "world pos input from gbuffer");
     reflector.addInput(kDatasetWorldNormal, "world normal input from gbuffer");
-    reflector.addInput(kDatasetPositionNormalFwidth, "idk something from gbuffer");
+    reflector.addInput(kDatasetPosNormalFwidth, "idk something from gbuffer");
     reflector.addInput(kDatasetLinearZ, "depth buffer from gbuffer");
-    reflector.addInput(kDatasetMotionVec, "motion vec from gbuffer");
+    reflector.addInput(kDatasetMotionVector, "motion vec from gbuffer");
 
     reflector.addOutput(kOutputDummy, "dummy output");
 
@@ -107,7 +107,7 @@ void DatasetSaver::execute(RenderContext* pRenderContext, const RenderData& rend
 
     std::cout << "Current sample count is " << sampleCount << std::endl;
 
-    if (pScene && sampleCount == mTargetSamples)
+    if (pScene && sampleCount >= mTargetSamples && sampleCount < mTargetSamples + 96)
     {
         setStorageKey(std::to_string(currentStorageIndex++));
 
@@ -117,9 +117,9 @@ void DatasetSaver::execute(RenderContext* pRenderContext, const RenderData& rend
         storeImage(pRenderContext, renderData, kDatasetEmission);
         storeImage(pRenderContext, renderData, kDatasetWorldPosition);
         storeImage(pRenderContext, renderData, kDatasetWorldNormal);
-        storeImage(pRenderContext, renderData, kDatasetPositionNormalFwidth);
+        storeImage(pRenderContext, renderData, kDatasetPosNormalFwidth);
         storeImage(pRenderContext, renderData, kDatasetLinearZ);
-        storeImage(pRenderContext, renderData, kDatasetMotionVec);
+        storeImage(pRenderContext, renderData, kDatasetMotionVector);
     }
 }
 
