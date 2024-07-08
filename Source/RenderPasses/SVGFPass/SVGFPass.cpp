@@ -59,6 +59,8 @@ namespace
     const char kFinalModulateShaderD[]        = "RenderPasses/SVGFPass/SVGFFinalModulateD.ps.slang";
 
     const char kLossShader[]                  = "RenderPasses/SVGFPass/SVGFLoss.ps.slang";
+    const char kLossGaussianShaderS[]         = "RenderPasses/SVGFPass/SVGFLossGaussianS.ps.slang";
+    const char kLossGaussianShaderD[]         = "RenderPasses/SVGFPass/SVGFLossGaussianD.ps.slang";
 
     // Names of valid entries in the parameter dictionary.
     const char kEnabled[] = "Enabled";
@@ -252,6 +254,8 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     bufferToTexturePass = FullScreenPass::create(mpDevice, kBufferShaderToTexture);
 
     mLossState.dPass = FullScreenPass::create(mpDevice, kLossShader);
+    mLossState.sGaussianPass = FullScreenPass::create(mpDevice, kLossGaussianShaderS);
+    mLossState.dGaussianPass = FullScreenPass::create(mpDevice, kLossGaussianShaderD);
 
     mpDerivativeVerify = FullScreenPass::create(mpDevice, kDerivativeVerifyShader);
     mpFuncOutputLower =  make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
@@ -344,7 +348,10 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mFinalModulateState.pdaIllumination = createAccumulationBuffer(pDevice);
 
     // set loss vars
-    mLossState.pdaFilteredImage = createAccumulationBuffer(pDevice);
+    mLossState.pGaussianXInput = createFullscreenTexture(pDevice);
+    mLossState.pGaussianYInput = createFullscreenTexture(pDevice);
+    mLossState.pFilteredGaussian = createFullscreenTexture(pDevice);
+    mLossState.pReferenceGaussian = createFullscreenTexture(pDevice);
 
     for (int i = 0; i < 2; i++)
     {
@@ -430,6 +437,18 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         desc.setSampleCount(0);
         desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
         bufferToTextureFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+    }
+
+    {
+        // The gaussian pass
+        Fbo::Desc desc;
+        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
+
+        for(int i = 0; i < 2; i++)
+        {
+            mLossState.pGaussianFbo[i] = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+        }
+
     }
 
     mBuffersNeedClear = true;
@@ -639,8 +658,8 @@ void SVGFPass::runEpoch(RenderContext* pRenderContext)
 {
     const int K_NUM_EPOCHS = 256;
 
-    const float K_LRATE_NUMER = 50000.0f;
-    const float K_LRATE_DENOM = 10.0f;
+    const float K_LRATE_NUMER = 1000000.0f;
+    const float K_LRATE_DENOM = 100.0f;
 
     float learningRate = K_LRATE_NUMER / (K_LRATE_DENOM + mEpoch);
 
@@ -695,7 +714,7 @@ void SVGFPass::runEpoch(RenderContext* pRenderContext)
 
                 for (int j = 0; j < pmi.mNumElements; j++)
                 {
-                    std::cout << "\tAdjusting\t" << pmi.name << "\tby " << learningRate * gradient[i][j] << "\n";
+                    std::cout << "\tAdjusting\t" << pmi.name << "\tby " << learningRate * gradient[i][j] << "\tDeriv: " << gradient[i][j] << "\n";
                     pmi.mAddress->dv[j] -= learningRate * gradient[i][j];
 
                     // ensure greater than zero
@@ -834,7 +853,7 @@ void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const SVGFRende
             // set everything to 1.0 (except the alpha channel)
             float4 defaultDerivative = float4(1.0, 1.0, 1.0, 0.0);
             uint4* dPtr = (uint4*)&defaultDerivative;
-            pRenderContext->clearUAV(mLossState.pdaFilteredImage->getUAV().get(), *dPtr);
+            pRenderContext->clearUAV(pdaCompactedBuffer[1]->getUAV().get(), *dPtr);
         }
 
         computeDerivFinalModulate(pRenderContext, renderData.pOutputTexture, pIllumTexture, renderData.pAlbedoTexture, renderData.pEmissionTexture);
@@ -857,18 +876,79 @@ void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const SVGFRende
 
 void SVGFPass::computeLoss(RenderContext* pRenderContext, const SVGFRenderData& renderData)
 {
+    computeGaussian(pRenderContext, renderData.pReferenceTexture, mLossState.pReferenceGaussian, false);
+    computeGaussian(pRenderContext, renderData.pOutputTexture, mLossState.pFilteredGaussian, true);
+
     auto perImageCB = mLossState.dPass->getRootVar()["PerImageCB"];
+
+    perImageCB["filteredGaussian"] = mLossState.pFilteredGaussian;
+    perImageCB["referenceGaussian"] = mLossState.pReferenceGaussian;
 
     perImageCB["filteredImage"] = renderData.pOutputTexture;
     perImageCB["referenceImage"] = renderData.pReferenceTexture;
 
-    perImageCB["pdaFilteredImage"] = mLossState.pdaFilteredImage;
+    perImageCB["pdaFilteredGaussian"] = pdaRawOutputBuffer[0];
+    perImageCB["pdaFilteredImage"] = pdaRawOutputBuffer[1];
 
     mLossState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 
     pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(0)->getSRV(), renderData.pLossTexture->getRTV());
+
+    runCompactingPass(pRenderContext, 0, 9);
+
+    computeDerivGaussian(pRenderContext);
 }
 
+void SVGFPass::computeGaussian(RenderContext* pRenderContext, ref<Texture> tex, ref<Texture> storageLocation, bool saveTextures)
+{
+    auto perImageCB = mLossState.sGaussianPass->getRootVar()["PerImageCB"];
+
+    if(saveTextures)
+    {
+        pRenderContext->blit(tex->getSRV(), mLossState.pGaussianXInput->getRTV());
+    }
+
+    perImageCB["image"] = tex;
+    perImageCB["yaxis"] = false;
+    mLossState.sGaussianPass->execute(pRenderContext, mLossState.pGaussianFbo[0]);
+
+    if(saveTextures)
+    {
+        pRenderContext->blit(mLossState.pGaussianFbo[0]->getColorTexture(0)->getSRV(), mLossState.pGaussianYInput->getRTV());
+    }
+
+    perImageCB["image"] = mLossState.pGaussianFbo[0]->getColorTexture(0);
+    perImageCB["yaxis"] = true;
+
+    mLossState.sGaussianPass->execute(pRenderContext, mLossState.pGaussianFbo[1]);
+
+    pRenderContext->blit(mLossState.pGaussianFbo[1]->getColorTexture(0)->getSRV(), storageLocation->getRTV());
+}
+
+
+void SVGFPass::computeDerivGaussian(RenderContext* pRenderContext)
+{
+    auto perImageCB = mLossState.dGaussianPass->getRootVar()["PerImageCB"];
+    auto perImageCB_D = mLossState.dGaussianPass->getRootVar()["PerImageCB_D"];
+
+    perImageCB_D["drIllumination"] = pdaCompactedBuffer[0];
+
+    perImageCB["image"] = mLossState.pGaussianXInput;
+    perImageCB["yaxis"] = false;
+    perImageCB["pdaIllumination"] = pdaRawOutputBuffer[0];
+    mLossState.dGaussianPass->execute(pRenderContext, mpDummyFullscreenFbo);
+
+    runCompactingPass(pRenderContext, 0, 11);
+
+    perImageCB["image"] = mLossState.pGaussianYInput;
+    perImageCB["yaxis"] = true;
+    perImageCB["pdaIllumination"] = pdaRawOutputBuffer[1];
+    mLossState.dGaussianPass->execute(pRenderContext, mpDummyFullscreenFbo);
+
+    // we have the extra derivative from the loss pass
+    // not a great way to encapsulate stuff but whatever
+    runCompactingPass(pRenderContext, 1, 12);
+}
 
 void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pOutputTexture, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture) {
     pRenderContext->clearUAV(mFinalModulateState.pdaIllumination->getUAV().get(), Falcor::uint4(0));
@@ -880,7 +960,7 @@ void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Text
     perImageCB["daIllumination"] = mFinalModulateState.pdaIllumination;
 
     auto perImageCB_D = mFinalModulateState.dPass->getRootVar()["PerImageCB_D"];
-    perImageCB_D["drFilteredImage"] =  mLossState.pdaFilteredImage;
+    perImageCB_D["drFilteredImage"] = pdaCompactedBuffer[1];
 
     mFinalModulateState.dPass->execute(pRenderContext, mpDerivativeVerifyFbo);
 }

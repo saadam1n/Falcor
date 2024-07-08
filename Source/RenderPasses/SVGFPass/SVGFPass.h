@@ -131,10 +131,12 @@ private:
 
     void computeFilteredMoments(RenderContext* pRenderContext);
     void computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, bool updateInternalBuffers);
+    void computeGaussian(RenderContext* pRenderContext, ref<Texture> tex, ref<Texture> storageLocation, bool saveTextures);
 
     void runSvgfFilter(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool updateInternalBuffers);
     void computeDerivatives(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool useLoss);
     void computeLoss(RenderContext* pRenderContext, const SVGFRenderData& renderData);
+    void computeDerivGaussian(RenderContext* pRenderContext);
     void computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pResultantImage, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture);
     void computeDerivAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, ref<Texture> pOutputTexture);
     void computeDerivFilteredMoments(RenderContext* pRenderContext);
@@ -285,7 +287,16 @@ private:
 
     struct
     {
-        ref<Buffer> pdaFilteredImage;
+        ref<Fbo> pGaussianFbo[2];
+
+        ref<Texture> pGaussianXInput;
+        ref<Texture> pGaussianYInput;
+
+        ref<Texture> pFilteredGaussian;
+        ref<Texture> pReferenceGaussian;
+
+        ref<FullScreenPass> sGaussianPass;
+        ref<FullScreenPass> dGaussianPass;
         ref<FullScreenPass> dPass;
     } mLossState;
 };

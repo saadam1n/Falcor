@@ -202,3 +202,10 @@ float3 readDerivBuf3(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex) {
 
     return dequant3(temp);
 }
+
+// Used in loss calculations
+[BackwardDifferentiable]
+float4 applyGamma(float4 val)
+{
+    return pow(val, 0.2f.xxxx);
+}
