@@ -341,8 +341,6 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     {
         pdaPingPongSumBuffer[i] = createAccumulationBuffer(pDevice, sizeof(float4));
     }
-    pdaGradientBuffer = createAccumulationBuffer(pDevice, sizeof(float4));
-
 
     // set final modulate state vars
     mFinalModulateState.pdaIllumination = createAccumulationBuffer(pDevice);
@@ -353,7 +351,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mLossState.pFilteredGaussian = createFullscreenTexture(pDevice);
     mLossState.pReferenceGaussian = createFullscreenTexture(pDevice);
 
-    for (int i = 0; i < 2; i++)
+    for (int i = 0; i < 3; i++)
     {
         mReadbackBuffer[i] = createAccumulationBuffer(pDevice, sizeof(float4), true);
     }
@@ -671,51 +669,58 @@ void SVGFPass::runEpoch(RenderContext* pRenderContext)
             mParameterReflector[i].mAddress->clearBuffer(pRenderContext);
         }
 
-        while (mTrainingDataset.loadNext(pRenderContext))
+        int iterations;
+        for (iterations = 0; mTrainingDataset.loadNext(pRenderContext); iterations++)
         {
             // for now, we won't have temporal SVGF
             runSvgfFilter(pRenderContext, mTrainingDataset, false);
             computeDerivatives(pRenderContext, mTrainingDataset, true);
+
+            // now accumulate everything
+            int baseOffset = iterations * mParameterReflector.size() * sizeof(float4);
+            for (int i = 0; i < mParameterReflector.size(); i++)
+            {
+                int offset = i * sizeof(float4);
+                reduceParameter(pRenderContext, *mParameterReflector[i].mAddress, baseOffset + offset);
+            }
+
+            mpParallelReduction->execute<float4>(pRenderContext, mTrainingDataset.pLossTexture, ParallelReduction::Type::Sum, nullptr, mReadbackBuffer[2], iterations * sizeof(float4));
         }
 
-        // now accumulate everything
-        for (int i = 0; i < mParameterReflector.size(); i++)
-        {
-            int offset = i * sizeof(float4);
-            reduceParameter(pRenderContext, *mParameterReflector[i].mAddress, offset);
-        }
+
+        pRenderContext->submit(true);
 
         // now wait for it to execute and download it
-        // pRenderContext->copyBufferRegion(mReadbackBuffer[0].get(), 0, pdaGradientBuffer.get(), 0, mParameterReflector.size() * sizeof(float4));
+        float4 loss = float4(0.0f);
+        {
+            float4* perFrameLoss = (float4*)mReadbackBuffer[2]->map();
 
-        float4 loss;
-        mpParallelReduction->execute(pRenderContext, mTrainingDataset.pLossTexture, ParallelReduction::Type::Sum, &loss, mReadbackBuffer[1]);
-        // wait for all pending actions to execute
-        pRenderContext->submit(true);
+            for(int i = 0; i < iterations; i++)
+            {
+                loss += perFrameLoss[i];
+            }
+
+            mReadbackBuffer[2]->unmap();
+        }
+        std::cout << "Total loss in epoch\t" << mEpoch << "\twas " << loss.r << std::endl;
 
         // adjust values
         {
             float4* gradient = (float4*)mReadbackBuffer[0]->map();
 
-            std::cout << "Running epoch " << mEpoch << "\n";
             for (int i = 0; i < mParameterReflector.size(); i++)
             {
                 auto& pmi = mParameterReflector[i];
 
-                // train only the atrous stages now
-                //if(pmi.name.find("VarianceKernel") != std::string::npos) continue;
-                //if(pmi.name.find("WeightFunctionParams") != std::string::npos) continue;
-                //if(pmi.name.find("Reproj") != std::string::npos) continue;
-                //if(pmi.name.find("Filter") != std::string::npos) continue;
-
-                //if(pmi.name.find("LuminanceParams") != std::string::npos) continue;
-
-                //if(pmi.name.find("Reproj") == std::string::npos) continue;
+                float4 totalGradient = float4(0.0f);
+                for(int j = 0; j < iterations; j++)
+                {
+                    totalGradient += gradient[j * mParameterReflector.size() + i];
+                }
 
                 for (int j = 0; j < pmi.mNumElements; j++)
                 {
-                    std::cout << "\tAdjusting\t" << pmi.name << "\tby " << learningRate * gradient[i][j] << "\tDeriv: " << gradient[i][j] << "\n";
-                    pmi.mAddress->dv[j] -= learningRate * gradient[i][j];
+                    pmi.mAddress->dv[j] -= learningRate * totalGradient[j];
 
                     // ensure greater than zero
                     if (pmi.mAddress->dv[j] < 0.0f)
@@ -724,9 +729,6 @@ void SVGFPass::runEpoch(RenderContext* pRenderContext)
                     }
                 }
             }
-
-            std::cout << "Learning rate: " << learningRate << "\n";
-            std::cout << "Total loss: " << loss.x + loss.y + loss.z << "\n";
 
             std::cout << "\n\n\n\n\n\n" << std::endl;
 

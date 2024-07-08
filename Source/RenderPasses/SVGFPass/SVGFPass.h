@@ -159,7 +159,7 @@ private:
     float   mVarainceEpsilon     =  1e-4f;
     int mDerivativeIteration     =  0;
 
-    ref<Buffer> mReadbackBuffer[2];
+    ref<Buffer> mReadbackBuffer[3];
 
     ref<FullScreenPass> mpDerivativeVerify;
     ref<Fbo> mpDerivativeVerifyFbo;
@@ -187,7 +187,6 @@ private:
     ref<FullScreenPass> bufferToTexturePass;
     ref<Fbo> bufferToTextureFbo;
     ref<Buffer> pdaPingPongSumBuffer[2];
-    ref<Buffer> pdaGradientBuffer;
     void reduceParameter(RenderContext* pRenderContext, SVGFParameter<float4>& param, int offset);
 
     std::unique_ptr<ParallelReduction> mpParallelReduction; 
