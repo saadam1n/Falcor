@@ -26,6 +26,7 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #include "SVGFPass.h"
+#include <fstream>
 
 /*
 TODO:
@@ -86,6 +87,8 @@ namespace
     const char kInternalBufferPreviousLinearZAndNormal[] = "Previous Linear Z and Packed Normal";
     const char kInternalBufferPreviousLighting[] = "Previous Lighting";
     const char kInternalBufferPreviousMoments[] = "Previous Moments";
+    const char kInternalBufferPreviousFiltered[] = "Previous Filtered";
+    const char kInternalBufferPreviousReference[] = "Previous Reference";
 
     // Output buffer name
     const char kOutputBufferFilteredImage[] = "Filtered image";
@@ -158,8 +161,12 @@ SVGFRenderData::SVGFRenderData(const RenderData& renderData) {
     pOutputTexture = renderData.getTexture(kOutputBufferFilteredImage);
     pDebugTexture = renderData.getTexture(kOutputDebugBuffer);
     pDerivVerifyTexture = renderData.getTexture(kOutputDerivVerifyBuf);
+
+    // loss buffers
     pLossTexture = renderData.getTexture(kOutputLoss);
     pReferenceTexture = renderData.getTexture(kOutputReference);
+    pPrevFiltered = renderData.getTexture(kInternalBufferPreviousFiltered);
+    pPrevReference = renderData.getTexture(kInternalBufferPreviousReference);
 }
 
 SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, const std::string& folder) : mFolder(folder), mSampleIdx(0) {
@@ -182,6 +189,9 @@ SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, const std::string&
     pDebugTexture = createFullscreenTexture(pDevice);
     pDerivVerifyTexture = createFullscreenTexture(pDevice);
 
+    pPrevFiltered = createFullscreenTexture(pDevice);
+    pPrevReference = createFullscreenTexture(pDevice);
+
     // preload all textures
     std::map<std::string, std::future<Bitmap::UniqueConstPtr>> preloadTasks;
     while(atValidIndex())
@@ -189,7 +199,7 @@ SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, const std::string&
         for(auto [buffer, tex] : mTextureNameMappings)
         {
             std::string path = getSampleBufferPath(buffer);
-            preloadTasks[path] = std::async(std::launch::async, &Bitmap::createFromFile, path, true, Falcor::Bitmap::ImportFlags::None);
+            preloadTasks[path] = std::async(std::launch::async, &readBitmapFromFile, path);
         }
 
         mSampleIdx++;
@@ -234,19 +244,52 @@ std::string SVGFTrainingDataset::getSampleBufferPath(const std::string& buffer) 
     return mFolder + std::to_string(mSampleIdx) + "-" + buffer + ".exr";
 }
 
+Bitmap::UniqueConstPtr SVGFTrainingDataset::readBitmapFromFile(const std::string& path)
+{
+    std::string name = std::filesystem::path(path).filename().string();
+    std::string cachePath = "C:\\FalcorFiles\\Cache\\" + std::to_string(getFileModifiedTime(path)) + "-" + name + ".bin";
+
+    Bitmap::UniqueConstPtr bitmap;
+    if(!std::filesystem::exists(cachePath))
+    {
+        bitmap = std::move(Bitmap::createFromFile(path, true));
+
+        std::ofstream fs(cachePath, std::ios::binary);
+        fs.write((char*)bitmap->getData(), numPixels * sizeof(float4));
+        fs.close();
+    }
+    else
+    {
+        auto len = std::filesystem::file_size(cachePath);
+        std::vector<char> mem(len);
+
+        std::ifstream fs(cachePath, std::ios::binary);
+        fs.read(mem.data(), len);
+        fs.close();
+
+        bitmap = std::move(Bitmap::create(screenWidth, screenHeight, ResourceFormat::RGBA32Float, (const uint8_t*)mem.data()));
+    }
+
+    return bitmap;
+}
+
 void SVGFTrainingDataset::loadSampleBuffer(RenderContext* pRenderContext, ref<Texture> tex, const std::string& buffer)
 {
     std::string path = getSampleBufferPath(buffer);
 
     if(mPreloadedBitmaps.count(path) == 0)
     {
-        mPreloadedBitmaps[path] = std::move(Bitmap::createFromFile(path, true));
+        mPreloadedBitmaps[path] = std::move(readBitmapFromFile(path));
+
     }
 
     if(pRenderContext) {
         pRenderContext->updateTextureData(tex.get(), (const void*)mPreloadedBitmaps[path]->getData());
     }
 }
+
+
+
 
 #define registerParameter(x) registerParameterUM(x, #x)
 
@@ -406,6 +449,9 @@ void SVGFPass::clearBuffers(RenderContext* pRenderContext, const SVGFRenderData&
     pRenderContext->clearTexture(renderData.pPrevLinearZAndNormalTexture.get());
 
     pRenderContext->clearFbo(mpDerivativeVerifyFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
+
+    pRenderContext->clearTexture(renderData.pPrevFiltered.get());
+    pRenderContext->clearTexture(renderData.pPrevReference.get());
 }
 
 void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
@@ -532,6 +578,14 @@ RenderPassReflection SVGFPass::reflect(const CompileData& compileData)
         .bindFlags(ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource);
     reflector.addInternal(kInternalBufferPreviousMoments, "Previous Moments")
         .format(ResourceFormat::RG32Float)
+        .bindFlags(ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource);
+
+    reflector.addInternal(kInternalBufferPreviousFiltered, "Previous filtered")
+        .format(ResourceFormat::RGBA32Float)
+        .bindFlags(ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource);
+
+    reflector.addInternal(kInternalBufferPreviousReference, "Previous reference")
+        .format(ResourceFormat::RGBA32Float)
         .bindFlags(ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource);
 
     reflector.addOutput(kOutputBufferFilteredImage, "Filtered image").format(ResourceFormat::RGBA16Float);
@@ -710,11 +764,11 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
         {
             int batchSize = mDatasetIndex;
 
-            const float K_LRATE_NUMER = 11.5f * 20.0f * 20.0f;
+            const float K_LRATE_NUMER = 3.0f * 20.0f;
             const float K_LRATE_DENOM = 1.0f * 20.0f;
 
             // skip the first few frames which probably don't have stablized derivatives
-            const int K_FRAME_SAMPLE_START = 6;
+            const int K_FRAME_SAMPLE_START = 16;
             int sampledFrames = batchSize - K_FRAME_SAMPLE_START;
 
             float learningRate = K_LRATE_NUMER / ((K_LRATE_DENOM + mEpoch) * sampledFrames);
@@ -722,7 +776,8 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 
 
             // adjust values
-            float max_adjustment = 0.0f;
+            float maxAdjValue = 0.0f;
+            std::string maxAdjParamName = "none";
             {
                 float4* gradient = (float4*)mReadbackBuffer[0]->map();
 
@@ -748,13 +803,17 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
                             pmi.mAddress->dv[j] = 0.0f;
                         }
 
-                        max_adjustment = std::max(max_adjustment, std::abs(adjustment));
+                        if(adjustment > maxAdjValue)
+                        {
+                            maxAdjValue = adjustment;
+                            maxAdjParamName = pmi.name;
+                        }
                     }
                 }
 
                 mReadbackBuffer[0]->unmap();
             }
-            std::cout << "Max adjustment was " << max_adjustment << "\n";
+            std::cout << "Max adjustment was " << maxAdjValue << "\tfor " << maxAdjParamName  << "\n";
 
             // now wait for it to execute and download it
             float4 loss = float4(0.0f);
@@ -929,14 +988,20 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, const SVGFRenderData& 
     perImageCB["filteredImage"] = renderData.pOutputTexture;
     perImageCB["referenceImage"] = renderData.pReferenceTexture;
 
+    perImageCB["prevFiltered"] = renderData.pPrevFiltered;
+    perImageCB["prevReference"] = renderData.pPrevReference;
+
     perImageCB["pdaFilteredGaussian"] = pdaRawOutputBuffer[0];
     perImageCB["pdaFilteredImage"] = pdaRawOutputBuffer[1];
 
     mLossState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 
     pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(0)->getSRV(), renderData.pLossTexture->getRTV());
-
     runCompactingPass(pRenderContext, 0, 9);
+
+    // update the previous textures
+    pRenderContext->blit(renderData.pOutputTexture->getSRV(), renderData.pPrevFiltered->getRTV());
+    pRenderContext->blit(renderData.pReferenceTexture->getSRV(), renderData.pPrevReference->getRTV());
 
     computeDerivGaussian(pRenderContext);
 }
@@ -1079,7 +1144,7 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
         auto& curIterationState = mAtrousState.mIterationState[iteration];
 
         // clear raw output
-        pRenderContext->clearUAV(pdaRawOutputBuffer[0]->getUAV().get(), Falcor::uint4(0));
+        clearRawOutputBuffer(pRenderContext, 0);
 
         perImageCB_D["daSigma"] = curIterationState.mSigma.da;
         perImageCB_D["daKernel"] = curIterationState.mKernel.da;
@@ -1152,8 +1217,8 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
     perImageCB["gLinearZAndNormal"]          = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gMoments"]          = mpCurReprojFbo->getColorTexture(1);
 
-    pRenderContext->clearUAV(pdaRawOutputBuffer[0]->getUAV().get(), Falcor::uint4(0));
-    pRenderContext->clearUAV(pdaRawOutputBuffer[1]->getUAV().get(), Falcor::uint4(0));
+    clearRawOutputBuffer(pRenderContext, 0);
+    clearRawOutputBuffer(pRenderContext, 1);
 
     perImageCB["daIllumination"]     = pdaRawOutputBuffer[0];
     perImageCB["daMoments"]          = pdaRawOutputBuffer[1];

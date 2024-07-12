@@ -5,6 +5,9 @@ cbuffer PerImageCB
     Texture2D filteredImage;
     Texture2D referenceImage;
 
+    Texture2D prevFiltered;
+    Texture2D prevReference;
+
     Texture2D filteredGaussian;
     Texture2D referenceGaussian;
 
@@ -17,6 +20,13 @@ void d_getReferenceImage(int2 ipos, float4 val) {}
 float4 getReferenceImage(int2 ipos)
 {
     return referenceImage[ipos];
+}
+
+void d_getPrevReference(int2 ipos, float4 val) {}
+[BackwardDerivative(d_getPrevReference)]
+float4 getPrevReference(int2 ipos)
+{
+    return prevReference[ipos];
 }
 
 void d_getReferenceGaussian(int2 ipos, int nsi, float4 val) {}
@@ -37,6 +47,17 @@ float4 getFilteredImage(int2 ipos)
     return filteredImage[ipos];
 }
 
+void d_getPrevFiltered(int2 ipos, float4 val)
+{
+    // we'll need a buffer for this eventually for frame-to-frame stuff
+}
+
+[BackwardDerivative(d_getPrevFiltered)]
+float4 getPrevFiltered(int2 ipos)
+{
+    return prevFiltered[ipos];
+}
+
 void d_getFilteredGaussian(int2 ipos, int nsi, float4 val)
 {
     accumDerivBuf4(pdaFilteredGaussian, ipos, val, filteredGaussian, nsi);
@@ -52,6 +73,8 @@ float4 getFilteredGaussian(int2 ipos, int nsi)
 float calculateLoss(int2 ipos)
 {
     const int2 screenSize = getTextureDims(referenceImage, 0);
+
+    // first compute gradient loss
 
     // why do academics call this a "laplacian"?
     // please, just call it an edge detection filter
@@ -85,16 +108,21 @@ float calculateLoss(int2 ipos)
 
     float3 gradientLoss = abs(filteredGradient - referenceGradient);
 
+    // color diff loss
     float3 filteredCenter = applyGamma(getFilteredImage(ipos)).rgb;
     float3 referenceCenter = applyGamma(getReferenceImage(ipos)).rgb;
 
     float3 centerLoss = abs(filteredCenter - referenceCenter);
 
-    // TODO later
-    float3 temporalLoss = float3(0.0f);
+    // temporal loss
+    const float K_FRAME_TIME = 1.0f / 60.0f;
+    float3 filteredDerivative = (filteredCenter - applyGamma(getPrevFiltered(ipos)).rgb) / K_FRAME_TIME;
+    float3 referenceDerivative = (referenceCenter - applyGamma(getPrevReference(ipos)).rgb) / K_FRAME_TIME;
 
-    const float3 weights = float3(0.1f, 0.9f, 0.0f);
-    float3 totalPerChannelLoss = mul(matrix<float, 3, 3>(gradientLoss, centerLoss, temporalLoss), weights);
+    float3 temporalLoss = abs(filteredDerivative - referenceDerivative);
+
+    const float3 weights = float3(0.8f, 0.1f, 0.1f);
+    float3 totalPerChannelLoss = weights[0] * centerLoss + weights[1] * gradientLoss + weights[2] * temporalLoss;  //mul(matrix<float, 3, 3>(centerLoss, gradientLoss, temporalLoss), weights);
 
     // Give more weight to the channels the human eye is more sensitive to
     const float3 channelCoeffs = float3(0.2126f, 0.7152f, 0.0722f);

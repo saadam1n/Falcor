@@ -55,6 +55,8 @@ public:
     // only used in training
     ref<Texture> pReferenceTexture;
     ref<Texture> pLossTexture;
+    ref<Texture> pPrevFiltered;
+    ref<Texture> pPrevReference;
 };
 
 struct SVGFTrainingDataset : public SVGFRenderData
@@ -75,6 +77,7 @@ private:
 
     bool atValidIndex() const;
     std::string getSampleBufferPath(const std::string& buffer) const;
+    static Bitmap::UniqueConstPtr readBitmapFromFile(const std::string& path);
     void loadSampleBuffer(RenderContext* pRenderContext, ref<Texture> tex, const std::string& buffer);
 };
 
