@@ -207,8 +207,10 @@ private:
     {
         // float4 is max allowed size
         SVGFParameter<float4>* mAddress;
+        float4 momentum;
+        float4 ssgrad;
         int mNumElements;
-        std::string name;
+        std::string mName;
     };
     std::vector<ParameterMetaInfo> mParameterReflector;
 

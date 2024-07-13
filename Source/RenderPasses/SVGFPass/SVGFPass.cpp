@@ -193,6 +193,8 @@ SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, const std::string&
     pPrevReference = createFullscreenTexture(pDevice);
 
     // preload all textures
+    std::cout << "Preloading the dataset..." << std::endl;
+
     std::map<std::string, std::future<Bitmap::UniqueConstPtr>> preloadTasks;
     while(atValidIndex())
     {
@@ -236,6 +238,7 @@ bool SVGFTrainingDataset::loadNext(RenderContext* pRenderContext)
 
 bool SVGFTrainingDataset::atValidIndex() const
 {
+    return (mSampleIdx < 40);
     return std::filesystem::exists(getSampleBufferPath(kDatasetColor));
 }
 
@@ -756,11 +759,20 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
         }
 
         if (mTrainingDataset.loadNext(pRenderContext)) {
-            std::cout << "\tOn Frame " << mDatasetIndex << "\n";
+            if(mDatasetIndex % 10 == 0)
+            {
+                std::cout << "\tOn Frame " << mDatasetIndex << "\n";
+            }
             // first clear all our buffers
             for (int i = 0; i < mParameterReflector.size(); i++)
             {
                 mParameterReflector[i].mAddress->clearBuffer(pRenderContext);
+
+                if(mEpoch == 0)
+                {
+                    mParameterReflector[i].momentum = float4(0.0f);
+                    mParameterReflector[i].ssgrad = float4(0.0f);
+                }
             }
 
             runSvgfFilter(pRenderContext, mTrainingDataset, true);
@@ -785,7 +797,7 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
         {
             int batchSize = mDatasetIndex;
 
-            const float K_LRATE_NUMER = 3.0f * 20.0f;
+            const float K_LRATE_NUMER = 0.1f * 20.0f;
             const float K_LRATE_DENOM = 1.0f * 20.0f;
 
             // skip the first few frames which probably don't have stablized derivatives
@@ -794,7 +806,12 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 
             float learningRate = K_LRATE_NUMER / ((K_LRATE_DENOM + mEpoch) * sampledFrames);
 
+            // parameters for the adam algorithm
+            const float K_BETA_MOMENTUM = 0.9f;
+            const float K_BETA_SSGRAD = 0.999f;
 
+            static float betaMomentumCorrection = K_BETA_MOMENTUM;
+            static float betaSsgradCorrection = K_BETA_SSGRAD;
 
             // adjust values
             float maxAdjValue = 0.0f;
@@ -814,8 +831,18 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 
                     for (int j = 0; j < pmi.mNumElements; j++)
                     {
-                        float adjustment = -learningRate * totalGradient[j];
-                        std::cout << "\tAdjusting by " << pmi.name << "\tby " << adjustment << "\n";
+                        float nextMomentum = K_BETA_MOMENTUM * pmi.momentum[j] + (1.0f - K_BETA_MOMENTUM) * totalGradient[j];
+                        float nextSsgrad = K_BETA_SSGRAD * pmi.ssgrad[j] + (1.0f - K_BETA_SSGRAD) * totalGradient[j] * totalGradient[j];
+                        
+                        pmi.momentum[j] = nextMomentum;
+                        pmi.ssgrad[j] = nextSsgrad;
+
+                        float unbiasedMomentum = nextMomentum / (1.0f - betaMomentumCorrection);
+                        float unbiasedSsgrad = nextSsgrad / (1.0f - betaSsgradCorrection);
+
+
+                        float adjustment = -learningRate * unbiasedMomentum / (sqrt(unbiasedSsgrad) + 1e-6f);
+                        std::cout << "\tAdjusting by " << pmi.mName << "\tby " << adjustment << "\n";
                         pmi.mAddress->dv[j] += adjustment;
 
                         // ensure greater than zero
@@ -824,10 +851,10 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
                             pmi.mAddress->dv[j] = 0.0f;
                         }
 
-                        if(adjustment > maxAdjValue)
+                        if(abs(adjustment) > abs(maxAdjValue))
                         {
                             maxAdjValue = adjustment;
-                            maxAdjParamName = pmi.name;
+                            maxAdjParamName = pmi.mName;
                         }
                     }
                 }
@@ -852,6 +879,9 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
             std::cout << "Total loss in epoch\t" << mEpoch << "\tacross " << sampledFrames << "\t frames was " << loss.r << "\n";
 
             std::cout << "\n\n\n\n\n\n";
+
+            betaMomentumCorrection *= K_BETA_MOMENTUM;
+            betaSsgradCorrection *= K_BETA_SSGRAD;
 
             mDatasetIndex = 0;
             mEpoch++;
@@ -1439,7 +1469,12 @@ void SVGFPass::registerParameterManual(SVGFParameter<float4>* param, int cnt, co
 {
     param->da = createAccumulationBuffer(mpDevice);
 
-    ParameterMetaInfo pmi{param, cnt, name};
+    ParameterMetaInfo pmi;
+
+    pmi.mAddress = param;
+    pmi.mNumElements = cnt;
+    pmi.mName = name;
+
     mParameterReflector.push_back(pmi);
 }
 
