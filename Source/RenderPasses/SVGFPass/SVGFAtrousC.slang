@@ -89,9 +89,10 @@ float computeVarianceCenter(int2 screenSize, int2 ipos, float[2][2] kernel)
             const float k = kernel[abs(xx)][abs(yy)];
 
             const bool inside = (all(p >= int2(0, 0)) && all(p < screenSize));
+            int forcs_nsi = nsi++;
             if (inside)
             {
-                sum += getIllumination(p, nsi++).a * k;
+                sum += getIllumination(p, forcs_nsi).a * k;
                 ksum += k;
             }
         }
