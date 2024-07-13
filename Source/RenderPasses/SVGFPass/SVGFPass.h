@@ -226,6 +226,7 @@ private:
     // da is short for derivative accum
 
     struct {
+        ref<Texture> pLinearZAndNormal;
         ref<FullScreenPass> sPass;
     } mPackLinearZAndNormalState;
 
@@ -235,6 +236,8 @@ private:
         ref<Texture> ptMoments;
 
         ref<Texture> pPrevFiltered;
+        ref<Texture> pPrevMoments;
+        ref<Texture> pPrevHistoryLength;
 
         SVGFParameter<float> mAlpha;
         SVGFParameter<float> mMomentsAlpha;
@@ -251,7 +254,9 @@ private:
     struct {
         ref<Buffer> pdaHistoryLen;
 
-        ref<Texture> pLumVarTex;
+        ref<Texture> pCurIllum;
+        ref<Texture> pCurMoments;
+        ref<Texture> pCurHistoryLength;
 
         SVGFParameter<float3> mSigma;
 
@@ -289,6 +294,8 @@ private:
 
     struct {
         ref<Buffer> pdaIllumination;
+
+        ref<Texture> pFinalFiltered;
 
         ref<FullScreenPass> sPass;
         ref<FullScreenPass> dPass;
