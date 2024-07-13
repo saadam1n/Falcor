@@ -746,15 +746,18 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
 }
 
 // parameters for the adam algorithm
+// the paper recommends 0.9 and 0.999 respectively, but we observed that leads to exploding gradients
 const float K_BETA_MOMENTUM = 0.9f;
 const float K_BETA_SSGRAD = 0.999f;
 
 static float betaMomentumCorrection = K_BETA_MOMENTUM;
 static float betaSsgradCorrection = K_BETA_SSGRAD;
+
+static std::vector<float> lossHistory;
 void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 {
-    const int K_NUM_EPOCHS = 7;
-    const int K_FRAME_SAMPLE_START = 12;
+    const int K_NUM_EPOCHS = 70;
+    const int K_FRAME_SAMPLE_START = 10;
 
     if(mEpoch < K_NUM_EPOCHS)
     {
@@ -807,19 +810,20 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
         {
             int batchSize = mDatasetIndex;
 
-            const float K_LRATE_NUMER = 1.0f;
-            const float K_LRATE_DENOM = 1.0f;
+            const float K_LRATE_NUMER = 15.0f * 0.007f;
+            const float K_LRATE_DENOM = 15.0f * 1.0f;
 
             // skip the first few frames which probably don't have stablized derivatives
             int sampledFrames = batchSize - K_FRAME_SAMPLE_START;
 
-            float learningRate = K_LRATE_NUMER / ((K_LRATE_DENOM + mEpoch) * sampledFrames);
+            float learningRate = K_LRATE_NUMER / (K_LRATE_DENOM + mEpoch);
 
 
 
             // adjust values
             float maxAdjValue = 0.0f;
             std::string maxAdjParamName = "none";
+            std::vector<std::string> mismatchedParameters;
             {
                 float4* gradient = (float4*)mReadbackBuffer[0]->map();
 
@@ -835,6 +839,8 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 
                     for (int j = 0; j < pmi.mNumElements; j++)
                     {
+                        totalGradient[j] /= sampledFrames;
+
                         float nextMomentum = K_BETA_MOMENTUM * pmi.momentum[j] + (1.0f - K_BETA_MOMENTUM) * totalGradient[j];
                         float nextSsgrad = K_BETA_SSGRAD * pmi.ssgrad[j] + (1.0f - K_BETA_SSGRAD) * totalGradient[j] * totalGradient[j];
                         
@@ -845,14 +851,15 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
                         float unbiasedSsgrad = nextSsgrad / (1.0f - betaSsgradCorrection);
 
 
-                        float adjustment = learningRate * unbiasedMomentum / (sqrt(unbiasedSsgrad) + 1e-8f);
+                        float adjustment = learningRate * unbiasedMomentum / (sqrt(unbiasedSsgrad) + 5e-3f);
                         pmi.mAddress->dv[j] -= adjustment;
 
-                        std::cout << "\tAdjusting " << pmi.mName << "\tby " << -adjustment << "\n";
+                        std::cout << "\tAdjusting " << pmi.mName << "\tby " << -adjustment << "\twhen negative gradient is " << -totalGradient[j] << "\n";
 
                         if(sign(adjustment) != sign(totalGradient[j]))
                         {
                             std::cout << "\tSign mismatch with " << totalGradient[j] << "\n";
+                            mismatchedParameters.push_back(pmi.mName);
                         }
 
                         std::cout << "\n";
@@ -875,6 +882,12 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
             }
             std::cout << "Max adjustment was " << maxAdjValue << "\tfor " << maxAdjParamName  << "\n";
 
+            std::cout << mismatchedParameters.size() << " mismatched parameters:\n";
+            for(const auto& s : mismatchedParameters)
+            {
+                std::cout << "\t" << s << "\n";
+            }
+
             // now wait for it to execute and download it
             float4 loss = float4(0.0f);
             {
@@ -889,6 +902,13 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
             }
             loss /= float4(sampledFrames);
             std::cout << "Average loss in epoch\t" << mEpoch << "\tacross " << sampledFrames << "\t frames was " << loss.r << "\n";
+
+            lossHistory.push_back(loss.r);
+            std::cout << "Loss history:\n";
+            for(float l : lossHistory)
+            {
+                std::cout << "\t" << l << std::endl;
+            }
 
             std::cout << "\n\n\n\n\n\n";
 
