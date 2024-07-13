@@ -396,7 +396,11 @@ Bitmap::Bitmap(uint32_t width, uint32_t height, ResourceFormat format)
 
 Bitmap::Bitmap(uint32_t width, uint32_t height, ResourceFormat format, const uint8_t* pData) : Bitmap(width, height, format)
 {
-    std::memcpy(mpData.get(), pData, mSize);
+    // modification to Falcor source to allow faster loads
+    if (pData)
+    {
+        std::memcpy(mpData.get(), pData, mSize);
+    }
 }
 
 static FREE_IMAGE_FORMAT toFreeImageFormat(Bitmap::FileFormat fmt)

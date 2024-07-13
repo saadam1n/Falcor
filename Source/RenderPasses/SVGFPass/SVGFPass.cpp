@@ -261,13 +261,13 @@ Bitmap::UniqueConstPtr SVGFTrainingDataset::readBitmapFromFile(const std::string
     else
     {
         auto len = std::filesystem::file_size(cachePath);
-        std::vector<char> mem(len);
 
+        bitmap = std::move(Bitmap::create(screenWidth, screenHeight, ResourceFormat::RGBA32Float, nullptr));
+
+        // do this all with DMA instead of CPU memcpys
         std::ifstream fs(cachePath, std::ios::binary);
-        fs.read(mem.data(), len);
+        fs.read((char*)bitmap->getData(), len);
         fs.close();
-
-        bitmap = std::move(Bitmap::create(screenWidth, screenHeight, ResourceFormat::RGBA32Float, (const uint8_t*)mem.data()));
     }
 
     return bitmap;
