@@ -38,7 +38,7 @@ float4 filter(int2 ipos)
 
         if (!yaxis)
         {
-            illum = applyGamma(illum);
+            illum = applyLossColorTransform(illum);
         }
 
         sum += getIllumination(p, i) * kernel[i];

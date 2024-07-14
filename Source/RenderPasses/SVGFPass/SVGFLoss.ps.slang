@@ -109,20 +109,21 @@ float4 calculateLoss(int2 ipos)
     float3 gradientLoss = abs(filteredGradient - referenceGradient);
 
     // color diff loss
-    float3 filteredCenter = applyGamma(getFilteredImage(ipos)).rgb;
-    float3 referenceCenter = applyGamma(getReferenceImage(ipos)).rgb;
+    float3 filteredCenter = applyLossColorTransform(getFilteredImage(ipos)).rgb;
+    float3 referenceCenter = applyLossColorTransform(getReferenceImage(ipos)).rgb;
 
     float3 centerLoss = abs(filteredCenter - referenceCenter);
 
     // temporal loss
     const float K_FRAME_TIME = 1.0f / 60.0f;
-    float3 filteredDerivative = (filteredCenter - applyGamma(getPrevFiltered(ipos)).rgb) / K_FRAME_TIME;
-    float3 referenceDerivative = (referenceCenter - applyGamma(getPrevReference(ipos)).rgb) / K_FRAME_TIME;
+    float3 filteredDerivative = (filteredCenter - applyLossColorTransform(getPrevFiltered(ipos)).rgb) / K_FRAME_TIME;
+    float3 referenceDerivative = (referenceCenter - applyLossColorTransform(getPrevReference(ipos)).rgb) / K_FRAME_TIME;
 
     float3 temporalLoss = abs(filteredDerivative - referenceDerivative);
 
-    const float3 weights = float3(0.8f, 0.1f, 0.1f);
-    float3 totalPerChannelLoss = weights[0] * centerLoss + weights[1] * gradientLoss + weights[2] * temporalLoss;  //mul(matrix<float, 3, 3>(centerLoss, gradientLoss, temporalLoss), weights);
+    const float3 unnormWeights = float3(2.8f, 0.1f, 1.5f);
+    const float3 normWeights = unnormWeights / dot(unnormWeights, 1.0f.xxx);
+    float3 totalPerChannelLoss = normWeights[0] * centerLoss + normWeights[1] * gradientLoss + normWeights[2] * temporalLoss;  //mul(matrix<float, 3, 3>(centerLoss, gradientLoss, temporalLoss), weights);
 
     // Give more weight to the channels the human eye is more sensitive to
     const float3 channelCoeffs = float3(0.2126f, 0.7152f, 0.0722f);

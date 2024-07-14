@@ -773,7 +773,7 @@ static float betaSsgradCorrection = K_BETA_SSGRAD;
 static std::vector<float> lossHistory;
 void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 {
-    const int K_NUM_EPOCHS = 1;
+    const int K_NUM_EPOCHS = 8;
     const int K_FRAME_SAMPLE_START = 10;
 
     if(mEpoch < K_NUM_EPOCHS)
@@ -827,7 +827,7 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
         {
             int batchSize = mDatasetIndex;
 
-            const float K_LRATE_NUMER = 15.0f * 0.007f;
+            const float K_LRATE_NUMER = 15.0f * 0.0085f;
             const float K_LRATE_DENOM = 15.0f * 1.0f;
 
             // skip the first few frames which probably don't have stablized derivatives

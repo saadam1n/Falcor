@@ -205,10 +205,15 @@ float3 readDerivBuf3(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex) {
 
 // Used in loss calculations
 [BackwardDifferentiable]
-float4 applyGamma(float4 val)
+float4 applyLossColorTransform(float4 val)
 {
     // ignore really bright colors
     //val = min(val, 1.5f.xxxx);
 
-    return pow(val, 0.2f.xxxx);
+    val = pow(val, 0.2f.xxxx);
+
+    // apply some tonemapping operator so it more closely matches whats on screen
+    val = 1.0f - exp(-2.0f * val);
+
+    return val;
 }
