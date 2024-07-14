@@ -55,6 +55,9 @@ public:
     // only used in training
     ref<Texture> pReferenceTexture;
     ref<Texture> pLossTexture;
+    ref<Texture> pCenterLossTexture;
+    ref<Texture> pGradientLossTexture;
+    ref<Texture> pTemporalLossTexture;
     ref<Texture> pPrevFiltered;
     ref<Texture> pPrevReference;
 };

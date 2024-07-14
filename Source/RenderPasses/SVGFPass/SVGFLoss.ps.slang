@@ -70,7 +70,7 @@ float4 getFilteredGaussian(int2 ipos, int nsi)
 }
 
 [BackwardDifferentiable]
-float calculateLoss(int2 ipos)
+float4 calculateLoss(int2 ipos)
 {
     const int2 screenSize = getTextureDims(referenceImage, 0);
 
@@ -128,18 +128,34 @@ float calculateLoss(int2 ipos)
     const float3 channelCoeffs = float3(0.2126f, 0.7152f, 0.0722f);
     float totalLoss = dot(totalPerChannelLoss, channelCoeffs);
 
-    return totalLoss;
+    return float4(totalLoss, dot(centerLoss, channelCoeffs), dot(gradientLoss, channelCoeffs), dot(temporalLoss, channelCoeffs));
 }
 
-float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
+struct FS_OUT
+{
+    float totalLoss : SV_TARGET0;
+    float centerLoss : SV_TARGET1;
+    float gradientLoss : SV_TARGET2;
+    float temporalLoss : SV_TARGET3;
+}
+
+FS_OUT main(FullScreenPassVsOut vsOut) 
 {
     const int2 ipos = int2(vsOut.posH.xy);
 
-    __bwd_diff(calculateLoss)(ipos, 1.0f);
+    __bwd_diff(calculateLoss)(ipos, float4(1.0f, 0.0f.xxx));
 
     // return loss to debug
-    float loss = calculateLoss(ipos);
-    return loss;
+    float4 loss = calculateLoss(ipos);
+
+    FS_OUT fs_out;
+
+    fs_out.totalLoss = loss.r;
+    fs_out.centerLoss = loss.g;
+    fs_out.gradientLoss = loss.b;
+    fs_out.temporalLoss = loss.a;
+
+    return fs_out;
 }
 
 /*

@@ -24,20 +24,25 @@ def render_graph_SVGF():
     g.addEdge("SVGFPass.Filtered image", "ToneMapper.src")
 
     # Mark this first so it appears in the list first
-    g.markOutput("ToneMapper.dst")
-
+    #g.markOutput("ToneMapper.dst")
+    g.markOutput("SVGFPass.Filtered image")
     g.markOutput("SVGFPass.Reference")
     g.markOutput("SVGFPass.Loss")
+    g.markOutput("SVGFPass.CenterLoss")
+    g.markOutput("SVGFPass.GradientLoss")
+    g.markOutput("SVGFPass.TemporalLoss")
+    g.markOutput("ToneMapper.dst")
+
+
+
     g.markOutput("SVGFPass.DerivVerify")
     g.markOutput("SVGFPass.FuncLower")
     g.markOutput("SVGFPass.FuncUpper")
     g.markOutput("SVGFPass.FdCol")
     g.markOutput("SVGFPass.BdCol")
 
-    #g.markOutput("ToneMapper.dst")
 
     g.markOutput("ToneMapper.dst")
-    g.markOutput("SVGFPass.Filtered image")
     g.markOutput("SVGFPass.DebugBuf")
     g.markOutput("SVGFPass.DerivVerify")
     g.markOutput("PathTracer.color")

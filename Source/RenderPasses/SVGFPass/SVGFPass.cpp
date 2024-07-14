@@ -100,6 +100,9 @@ namespace
     const char kOutputBdCol[] = "BdCol";
     const char kOutputReference[] = "Reference";
     const char kOutputLoss[] = "Loss";
+    const char kOutputCenterLoss[] = "CenterLoss";
+    const char kOutputGradientLoss[] = "GradientLoss";
+    const char kOutputTemporalLoss[] = "TemporalLoss";
 
     // Stuff from dataset
     const std::string kDatasetReference = "Reference";
@@ -164,6 +167,9 @@ SVGFRenderData::SVGFRenderData(const RenderData& renderData) {
 
     // loss buffers
     pLossTexture = renderData.getTexture(kOutputLoss);
+    pCenterLossTexture = renderData.getTexture(kOutputCenterLoss);
+    pGradientLossTexture = renderData.getTexture(kOutputGradientLoss);
+    pTemporalLossTexture = renderData.getTexture(kOutputTemporalLoss);
     pReferenceTexture = renderData.getTexture(kOutputReference);
     pPrevFiltered = renderData.getTexture(kInternalBufferPreviousFiltered);
     pPrevReference = renderData.getTexture(kInternalBufferPreviousReference);
@@ -184,6 +190,9 @@ SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, const std::string&
     MarkDatasetTexture(MotionVector);
 
     pLossTexture = createFullscreenTexture(pDevice);
+    pCenterLossTexture = createFullscreenTexture(pDevice);
+    pGradientLossTexture = createFullscreenTexture(pDevice);
+    pTemporalLossTexture = createFullscreenTexture(pDevice);
     pPrevLinearZAndNormalTexture = createFullscreenTexture(pDevice);
     pOutputTexture = createFullscreenTexture(pDevice);
     pDebugTexture = createFullscreenTexture(pDevice);
@@ -526,7 +535,9 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         Fbo::Desc desc;
         desc.setSampleCount(0);
         desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
-        desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Int);
+        desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(2, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(3, Falcor::ResourceFormat::RGBA32Float);
         mpDummyFullscreenFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
     }
 
@@ -619,6 +630,9 @@ RenderPassReflection SVGFPass::reflect(const CompileData& compileData)
     reflector.addOutput(kOutputBdCol, "BdCol").format(ResourceFormat::RGBA32Float);
     reflector.addOutput(kOutputReference, "Reference").format(ResourceFormat::RGBA32Float);
     reflector.addOutput(kOutputLoss, "Loss").format(ResourceFormat::RGBA32Float);
+    reflector.addOutput(kOutputCenterLoss, "CenterLoss").format(ResourceFormat::RGBA32Float);
+    reflector.addOutput(kOutputGradientLoss, "GradientLoss").format(ResourceFormat::RGBA32Float);
+    reflector.addOutput(kOutputTemporalLoss, "TemporalLoss").format(ResourceFormat::RGBA32Float);
 
     return reflector;
 }
@@ -725,6 +739,9 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
         // display current results to screen
         pRenderContext->blit(mTrainingDataset.pOutputTexture->getSRV(), svgfrd.pOutputTexture->getRTV());
         pRenderContext->blit(mTrainingDataset.pLossTexture->getSRV(), svgfrd.pLossTexture->getRTV());
+        pRenderContext->blit(mTrainingDataset.pCenterLossTexture->getSRV(), svgfrd.pCenterLossTexture->getRTV());
+        pRenderContext->blit(mTrainingDataset.pGradientLossTexture->getSRV(), svgfrd.pGradientLossTexture->getRTV());
+        pRenderContext->blit(mTrainingDataset.pTemporalLossTexture->getSRV(), svgfrd.pTemporalLossTexture->getRTV());
     }
     else
     {
@@ -1077,6 +1094,9 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, const SVGFRenderData& 
     mLossState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 
     pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(0)->getSRV(), renderData.pLossTexture->getRTV());
+    pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(1)->getSRV(), renderData.pCenterLossTexture->getRTV());
+    pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(2)->getSRV(), renderData.pGradientLossTexture->getRTV());
+    pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(3)->getSRV(), renderData.pTemporalLossTexture->getRTV());
     runCompactingPass(pRenderContext, 0, 9);
 
     // update the previous textures
