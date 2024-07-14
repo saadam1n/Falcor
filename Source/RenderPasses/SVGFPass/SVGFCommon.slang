@@ -207,5 +207,8 @@ float3 readDerivBuf3(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex) {
 [BackwardDifferentiable]
 float4 applyGamma(float4 val)
 {
+    // ignore really bright colors
+    //val = min(val, 1.5f.xxxx);
+
     return pow(val, 0.2f.xxxx);
 }

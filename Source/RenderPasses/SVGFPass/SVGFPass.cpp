@@ -756,7 +756,7 @@ static float betaSsgradCorrection = K_BETA_SSGRAD;
 static std::vector<float> lossHistory;
 void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 {
-    const int K_NUM_EPOCHS = 70;
+    const int K_NUM_EPOCHS = 1;
     const int K_FRAME_SAMPLE_START = 10;
 
     if(mEpoch < K_NUM_EPOCHS)
@@ -817,8 +817,6 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
             int sampledFrames = batchSize - K_FRAME_SAMPLE_START;
 
             float learningRate = K_LRATE_NUMER / (K_LRATE_DENOM + mEpoch);
-
-
 
             // adjust values
             float maxAdjValue = 0.0f;
