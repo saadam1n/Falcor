@@ -508,9 +508,8 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         Fbo::Desc desc;
         desc.setSampleCount(0);
         desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float); // illumination
-        desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Float);   // moments
-        desc.setColorTarget(2, Falcor::ResourceFormat::RGBA32Float);    // history length
-        desc.setColorTarget(3, Falcor::ResourceFormat::RGBA32Float);    // debug buf
+        desc.setColorTarget(1, Falcor::ResourceFormat::RG32Float); // moments
+        desc.setColorTarget(2, Falcor::ResourceFormat::R32Float); // history length
         mpCurReprojFbo  = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
         mpPrevReprojFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
     }
@@ -526,7 +525,6 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         // Screen-size FBOs with 1 RGBA32F buffer
         Fbo::Desc desc;
         desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
-        desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Float);    // debug buf
 
         mpPingPongFbo[0]  = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
         mpPingPongFbo[1]  = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
@@ -637,17 +635,17 @@ RenderPassReflection SVGFPass::reflect(const CompileData& compileData)
         .bindFlags(ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource);
 
     reflector.addOutput(kOutputBufferFilteredImage, "Filtered image").format(ResourceFormat::RGBA16Float);
-    reflector.addOutput(kOutputDebugBuffer, "DebugBuf").format(ResourceFormat::RGBA32Float);
-    reflector.addOutput(kOutputDerivVerifyBuf, "Deriv Verify").format(ResourceFormat::RGBA32Float);
-    reflector.addOutput(kOutputFuncLower, "Func lower").format(ResourceFormat::RGBA32Float);
-    reflector.addOutput(kOutputFuncUpper, "Func upper").format(ResourceFormat::RGBA32Float);
-    reflector.addOutput(kOutputFdCol, "FdCol").format(ResourceFormat::RGBA32Float);
-    reflector.addOutput(kOutputBdCol, "BdCol").format(ResourceFormat::RGBA32Float);
-    reflector.addOutput(kOutputReference, "Reference").format(ResourceFormat::RGBA32Float);
-    reflector.addOutput(kOutputLoss, "Loss").format(ResourceFormat::RGBA32Float);
-    reflector.addOutput(kOutputCenterLoss, "CenterLoss").format(ResourceFormat::RGBA32Float);
-    reflector.addOutput(kOutputGradientLoss, "GradientLoss").format(ResourceFormat::RGBA32Float);
-    reflector.addOutput(kOutputTemporalLoss, "TemporalLoss").format(ResourceFormat::RGBA32Float);
+    reflector.addOutput(kOutputDebugBuffer, "DebugBuf").format(ResourceFormat::RGBA16Float);
+    reflector.addOutput(kOutputDerivVerifyBuf, "Deriv Verify").format(ResourceFormat::RGBA16Float);
+    reflector.addOutput(kOutputFuncLower, "Func lower").format(ResourceFormat::RGBA16Float);
+    reflector.addOutput(kOutputFuncUpper, "Func upper").format(ResourceFormat::RGBA16Float);
+    reflector.addOutput(kOutputFdCol, "FdCol").format(ResourceFormat::RGBA16Float);
+    reflector.addOutput(kOutputBdCol, "BdCol").format(ResourceFormat::RGBA16Float);
+    reflector.addOutput(kOutputReference, "Reference").format(ResourceFormat::RGBA16Float);
+    reflector.addOutput(kOutputLoss, "Loss").format(ResourceFormat::RGBA16Float);
+    reflector.addOutput(kOutputCenterLoss, "CenterLoss").format(ResourceFormat::RGBA16Float);
+    reflector.addOutput(kOutputGradientLoss, "GradientLoss").format(ResourceFormat::RGBA16Float);
+    reflector.addOutput(kOutputTemporalLoss, "TemporalLoss").format(ResourceFormat::RGBA16Float);
 
     return reflector;
 }
