@@ -61,18 +61,28 @@ const float4 getLinearZAndNormal(int2 ipos)
     return gLinearZAndNormal[ipos];
 }
 
-void d_getIllumination(int2 ipos, int nsi, const float4 val)
+void d_getIllumination(int2 ipos, int2 sampleIter, bool varianceStage, const float4 val)
 {
-    accumDerivBuf4(daIllumination, ipos, val, gAlbedo, nsi);
+    int storageIdx;
+    if (varianceStage)
+    {
+        storageIdx = 3 * (sampleIter.y + 1) + (sampleIter.x + 1);
+    }
+    else
+    {
+        // add 9 offset to prevent overwrites
+        storageIdx = 5 * (sampleIter.y + 2) + (sampleIter.x + 2) + 9;
+    }
+
+    accumDerivBuf4(daIllumination, ipos, val, gAlbedo, storageIdx);
 }
 
 [BackwardDerivative(d_getIllumination)]
-const float4 getIllumination(int2 ipos, int nsi)
+const float4 getIllumination(int2 p, int2 sampleIter, bool varianceStage)
 {
-    return gIllumination.Load(int3(ipos, 0));
+    return gIllumination.Load(int3(p, 0));
 }
 
-static int nsi = 0;
 // computes a 3x3 gaussian blur of the variance, centered around
 // the current pixel. nextStoreIndex will be 9 after this function
 [BackwardDifferentiable]
@@ -89,10 +99,9 @@ float computeVarianceCenter(int2 screenSize, int2 ipos, float[2][2] kernel)
             const float k = kernel[abs(xx)][abs(yy)];
 
             const bool inside = (all(p >= int2(0, 0)) && all(p < screenSize));
-            int forcs_nsi = nsi++;
             if (inside)
             {
-                sum += getIllumination(p, forcs_nsi).a * k;
+                sum += getIllumination(p, int2(xx, yy), true).a * k;
                 ksum += k;
             }
         }
@@ -114,7 +123,7 @@ float4 atrous(FullScreenPassVsOut vsOut,
 
     // constant samplers to prevent the compiler from generating code which
     // fetches the sampler descriptor from memory for each texture access
-    const float4 illuminationCenter = getIllumination(ipos, nsi++);
+    const float4 illuminationCenter = getIllumination(ipos, int2(0, 0), false);
     const float lIlluminationCenter = dot(illuminationCenter.rgb, luminanceParams);
 
     // variance, filtered using 3x3 gaussin blur
@@ -145,11 +154,10 @@ float4 atrous(FullScreenPassVsOut vsOut,
 
             const float kernel = kernelWeights[abs(xx)] * kernelWeights[abs(yy)];
 
-            int force_nsi = nsi++;
 
             if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
             {
-                const float4 illuminationP = getIllumination(p, force_nsi);
+                const float4 illuminationP = getIllumination(p, int2(xx, yy), false);
                 const float lIlluminationP = dot(illuminationP.rgb, luminanceParams);
                 const float zP = getLinearZAndNormal(p).x;
                 const float3 nP = oct_to_ndir_snorm(getLinearZAndNormal(p).zw);

@@ -734,7 +734,7 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    runTrainingAndTesting(pRenderContext, renderData);
+    runDerivativeTest(pRenderContext, renderData);
     std::cout.flush();
 }
 
@@ -958,7 +958,7 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
 
     mDelta = 0.05f;
 
-    float& valToChange = mFilterMomentsState.mSigma.dv.x;
+    float& valToChange = mAtrousState.mIterationState[mDerivativeIteration].mSigma.dv.x;
     float oldval = valToChange;
 
     valToChange = oldval - mDelta;
@@ -993,37 +993,6 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
 
     std::cout << "Flr Redc Sum:\t" << falcorTest.x << std::endl;
 
-#if 0
-    int numRemaining = numPixels;
-    for (int i = 0; i < 3; i++)
-    {
-        // clear the output buffer
-        pRenderContext->clearUAV(pdaPingPongSumBuffer[1]->getUAV().get(), Falcor::uint4(0));
-
-        auto summingCB = summingPass->getRootVar()["SummingCB"];
-
-        summingCB["srcBuf"] = (i == 0 ? mFilterMomentsState.mSigma.da : pdaPingPongSumBuffer[0]);
-        summingCB["srcOffset"] = 0;
-        summingCB["srcMax"] = numRemaining;
-
-        summingCB["dstBuf"] = pdaPingPongSumBuffer[1];
-        summingCB["dstOffset"] = 0;
-
-        summingPass->execute(pRenderContext, numRemaining, 1);
-        // round up divide
-        numRemaining = (numRemaining + 127) / 128;
-
-        std::swap(pdaPingPongSumBuffer[0], pdaPingPongSumBuffer[1]);
-    }
-
-    // written results will be the first index
-    pRenderContext->copyBufferRegion(mReadbackBuffer[0].get(), 0, pdaPingPongSumBuffer[0].get(), 0, sizeof(float4) * 1);
-    float4* ptr = (float4*)mReadbackBuffer[0]->map();
-    std::cout << "Par Redc Sum:\t" << ptr[0].x << std::endl;
-
-    mReadbackBuffer[0]->unmap();
-#endif
-
     std::cout << std::endl;
 }
 
@@ -1031,7 +1000,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVG
 {
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mFilterMomentsState.mSigma.da;
+    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[mDerivativeIteration].mSigma.da;
     perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
     perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
     perImageCB["delta"] = mDelta;
@@ -1289,7 +1258,7 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
 
         mAtrousState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 
-        runCompactingPass(pRenderContext, 0, 1 + 9 + 25);
+        runCompactingPass(pRenderContext, 0, 9 + 25);
 
     }
 }
