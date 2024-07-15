@@ -68,6 +68,8 @@ public:
     SVGFTrainingDataset(ref<Device> pDevice, const std::string& folder);
     bool loadNext(RenderContext* pRenderContext);
 
+    // preload all bitmaps, if not already
+    void preloadBitmaps();
 private:
     // the folder containing the dataset
     std::string mFolder;
@@ -77,6 +79,8 @@ private:
     std::map<std::string, Bitmap::UniqueConstPtr> mPreloadedBitmaps;
     // cache of texture name to pointer mappings
     std::map<std::string, ref<Texture>> mTextureNameMappings;
+
+    bool mPreloaded = false;
 
     bool atValidIndex() const;
     std::string getSampleBufferPath(const std::string& buffer) const;

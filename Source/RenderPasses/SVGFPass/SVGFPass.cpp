@@ -200,28 +200,6 @@ SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, const std::string&
 
     pPrevFiltered = createFullscreenTexture(pDevice);
     pPrevReference = createFullscreenTexture(pDevice);
-
-    // preload all textures
-    std::cout << "Preloading the dataset..." << std::endl;
-
-    std::map<std::string, std::future<Bitmap::UniqueConstPtr>> preloadTasks;
-    while(atValidIndex())
-    {
-        for(auto [buffer, tex] : mTextureNameMappings)
-        {
-            std::string path = getSampleBufferPath(buffer);
-            preloadTasks[path] = std::async(std::launch::async, &readBitmapFromFile, path);
-        }
-
-        mSampleIdx++;
-    }
-
-    mSampleIdx = 0;
-
-    for(auto& [path, bitmap] : preloadTasks)
-    {
-        mPreloadedBitmaps[path] = std::move(bitmap.get());
-    }
 }
 
 bool SVGFTrainingDataset::loadNext(RenderContext* pRenderContext)
@@ -243,6 +221,36 @@ bool SVGFTrainingDataset::loadNext(RenderContext* pRenderContext)
 
     // indicate to callee that we this sample was successfully read
     return true;
+}
+
+void SVGFTrainingDataset::preloadBitmaps()
+{
+    if(!mPreloaded)
+    {
+        mPreloaded = true;
+
+        // preload all textures
+        std::cout << "Preloading the dataset..." << std::endl;
+
+        std::map<std::string, std::future<Bitmap::UniqueConstPtr>> preloadTasks;
+        while(atValidIndex())
+        {
+            for(auto [buffer, tex] : mTextureNameMappings)
+            {
+                std::string path = getSampleBufferPath(buffer);
+                preloadTasks[path] = std::async(std::launch::async, &readBitmapFromFile, path);
+            }
+
+            mSampleIdx++;
+        }
+
+        mSampleIdx = 0;
+
+        for(auto& [path, bitmap] : preloadTasks)
+        {
+            mPreloadedBitmaps[path] = std::move(bitmap.get());
+        }
+    }
 }
 
 bool SVGFTrainingDataset::atValidIndex() const
@@ -306,7 +314,6 @@ void SVGFTrainingDataset::loadSampleBuffer(RenderContext* pRenderContext, ref<Te
 
 SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), mTrainingDataset(pDevice, "C:/FalcorFiles/Dataset0/")
 {
-
     for (const auto& [key, value] : props)
     {
         if (key == kEnabled) mFilterEnabled = value;
@@ -319,7 +326,6 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         else if (key == kMomentsAlpha) ;//dvMomentsAlpha = value;
         else logWarning("Unknown field '{}' in SVGFPass dictionary.", key);
     }
-
 
     mPackLinearZAndNormalState.sPass = createFullscreenPassAndDumpIR(kPackLinearZAndNormalShader);
 
@@ -654,6 +660,8 @@ void SVGFPass::compile(RenderContext* pRenderContext, const CompileData& compile
 
 void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool updateInternalBuffers)
 {
+    FALCOR_PROFILE(pRenderContext, "SVGF Filter");
+
     FALCOR_ASSERT(
         mpFilteredIlluminationFbo && mpFilteredIlluminationFbo->getWidth() == pAlbedoTexture->getWidth() &&
         mpFilteredIlluminationFbo->getHeight() == pAlbedoTexture->getHeight()
@@ -782,8 +790,12 @@ static float betaSsgradCorrection = K_BETA_SSGRAD;
 static std::vector<float> lossHistory;
 void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 {
+    FALCOR_PROFILE(pRenderContext, "Next Training Task");
+
     const int K_NUM_EPOCHS = 8;
     const int K_FRAME_SAMPLE_START = 10;
+
+    mTrainingDataset.preloadBitmaps();
 
     if(mEpoch < K_NUM_EPOCHS)
     {
@@ -998,6 +1010,8 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
 
 void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVGFRenderData& renderData)
 {
+    FALCOR_PROFILE(pRenderContext, "Derivative Verif");
+
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
     perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[mDerivativeIteration].mSigma.da;
@@ -1013,6 +1027,8 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVG
 // I'll move parts of this off to other function as need be
 void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool useLoss)
 {
+    FALCOR_PROFILE(pRenderContext, "Bwd Pass");
+
     ref<Texture> pIllumTexture = mpPingPongFbo[0]->getColorTexture(0);
 
 
@@ -1049,6 +1065,8 @@ void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const SVGFRende
 
 void SVGFPass::computeLoss(RenderContext* pRenderContext, const SVGFRenderData& renderData)
 {
+    FALCOR_PROFILE(pRenderContext, "Loss");
+
     computeGaussian(pRenderContext, renderData.pReferenceTexture, mLossState.pReferenceGaussian, false);
     computeGaussian(pRenderContext, renderData.pOutputTexture, mLossState.pFilteredGaussian, true);
 
@@ -1086,6 +1104,8 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, const SVGFRenderData& 
 
 void SVGFPass::computeGaussian(RenderContext* pRenderContext, ref<Texture> tex, ref<Texture> storageLocation, bool saveTextures)
 {
+    FALCOR_PROFILE(pRenderContext, "Gaussian");
+
     auto perImageCB = mLossState.sGaussianPass->getRootVar()["PerImageCB"];
 
     if(saveTextures)
@@ -1113,6 +1133,8 @@ void SVGFPass::computeGaussian(RenderContext* pRenderContext, ref<Texture> tex, 
 
 void SVGFPass::computeDerivGaussian(RenderContext* pRenderContext)
 {
+    FALCOR_PROFILE(pRenderContext, "Bwd Gaussian");
+
     auto perImageCB = mLossState.dGaussianPass->getRootVar()["PerImageCB"];
     auto perImageCB_D = mLossState.dGaussianPass->getRootVar()["PerImageCB_D"];
 
@@ -1136,7 +1158,10 @@ void SVGFPass::computeDerivGaussian(RenderContext* pRenderContext)
     runCompactingPass(pRenderContext, 1, 12);
 }
 
-void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pOutputTexture, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture) {
+void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pOutputTexture, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture)
+{
+    FALCOR_PROFILE(pRenderContext, "Bwd Final Modulate");
+
     pRenderContext->clearUAV(mFinalModulateState.pdaIllumination->getUAV().get(), Falcor::uint4(0));
 
     auto perImageCB = mFinalModulateState.dPass->getRootVar()["PerImageCB"];
@@ -1153,6 +1178,8 @@ void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Text
 
 void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, bool updateInternalBuffers)
 {
+    FALCOR_PROFILE(pRenderContext, "Atrous");
+
     auto perImageCB = mAtrousState.sPass->getRootVar()["PerImageCB"];
 
     perImageCB["gAlbedo"] = pAlbedoTexture;
@@ -1211,6 +1238,8 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
 
 void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, ref<Texture> pOutputTexture)
 {
+    FALCOR_PROFILE(pRenderContext, "Bwd Atrous");
+
     auto perImageCB = mAtrousState.dPass->getRootVar()["PerImageCB"];
     auto perImageCB_D = mAtrousState.dPass->getRootVar()["PerImageCB_D"];
 
@@ -1265,6 +1294,8 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
 
 void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
 {
+    FALCOR_PROFILE(pRenderContext, "Filter Moments");
+
     auto perImageCB = mFilterMomentsState.sPass->getRootVar()["PerImageCB"];
 
     perImageCB["gIllumination"]     = mpCurReprojFbo->getColorTexture(0);
@@ -1293,6 +1324,8 @@ void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
 
 void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
 {
+    FALCOR_PROFILE(pRenderContext, "Bwd Filter Moments");
+
     auto perImageCB = mFilterMomentsState.dPass->getRootVar()["PerImageCB"];
 
     perImageCB["gIllumination"]     = mFilterMomentsState.pCurIllum;
@@ -1341,6 +1374,8 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> p
                                    ref<Texture> pDebugTexture
     )
 {
+    FALCOR_PROFILE(pRenderContext, "Reproj");
+
     auto perImageCB = mReprojectState.sPass->getRootVar()["PerImageCB"];
 
     // Setup textures for our reprojection shader pass
@@ -1385,6 +1420,8 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
                                    ref<Texture> pDebugTexture
     )
 {
+    FALCOR_PROFILE(pRenderContext, "Bwd Reproj");
+
     auto perImageCB = mReprojectState.dPass->getRootVar()["PerImageCB"];
 
     // Setup textures for our reprojection shader pass
@@ -1513,6 +1550,8 @@ void SVGFPass::registerParameterManual(SVGFParameter<float4>* param, int cnt, co
 // copy of it to refer to in the next frame.)
 void SVGFPass::computeLinearZAndNormal(RenderContext* pRenderContext, ref<Texture> pLinearZTexture, ref<Texture> pWorldNormalTexture)
 {
+    FALCOR_PROFILE(pRenderContext, "Linear Z and Normal");
+
     auto perImageCB = mPackLinearZAndNormalState.sPass->getRootVar()["PerImageCB"];
     perImageCB["gLinearZ"] = pLinearZTexture;
     perImageCB["gNormal"] = pWorldNormalTexture;
