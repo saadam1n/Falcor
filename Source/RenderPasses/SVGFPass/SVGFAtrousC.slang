@@ -177,12 +177,33 @@ float computeVarianceCenter(int2 screenSize, int2 ipos, float[2][2] kernel)
 }
 
 [BackwardDifferentiable]
-float4 sample5x5( const int2 ipos, const int2 screenSize,
-    const float4 illuminationCenter, float kernelWeights[3],
-    float3 luminanceParams, float[3] weightsParams, float sigmaN,
-    const float3 nCenter, const float2 zCenter, const float phiDepth,
-    const float lIlluminationCenter, const float phiLIllumination)
-{
+float4 atrous(FullScreenPassVsOut vsOut, 
+              float[3] kernelWeights, float [2][2] varianceKernel, float3 luminanceParams, float[3] weightsParams, 
+              float sigmaL, float sigmaZ, float sigmaN              ) {
+    const int2 ipos = int2(vsOut.posH.xy);
+    const int2 screenSize = getTextureDims(gAlbedo, 0);
+
+    const float epsVariance = 1e-10;
+
+    // constant samplers to prevent the compiler from generating code which
+    // fetches the sampler descriptor from memory for each texture access
+    const float4 illuminationCenter = getIllumination(ipos, int2(0, 0), false);
+    const float lIlluminationCenter = dot(illuminationCenter.rgb, luminanceParams);
+
+    // variance, filtered using 3x3 gaussin blur
+    const float var = computeVarianceCenter(screenSize, ipos, varianceKernel);
+
+    const float2 zCenter = getLinearZAndNormal(ipos).xy;
+    if (zCenter.x < 0)
+    {
+        // not a valid depth => must be envmap => do not filter
+        return illuminationCenter;
+    }
+    const float3 nCenter = oct_to_ndir_snorm(getLinearZAndNormal(ipos).zw);
+
+    const float phiLIllumination = sigmaL * sqrt(max(0.0, epsVariance + var.r));
+    const float phiDepth = sigmaZ * max(zCenter.y, 1e-8) * gStepSize;
+
     // explicitly store/accumulate center pixel with weight 1 to prevent issues
     // with the edge-stopping functions
     float sumWIllumination = 1.0;
@@ -223,44 +244,6 @@ float4 sample5x5( const int2 ipos, const int2 screenSize,
     // renormalization is different for variance, check paper for the formula
     const float4 filteredIllumination = float4(sumIllumination / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination));
     return filteredIllumination;
-}
 
-
-[BackwardDifferentiable]
-float4 atrous(FullScreenPassVsOut vsOut, 
-              float[3] kernelWeights, float [2][2] varianceKernel, float3 luminanceParams, float[3] weightsParams, 
-              float sigmaL, float sigmaZ, float sigmaN              ) {
-    const int2 ipos = int2(vsOut.posH.xy);
-    const int2 screenSize = getTextureDims(gAlbedo, 0);
-
-    const float epsVariance = 1e-10;
-
-    // constant samplers to prevent the compiler from generating code which
-    // fetches the sampler descriptor from memory for each texture access
-    const float4 illuminationCenter = getIllumination(ipos, int2(0, 0), false);
-    const float lIlluminationCenter = dot(illuminationCenter.rgb, luminanceParams);
-
-    // variance, filtered using 3x3 gaussin blur
-    const float var = computeVarianceCenter(screenSize, ipos, varianceKernel);
-
-    const float2 zCenter = getLinearZAndNormal(ipos).xy;
-    if (zCenter.x < 0)
-    {
-        // not a valid depth => must be envmap => do not filter
-        return illuminationCenter;
-    }
-    const float3 nCenter = oct_to_ndir_snorm(getLinearZAndNormal(ipos).zw);
-
-    const float phiLIllumination = sigmaL * sqrt(max(0.0, epsVariance + var.r));
-    const float phiDepth = sigmaZ * max(zCenter.y, 1e-8) * gStepSize;
-
-    float4 filteredIllumination = sample5x5(
-        ipos, screenSize, 
-        illuminationCenter, kernelWeights, 
-        luminanceParams, weightsParams, 
-        sigmaN, nCenter, zCenter, phiDepth, 
-        lIlluminationCenter, phiLIllumination);
-
-    return filteredIllumination;
 }
 
