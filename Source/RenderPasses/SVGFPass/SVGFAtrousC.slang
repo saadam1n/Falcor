@@ -176,22 +176,230 @@ float computeVarianceCenter(int2 screenSize, int2 ipos, float[2][2] kernel)
     return vsum;
 }
 
+static float4 autodiff_sumIllumination;
+static float autodiff_sumWIllumination;
+
+static float4 manualdiff_dLdSumIllum;
+static float manualdiff_dLdSumW;
+
 [BackwardDifferentiable]
-float4 atrous(FullScreenPassVsOut vsOut, 
-              float[3] kernelWeights, float [2][2] varianceKernel, float3 luminanceParams, float[3] weightsParams, 
-              float sigmaL, float sigmaZ, float sigmaN              ) {
+float4 getFilteredIllumination(float4 sumIllumination, float sumWIllumination)
+{
+    return float4(sumIllumination / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination));
+}
+
+const uniform float epsVariance = 1e-10;
+
+void d_atrous( FullScreenPassVsOut vsOut,
+    inout DifferentialPair<float[3]> kernelWeights, inout DifferentialPair<float [2][2]> varianceKernel,
+    inout DifferentialPair<float3> luminanceParams, inout DifferentialPair<float[3]> weightsParams,
+    inout DifferentialPair<float> sigmaL, inout DifferentialPair<float> sigmaZ, inout DifferentialPair<float> sigmaN,
+    float4 dLoss)
+{
+
+
     const int2 ipos = int2(vsOut.posH.xy);
     const int2 screenSize = getTextureDims(gAlbedo, 0);
 
-    const float epsVariance = 1e-10;
+    // constant samplers to prevent the compiler from generating code which
+    // fetches the sampler descriptor from memory for each texture access
+    const float4 illuminationCenter = getIllumination(ipos, int2(0, 0), false);
+    const float lIlluminationCenter = dot(illuminationCenter.rgb, luminanceParams.p);
+
+    const float2 zCenter = getLinearZAndNormal(ipos).xy;
+    if (zCenter.x < 0)
+    {
+        // dump the incoming loss onto the center pixel
+        __bwd_diff(getIllumination)(ipos, int2(0, 0), false, dLoss);
+        return;
+    }
+
+    // variance, filtered using 3x3 gaussin blur
+    const float var = computeVarianceCenter(screenSize, ipos, varianceKernel.p);
+    const float3 nCenter = oct_to_ndir_snorm(getLinearZAndNormal(ipos).zw);
+
+    const float phiLIllumination = sigmaL.p * sqrt(max(0.0, epsVariance + var.r));
+    const float phiDepth = sigmaZ.p * max(zCenter.y, 1e-8) * gStepSize;
+
+    // explicitly store/accumulate center pixel with weight 1 to prevent issues
+    // with the edge-stopping functions
+    float sumWIllumination = 1.0;
+    float4 sumIllumination = illuminationCenter;
+
+    for (int yy = -2; yy <= 2; yy++)
+    {
+        for (int xx = -2; xx <= 2; xx++)
+        {
+            const int2 p = ipos + int2(xx, yy) * gStepSize;
+            const bool inside = all(p >= int2(0, 0)) && all(p < screenSize);
+
+            const float kernel = kernelWeights.p[abs(xx)] * kernelWeights.p[abs(yy)];
+
+            if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
+            {
+                const float4 illuminationP = getIllumination(p, int2(xx, yy), false);
+                const float lIlluminationP = dot(illuminationP.rgb, luminanceParams.p);
+                const float zP = getLinearZAndNormal(p).x;
+                const float3 nP = oct_to_ndir_snorm(getLinearZAndNormal(p).zw);
+
+                // compute the edge-stopping functions
+                const float w = computeWeight(
+                    zCenter.x, zP, phiDepth * length(float2(xx, yy)),
+                    nCenter, nP, sigmaN.p,
+                    lIlluminationCenter, lIlluminationP, phiLIllumination,
+                    weightsParams.p);
+
+                const float wIllumination = w.x * kernel;
+
+                // alpha channel contains the variance, therefore the weights need to be squared, see paper for the formula
+                sumWIllumination += wIllumination;
+                sumIllumination += float4(wIllumination.xxx, wIllumination * wIllumination) * illuminationP;
+            }
+        }
+    }
+
+    // renormalization is different for variance, check paper for the formula
+    const float4 filteredIllumination = float4(sumIllumination / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination));
+
+    float4 dLdSumIllum = dLoss / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination);
+    float4 dLdSumW4 = -dLoss * sumIllumination / float4((sumWIllumination * sumWIllumination).xxx, 0.5f * sumWIllumination * sumWIllumination * sumWIllumination);
+    float dLdSumW = dot(dLdSumW4, 1.0f.xxxx);
+
+    manualdiff_dLdSumIllum = dLdSumIllum;
+    manualdiff_dLdSumW = dLdSumW;
+
+    // go though the loop again, propagating derivatives
+    DifferentialPair<float> dpzCenterX = diffPair(zCenter.x);
+    float dLdZCenterX = float(0.0f);
+
+    // we vary the input for this on on each iteration of the loop, so no diffpair
+    float dLdPhiDepth = 0.0f;
+
+    DifferentialPair<float3> dpnCenter = diffPair(nCenter);
+
+    // diff pair in args
+    float dLdSigmaN = 0.0f;
+
+    DifferentialPair<float> dplIlluminationCenter = diffPair(lIlluminationCenter);
+    float dLdlIlluminationCenter = 0.0f;
+
+    DifferentialPair<float> dpPhiLIllumination = diffPair(phiLIllumination);
+    float dLdPhiLIllumination = 0.0f;
+
+    float dLdWeightParams[3];
+    for (int i = 0; i < 3; i++)
+    {
+        dLdWeightParams[i] = 0.0f;
+    }
+
+    float3 dLdLuminanceParams = float3(0.0f);
+
+    float dLdKernel[3];
+    for (int i = 0; i < 3; i++)
+    {
+        dLdKernel[i] = 0.0f;
+    }
+
+    for (int yy = -2; yy <= 2; yy++)
+    {
+        for (int xx = -2; xx <= 2; xx++)
+        {
+            const int2 p = ipos + int2(xx, yy) * gStepSize;
+            const bool inside = all(p >= int2(0, 0)) && all(p < screenSize);
+
+            const float kernel = kernelWeights.p[abs(xx)] * kernelWeights.p[abs(yy)];
+
+            if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
+            {
+                const float4 illuminationP = getIllumination(p, int2(xx, yy), false);
+                const float lIlluminationP = dot(illuminationP.rgb, luminanceParams.p);
+                const float zP = getLinearZAndNormal(p).x;
+                const float3 nP = oct_to_ndir_snorm(getLinearZAndNormal(p).zw);
+
+                // compute the edge-stopping functions
+                DifferentialPair<float> dpphiDepth = diffPair(phiDepth * length(float2(xx, yy)));
+                const float w = computeWeight(
+                    dpzCenterX.p, zP, dpphiDepth.p * length(float2(xx, yy)),
+                    nCenter, nP, sigmaN.p,
+                    lIlluminationCenter, lIlluminationP, phiLIllumination,
+                    weightsParams.p );
+
+                const float wIllumination = w * kernel;
+
+                // find both sources of loss for wIllum
+                float dLdwIllum = dLdSumW + dot(dLdSumIllum * float4(illuminationP.rgb, 2.0f * wIllumination * illuminationP.a), 1.0f.xxxx);
+
+                float dLdWeight = dLdwIllum * kernel;
+                float dLdKernelMult = dLdwIllum * w;
+
+                // propagate to the kernels
+                dLdKernel[abs(xx)] = dLdKernelMult * kernelWeights.p[abs(yy)];
+                dLdKernel[abs(yy)] = dLdKernelMult * kernelWeights.p[abs(xx)];
+
+                // now do the weight propagation
+                DifferentialPair<float> dpzP = diffPair(zP);
+                DifferentialPair<float3> dpnP = diffPair(nP);
+                DifferentialPair<float> dplIlluminationP = diffPair(lIlluminationP);
+                
+                __bwd_diff(computeWeight)(dpzCenterX, dpzP, 
+                    dpphiDepth, dpnCenter, dpnP, sigmaN, 
+                    dplIlluminationCenter, dplIlluminationP, 
+                    dpPhiLIllumination, weightsParams, dLdWeight);
+
+                // get the accum operation in flight asap
+                // the illumination is modified via the final sum and weight
+                float4 dLdIlluminationP = dLdSumIllum * float4(wIllumination.xxx, wIllumination * wIllumination) + float4(dplIlluminationCenter.d * luminanceParams.p, 0.0f);
+                __bwd_diff(getIllumination)(p, int2(xx, yy), false, dLdIlluminationP);
+
+                // propagate to the luminace params first
+                dLdLuminanceParams += dplIlluminationP.d * illuminationP.rgb;
+
+                // now that luminance is taken care of, let's work on the other paramters
+                dLdZCenterX += dpzCenterX.d;
+                dLdPhiDepth += dpphiDepth.d * length(float2(xx, yy));
+                dLdSigmaN += sigmaN.d;
+                dLdlIlluminationCenter += dplIlluminationCenter.d;
+                dLdPhiLIllumination += dpPhiLIllumination.d;
+
+                for (int i = 0; i < 3; i++)
+                {
+                    dLdWeightParams[i] += weightsParams.d[i];
+                }
+
+            }
+        }
+    }
+
+    kernelWeights = diffPair(kernelWeights.p, dLdKernel);
+    weightsParams = diffPair(weightsParams.p, dLdWeightParams);
+    luminanceParams = diffPair(luminanceParams.p, dLdLuminanceParams + dLdlIlluminationCenter * illuminationCenter.rgb);
+
+    float4 dLdIlluminationCenter = dLdSumIllum + float4(dLdlIlluminationCenter * luminanceParams.p, 0.0f);
+    __bwd_diff(getIllumination)(ipos, int2(0, 0), false, dLdIlluminationCenter);
+
+
+    // now we are done with that loop, let's back propagate everything
+    sigmaN = diffPair(sigmaN.p, dLdSigmaN);
+    sigmaZ = diffPair(sigmaZ.p, dLdPhiDepth * max(zCenter.y, 1e-8) * gStepSize);
+    sigmaL = diffPair(sigmaL.p, dLdPhiLIllumination * sqrt(max(0.0, epsVariance + var.r)));
+
+    float dLdVariance = dLdPhiLIllumination * sigmaL.p * 0.5f / sqrt(max(1e-5f, epsVariance + var.r));
+    __bwd_diff(computeVarianceCenter)(screenSize, ipos, varianceKernel, dLdVariance);
+}
+
+[BackwardDerivative(d_atrous)]
+float4 atrous(FullScreenPassVsOut vsOut, 
+              float[3] kernelWeights, float [2][2] varianceKernel, 
+              float3 luminanceParams, float[3] weightsParams, 
+              float sigmaL, float sigmaZ, float sigmaN) {
+    const int2 ipos = int2(vsOut.posH.xy);
+    const int2 screenSize = getTextureDims(gAlbedo, 0);
+
 
     // constant samplers to prevent the compiler from generating code which
     // fetches the sampler descriptor from memory for each texture access
     const float4 illuminationCenter = getIllumination(ipos, int2(0, 0), false);
     const float lIlluminationCenter = dot(illuminationCenter.rgb, luminanceParams);
-
-    // variance, filtered using 3x3 gaussin blur
-    const float var = computeVarianceCenter(screenSize, ipos, varianceKernel);
 
     const float2 zCenter = getLinearZAndNormal(ipos).xy;
     if (zCenter.x < 0)
@@ -199,6 +407,9 @@ float4 atrous(FullScreenPassVsOut vsOut,
         // not a valid depth => must be envmap => do not filter
         return illuminationCenter;
     }
+    // variance, filtered using 3x3 gaussin blur
+    const float var = computeVarianceCenter(screenSize, ipos, varianceKernel);
+
     const float3 nCenter = oct_to_ndir_snorm(getLinearZAndNormal(ipos).zw);
 
     const float phiLIllumination = sigmaL * sqrt(max(0.0, epsVariance + var.r));
@@ -242,7 +453,9 @@ float4 atrous(FullScreenPassVsOut vsOut,
     }
 
     // renormalization is different for variance, check paper for the formula
-    const float4 filteredIllumination = float4(sumIllumination / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination));
+    autodiff_sumIllumination = sumIllumination;
+    autodiff_sumWIllumination = sumWIllumination;
+    const float4 filteredIllumination = getFilteredIllumination(sumIllumination, sumWIllumination);
     return filteredIllumination;
 
 }

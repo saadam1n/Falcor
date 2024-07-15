@@ -968,7 +968,7 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
 
     mDelta = 0.05f;
 
-    float& valToChange = mAtrousState.mIterationState[mDerivativeIteration].mSigma.dv.x;
+    float& valToChange = mAtrousState.mIterationState[mDerivativeIteration].mVarianceKernel.dv[0][0];
     float oldval = valToChange;
 
     valToChange = oldval - mDelta;
@@ -1012,7 +1012,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVG
 
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[mDerivativeIteration].mSigma.da;
+    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[mDerivativeIteration].mVarianceKernel.da;
     perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
     perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
     perImageCB["delta"] = mDelta;
@@ -1185,6 +1185,7 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
 
     for (int iteration = 0; iteration < mFilterIterations; iteration++)
     {
+        FALCOR_PROFILE(pRenderContext, "Iteration" + std::to_string(iteration));
 
         auto& curIterationState = mAtrousState.mIterationState[iteration];
 
@@ -1246,6 +1247,8 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
 
     for (int iteration = mFilterIterations - 1; iteration >= 0; iteration--)
     {
+        FALCOR_PROFILE(pRenderContext, "Iteration" + std::to_string(iteration));
+
         auto& curIterationState = mAtrousState.mIterationState[iteration];
 
         // clear raw output
