@@ -74,10 +74,10 @@ void d_getIllumination(int2 ipos, int2 sampleIter, const bool varianceStage, con
         storageIdx = 5 * (sampleIter.y + 2) + (sampleIter.x + 2) + 9;
     }
 
-    storeDerivBuf4(daIllumination, ipos, val, gAlbedo, storageIdx);
+    accumDerivBuf4(daIllumination, ipos, val, gAlbedo, storageIdx);
 }
 
-[BackwardDerivative(d_getIllumination)]
+[BackwardDerivative(d_getIllumination), PreferRecompute]
 const float4 getIllumination(int2 p, int2 sampleIter, const bool varianceStage)
 {
     return gIllumination.Load(int3(p, 0));
@@ -177,6 +177,56 @@ float computeVarianceCenter(int2 screenSize, int2 ipos, float[2][2] kernel)
 }
 
 [BackwardDifferentiable]
+float4 sample5x5( const int2 ipos, const int2 screenSize,
+    const float4 illuminationCenter, float kernelWeights[3],
+    float3 luminanceParams, float[3] weightsParams, float sigmaN,
+    const float3 nCenter, const float2 zCenter, const float phiDepth,
+    const float lIlluminationCenter, const float phiLIllumination)
+{
+    // explicitly store/accumulate center pixel with weight 1 to prevent issues
+    // with the edge-stopping functions
+    float sumWIllumination = 1.0;
+    float4 sumIllumination = illuminationCenter;
+
+    for (int yy = -2; yy <= 2; yy++)
+    {
+        for (int xx = -2; xx <= 2; xx++)
+        {
+            const int2 p = ipos + int2(xx, yy) * gStepSize;
+            const bool inside = all(p >= int2(0, 0)) && all(p < screenSize);
+
+            const float kernel = kernelWeights[abs(xx)] * kernelWeights[abs(yy)];
+
+            if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
+            {
+                const float4 illuminationP = getIllumination(p, int2(xx, yy), false);
+                const float lIlluminationP = dot(illuminationP.rgb, luminanceParams);
+                const float zP = getLinearZAndNormal(p).x;
+                const float3 nP = oct_to_ndir_snorm(getLinearZAndNormal(p).zw);
+
+                // compute the edge-stopping functions
+                const float w = computeWeight(
+                    zCenter.x, zP, phiDepth * length(float2(xx, yy)),
+                    nCenter, nP, sigmaN,
+                    lIlluminationCenter, lIlluminationP, phiLIllumination,
+                    weightsParams );
+
+                const float wIllumination = w.x * kernel;
+
+                // alpha channel contains the variance, therefore the weights need to be squared, see paper for the formula
+                sumWIllumination += wIllumination;
+                sumIllumination += float4(wIllumination.xxx, wIllumination * wIllumination) * illuminationP;
+            }
+        }
+    }
+
+    // renormalization is different for variance, check paper for the formula
+    const float4 filteredIllumination = float4(sumIllumination / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination));
+    return filteredIllumination;
+}
+
+
+[BackwardDifferentiable]
 float4 atrous(FullScreenPassVsOut vsOut, 
               float[3] kernelWeights, float [2][2] varianceKernel, float3 luminanceParams, float[3] weightsParams, 
               float sigmaL, float sigmaZ, float sigmaN              ) {
@@ -204,46 +254,12 @@ float4 atrous(FullScreenPassVsOut vsOut,
     const float phiLIllumination = sigmaL * sqrt(max(0.0, epsVariance + var.r));
     const float phiDepth = sigmaZ * max(zCenter.y, 1e-8) * gStepSize;
 
-    // explicitly store/accumulate center pixel with weight 1 to prevent issues
-    // with the edge-stopping functions
-    float sumWIllumination = 1.0;
-    float4 sumIllumination = illuminationCenter;
-
-    for (int yy = -2; yy <= 2; yy++)
-    {
-        for (int xx = -2; xx <= 2; xx++)
-        {
-            const int2 p = ipos + int2(xx, yy) * gStepSize;
-            const bool inside = all(p >= int2(0, 0)) && all(p < screenSize);
-
-            const float kernel = kernelWeights[abs(xx)] * kernelWeights[abs(yy)];
-
-
-            if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
-            {
-                const float4 illuminationP = getIllumination(p, int2(xx, yy), false);
-                const float lIlluminationP = dot(illuminationP.rgb, luminanceParams);
-                const float zP = getLinearZAndNormal(p).x;
-                const float3 nP = oct_to_ndir_snorm(getLinearZAndNormal(p).zw);
-
-                // compute the edge-stopping functions
-                const float w = computeWeight(
-                    zCenter.x, zP, phiDepth * length(float2(xx, yy)),
-                    nCenter, nP, sigmaN,
-                    lIlluminationCenter, lIlluminationP, phiLIllumination,
-                    weightsParams);
-
-                const float wIllumination = w.x * kernel;
-
-                // alpha channel contains the variance, therefore the weights need to be squared, see paper for the formula
-                sumWIllumination += wIllumination;
-                sumIllumination += float4(wIllumination.xxx, wIllumination * wIllumination) * illuminationP;
-            }
-        }
-    }
-
-    // renormalization is different for variance, check paper for the formula
-    const float4 filteredIllumination = float4(sumIllumination / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination));
+    float4 filteredIllumination = sample5x5(
+        ipos, screenSize, 
+        illuminationCenter, kernelWeights, 
+        luminanceParams, weightsParams, 
+        sigmaN, nCenter, zCenter, phiDepth, 
+        lIlluminationCenter, phiLIllumination);
 
     return filteredIllumination;
 }
