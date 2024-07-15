@@ -38,7 +38,7 @@ void d_computeWeight(
     inout DifferentialPair<float> luminanceIllumCenter, inout DifferentialPair<float> luminanceIllumP, inout DifferentialPair<float> phiIllum,
     inout DifferentialPair<float[3]> weightParams, float dWeight)
 {
-    // uh figure this out eventually
+    // fill this out later
 }
 
 //[BackwardDerivative(d_computeWeight)]
@@ -142,25 +142,15 @@ const uint getBufIdx4(int2 ipos, Texture2D tex, int idx) {
     return base_addr;
 }
 
-//#define ATOMIC_STORE
 
 // tex is a texture with equal dimensions to rwaddrbuff
-void accumDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Texture2D tex, int idx = 0, int offset = 0) {
+void storeDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Texture2D tex, int idx = 0, int offset = 0) {
     const uint base_addr = getBufIdx4(ipos, tex, idx) + offset;
 
-    //int4 a = quantVal4(val);
     const int4 a = reinterpret<int4>(val);
-    
-    #ifdef ATOMIC_STORE
-    for(int i = 0; i < 4; i++) {
-        uint addr = base_addr + 4 * i;
-        int dummy;
-        rwaddrbuff.InterlockedAdd(addr, a[i], dummy);
-    }
-    #else
+
     int status;
     rwaddrbuff.Store4(base_addr, a);
-    #endif
 }
 
 const float4 readDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex, int idx = 0, int offset = 0) {
@@ -169,10 +159,12 @@ const float4 readDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D 
     uint status;
     const uint4 temp = rwaddrbuff.Load4(base_addr, status);
 
-    //return dequant4(int4(temp));
     return reinterpret<float4>(temp);
 }
 
+void accumDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Texture2D tex, int idx = 0, int offset = 0) {
+    storeDerivBuf4(rwaddrbuff, ipos, val + readDerivBuf4(rwaddrbuff, ipos, tex, idx, offset), tex, idx, offset);
+}
 
 
 

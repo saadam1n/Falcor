@@ -968,7 +968,7 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
 
     mDelta = 0.05f;
 
-    float& valToChange = mAtrousState.mIterationState[mDerivativeIteration].mVarianceKernel.dv[0][0];
+    float& valToChange = mAtrousState.mIterationState[mDerivativeIteration].mSigma.dv.x;
     float oldval = valToChange;
 
     valToChange = oldval - mDelta;
@@ -1012,7 +1012,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVG
 
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[mDerivativeIteration].mVarianceKernel.da;
+    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[mDerivativeIteration].mSigma.da;
     perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
     perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
     perImageCB["delta"] = mDelta;

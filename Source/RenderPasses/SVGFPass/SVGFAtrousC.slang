@@ -74,7 +74,7 @@ void d_getIllumination(int2 ipos, int2 sampleIter, const bool varianceStage, con
         storageIdx = 5 * (sampleIter.y + 2) + (sampleIter.x + 2) + 9;
     }
 
-    accumDerivBuf4(daIllumination, ipos, val, gAlbedo, storageIdx);
+    storeDerivBuf4(daIllumination, ipos, val, gAlbedo, storageIdx);
 }
 
 [BackwardDerivative(d_getIllumination)]

@@ -65,17 +65,17 @@ void d_getLinearZAndNormal(int2 ipos, float4 val)
 
 void d_getHistoryLength(int2 ipos, float val)
 {
-    accumDerivBuf4(daHistoryLen, ipos, float4(val, 0.0, 0.0, 0.0), gIllumination);
+    storeDerivBuf4(daHistoryLen, ipos, float4(val, 0.0, 0.0, 0.0), gIllumination);
 }
 
 void d_getIllumination(int2 ipos, int nsi, float4 val)
 {
-    accumDerivBuf4(daIllumination, ipos, val, gIllumination, nsi);
+    storeDerivBuf4(daIllumination, ipos, val, gIllumination, nsi);
 }
 
 void d_getMoments(int2 ipos, int nsi, float2 val)
 {
-    accumDerivBuf4(daMoments, ipos, float4(val, 0.0, 0.0), gIllumination, nsi);
+    storeDerivBuf4(daMoments, ipos, float4(val, 0.0, 0.0), gIllumination, nsi);
 }
 
 

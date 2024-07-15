@@ -14,7 +14,7 @@ void d_getIllum(int2 ipos, float4 val)
 {
     // this we actually care about, as this feeds into the previous stage's output
     // add one float of padding because that is what the atrous pipeline uses
-    accumDerivBuf4(daIllumination, ipos, val, gIllumination);
+    storeDerivBuf4(daIllumination, ipos, val, gIllumination);
 }
 
 // Read gAlbedo

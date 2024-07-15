@@ -38,7 +38,7 @@ float4 getReferenceGaussian(int2 ipos, int nsi)
 
 void d_getFilteredImage(int2 ipos, float4 val)
 {
-    accumDerivBuf4(pdaFilteredImage, ipos, val, filteredImage, 11);
+    storeDerivBuf4(pdaFilteredImage, ipos, val, filteredImage, 11);
 }
 
 [BackwardDerivative(d_getFilteredImage)]
@@ -60,7 +60,7 @@ float4 getPrevFiltered(int2 ipos)
 
 void d_getFilteredGaussian(int2 ipos, int nsi, float4 val)
 {
-    accumDerivBuf4(pdaFilteredGaussian, ipos, val, filteredGaussian, nsi);
+    storeDerivBuf4(pdaFilteredGaussian, ipos, val, filteredGaussian, nsi);
 }
 
 [BackwardDerivative(d_getFilteredGaussian)]

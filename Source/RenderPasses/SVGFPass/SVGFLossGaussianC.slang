@@ -11,7 +11,7 @@ cbuffer PerImageCB
 
 void d_getIllumination(int2 ipos, int nsi, float4 val)
 {
-    accumDerivBuf4(pdaIllumination, ipos, val, image);
+    storeDerivBuf4(pdaIllumination, ipos, val, image);
 }
 
 [BackwardDerivative(d_getIllumination)]

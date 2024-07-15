@@ -32,10 +32,10 @@ void main(FullScreenPassVsOut vsOut) {
 
     __bwd_diff(reproject)(vsOut, dpLuminanceParams, dpReprojParams, dpReprojKernel, dpAlpha, dpMomentsAlpha, diffInput);
 
-    accumDerivBuf4(daLuminanceParams, ipos, float4(dpLuminanceParams.d, 0.0f), gIllumination);
-    accumDerivBuf4(daReprojKernel, ipos, float4(dpReprojKernel.d[0], dpReprojKernel.d[1], dpReprojKernel.d[2], 0.0f), gIllumination);
-    accumDerivBuf4(daReprojParams, ipos, float4(dpReprojParams.d[0], dpReprojParams.d[1], dpReprojParams.d[2], dpReprojParams.d[3]), gIllumination);
-    accumDerivBuf4(daAlpha, ipos, float4(dpAlpha.d), gIllumination);
-    accumDerivBuf4(daMomentsAlpha, ipos, float4(dpMomentsAlpha.d), gIllumination);
+    storeDerivBuf4(daLuminanceParams, ipos, float4(dpLuminanceParams.d, 0.0f), gIllumination);
+    storeDerivBuf4(daReprojKernel, ipos, float4(dpReprojKernel.d[0], dpReprojKernel.d[1], dpReprojKernel.d[2], 0.0f), gIllumination);
+    storeDerivBuf4(daReprojParams, ipos, float4(dpReprojParams.d[0], dpReprojParams.d[1], dpReprojParams.d[2], dpReprojParams.d[3]), gIllumination);
+    storeDerivBuf4(daAlpha, ipos, float4(dpAlpha.d), gIllumination);
+    storeDerivBuf4(daMomentsAlpha, ipos, float4(dpMomentsAlpha.d), gIllumination);
 
 }

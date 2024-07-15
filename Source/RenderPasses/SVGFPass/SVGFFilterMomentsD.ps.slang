@@ -29,8 +29,8 @@ void main(FullScreenPassVsOut vsOut)
      __bwd_diff(filter_moments)(vsOut, dpVarianceBoostFactor, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, dIllum);
     float bwd = dpVarianceBoostFactor.d;
 
-    accumDerivBuf4(daSigma, ipos, float4(dpSigmaL.d, dpSigmaZ.d, dpSigmaN.d, 0.0f), gIllumination);
-    accumDerivBuf4(daVarianceBoostFactor, ipos, float4(dpVarianceBoostFactor.d), gIllumination);
-    accumDerivBuf4(daLuminanceParams, ipos, float4(dpLuminanceParams.d, 0.0f), gIllumination);
-    accumDerivBuf4(daWeightFunctionParams, ipos, float4(dpWeightFunctionParams.d[0], dpWeightFunctionParams.d[1], dpWeightFunctionParams.d[2], 0.0f), gIllumination);
+    storeDerivBuf4(daSigma, ipos, float4(dpSigmaL.d, dpSigmaZ.d, dpSigmaN.d, 0.0f), gIllumination);
+    storeDerivBuf4(daVarianceBoostFactor, ipos, float4(dpVarianceBoostFactor.d), gIllumination);
+    storeDerivBuf4(daLuminanceParams, ipos, float4(dpLuminanceParams.d, 0.0f), gIllumination);
+    storeDerivBuf4(daWeightFunctionParams, ipos, float4(dpWeightFunctionParams.d[0], dpWeightFunctionParams.d[1], dpWeightFunctionParams.d[2], 0.0f), gIllumination);
 }

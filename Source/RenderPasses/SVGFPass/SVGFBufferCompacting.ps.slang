@@ -22,5 +22,5 @@ void main(FullScreenPassVsOut vsOut)
         dIllum += readDerivBuf4(drIllumination, ipos, gAlbedo, i);
     }
 
-    accumDerivBuf4(daIllumination, ipos, dIllum, gAlbedo);
+    storeDerivBuf4(daIllumination, ipos, dIllum, gAlbedo);
 }
