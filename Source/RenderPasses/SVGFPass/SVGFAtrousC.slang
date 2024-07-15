@@ -61,7 +61,7 @@ const float4 getLinearZAndNormal(int2 ipos)
     return gLinearZAndNormal[ipos];
 }
 
-void d_getIllumination(int2 ipos, int2 sampleIter, bool varianceStage, const float4 val)
+void d_getIllumination(int2 ipos, int2 sampleIter, const bool varianceStage, const float4 val)
 {
     int storageIdx;
     if (varianceStage)
@@ -78,17 +78,76 @@ void d_getIllumination(int2 ipos, int2 sampleIter, bool varianceStage, const flo
 }
 
 [BackwardDerivative(d_getIllumination)]
-const float4 getIllumination(int2 p, int2 sampleIter, bool varianceStage)
+const float4 getIllumination(int2 p, int2 sampleIter, const bool varianceStage)
 {
     return gIllumination.Load(int3(p, 0));
 }
 
+void d_computerVarianceCenter(int2 screenSize, int2 ipos, inout DifferentialPair<float [2][2]> kernel, float dLoss)
+{
+    float dKernel[2][2];
+
+    float vsum = 0.0f;
+    float ksum = 0.0f;
+
+    float variances[3][3];
+    for (int yy = -1; yy <= 1; yy++)
+    {
+        for (int xx = -1; xx <= 1; xx++)
+        {
+            int2 p = ipos + int2(xx, yy);
+
+            const bool inside = (all(p >= int2(0, 0)) && all(p < screenSize));
+            if (inside)
+            {
+                variances[yy + 1][xx + 1] = getIllumination(p, int2(xx, yy), true).a;
+
+                const float k = kernel.p[abs(yy)][abs(xx)];
+                vsum += variances[yy + 1][xx + 1] * k;
+                ksum += k;
+            }
+        }
+    }
+
+    ksum = max(ksum, 1e-6f);
+
+    float dLdvsum = dLoss / ksum;
+    float dLdksum = dLoss * -vsum / (ksum * ksum);
+
+    for (int i = 0; i < 2; i++)
+    {
+        for (int j = 0; j < 2; j++)
+        {
+            dKernel[i][j] = dLdksum;
+        }
+    }
+
+    for (int yy = -1; yy <= 1; yy++)
+    {
+        for (int xx = -1; xx <= 1; xx++)
+        {
+            int2 p = ipos + int2(xx, yy);
+
+            const bool inside = (all(p >= int2(0, 0)) && all(p < screenSize));
+            if (inside)
+            {
+                const float k = kernel.p[abs(yy)][abs(xx)];
+
+                dKernel[abs(yy)][abs(xx)] += dLdvsum * variances[yy + 1][xx + 1];
+                __bwd_diff(getIllumination)(p, int2(yy, xx), true, float4(0.0f, 0.0f, 0.0f, dLdvsum * k));
+            }
+        }
+    }
+
+    kernel = diffPair(kernel.p, dKernel);
+}
+
 // computes a 3x3 gaussian blur of the variance, centered around
 // the current pixel. nextStoreIndex will be 9 after this function
-[BackwardDifferentiable]
+[BackwardDerivative(d_computerVarianceCenter)]
 float computeVarianceCenter(int2 screenSize, int2 ipos, float[2][2] kernel)
 {
-    float sum = 0.f;
+    float vsum = 0.f;
     float ksum = 0.0f;
 
     for (int yy = -1; yy <= 1; yy++)
@@ -96,20 +155,21 @@ float computeVarianceCenter(int2 screenSize, int2 ipos, float[2][2] kernel)
         for (int xx = -1; xx <= 1; xx++)
         {
             int2 p = ipos + int2(xx, yy);
-            const float k = kernel[abs(xx)][abs(yy)];
 
             const bool inside = (all(p >= int2(0, 0)) && all(p < screenSize));
             if (inside)
             {
-                sum += getIllumination(p, int2(xx, yy), true).a * k;
+                const float k = kernel[abs(yy)][abs(xx)];
+
+                vsum += getIllumination(p, int2(xx, yy), true).a * k;
                 ksum += k;
             }
         }
     }
 
-    sum /= max(ksum, 1e-6f);
+    vsum /= max(ksum, 1e-6f);
 
-    return sum;
+    return vsum;
 }
 
 [BackwardDifferentiable]

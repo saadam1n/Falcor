@@ -32,6 +32,16 @@ const int2 getTextureDims(Texture2D tex, uint mip)
     return int2(1920, 1080);
 }
 
+void d_computeWeight( 
+    inout DifferentialPair<float> depthCenter, inout DifferentialPair<float> depthP, inout DifferentialPair<float> phiDepth,
+    inout DifferentialPair<float3> normalCenter, inout DifferentialPair<float3> normalP, inout DifferentialPair<float> phiNormal,
+    inout DifferentialPair<float> luminanceIllumCenter, inout DifferentialPair<float> luminanceIllumP, inout DifferentialPair<float> phiIllum,
+    inout DifferentialPair<float[3]> weightParams, float dWeight)
+{
+    // uh figure this out eventually
+}
+
+//[BackwardDerivative(d_computeWeight)]
 [BackwardDifferentiable]
 float computeWeight(
     float depthCenter, float depthP, float phiDepth,
