@@ -61,7 +61,7 @@ const float4 getLinearZAndNormal(int2 ipos)
     return gLinearZAndNormal[ipos];
 }
 
-void d_getIllumination(int2 ipos, int2 sampleIter, const bool varianceStage, const float4 val)
+void d_getIllumination(int2 p, int2 sampleIter, const bool varianceStage, const float4 val)
 {
     int storageIdx;
     if (varianceStage)
@@ -74,7 +74,7 @@ void d_getIllumination(int2 ipos, int2 sampleIter, const bool varianceStage, con
         storageIdx = 5 * (sampleIter.y + 2) + (sampleIter.x + 2) + 9;
     }
 
-    accumDerivBuf4(daIllumination, ipos, val, gAlbedo, storageIdx);
+    accumDerivBuf4(daIllumination, p, val, gAlbedo, storageIdx);
 }
 
 [BackwardDerivative(d_getIllumination), PreferRecompute]

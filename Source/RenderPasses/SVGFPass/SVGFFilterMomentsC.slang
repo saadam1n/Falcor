@@ -58,50 +58,56 @@ cbuffer PerImageCB
 
 
 
-void d_getLinearZAndNormal(int2 ipos, float4 val)
-{
-    // Something we really don't care about
-}
-
-void d_getHistoryLength(int2 ipos, float val)
-{
-    storeDerivBuf4(daHistoryLen, ipos, float4(val, 0.0, 0.0, 0.0), gIllumination);
-}
-
-void d_getIllumination(int2 ipos, int nsi, float4 val)
-{
-    storeDerivBuf4(daIllumination, ipos, val, gIllumination, nsi);
-}
-
-void d_getMoments(int2 ipos, int nsi, float2 val)
-{
-    storeDerivBuf4(daMoments, ipos, float4(val, 0.0, 0.0), gIllumination, nsi);
-}
-
-
-
+void d_getLinearZAndNormal(int2 ipos, float4 val) {}
 [BackwardDerivative(d_getLinearZAndNormal)]
 float4 getLinearZAndNormal(int2 ipos)
 {
     return gLinearZAndNormal[ipos];
 }
 
+void d_getHistoryLength(int2 ipos, float val)
+{
+    storeDerivBuf4(daHistoryLen, ipos, float4(val, 0.0, 0.0, 0.0), gIllumination);
+}
 [BackwardDerivative(d_getHistoryLength)]
 float getHistoryLength(int2 ipos)
 {
     return gHistoryLength[ipos].x;
 }
 
-[BackwardDerivative(d_getIllumination)]
-float4 getIllumination(int2 ipos, int nsi)
+void d_getIllumination(int2 p, int2 offset, bool ldcenter, float4 val)
 {
-    return gIllumination[ipos];
+    int storeIdx;
+    if (ldcenter)
+    {
+        storeIdx = 49;
+    }
+    else
+    {
+        storeIdx = 7 * (offset.y + 3) + (offset.x + 3);
+    }
+
+    storeDerivBuf4(daIllumination, p, val, gIllumination, storeIdx);
+}
+
+[BackwardDerivative(d_getIllumination)]
+float4 getIllumination(int2 p, int2 offset, bool ldcenter)
+{
+    return gIllumination[p];
+}
+
+
+void d_getMoments(int2 p, int2 offset, float2 val)
+{
+    int storageIdx = 7 * (offset.y + 3) + (offset.x + 3);
+
+    storeDerivBuf4(daMoments, p, float4(val, 0.0, 0.0), gIllumination, storageIdx);
 }
 
 [BackwardDerivative(d_getMoments)]
-float2 getMoments(int2 ipos, int nsi)
+float2 getMoments(int2 p, int2 offset)
 {
-    return gMoments[ipos].xy;
+    return gMoments[p].xy;
 }
 
 [BackwardDifferentiable]
@@ -112,16 +118,13 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float historyParam, float3 lumi
     float h = getHistoryLength(ipos).x;
     int2 screenSize = getTextureDims(gHistoryLength, 0);
 
-    int nsi_i = 0;
-    int nsi_m = 0;
-
     if (h < historyParam) // not enough temporal history available
     {
         float sumWIllumination = 0.0;
         float3 sumIllumination = float3(0.0, 0.0, 0.0);
         float2 sumMoments = float2(0.0, 0.0);
 
-        const float4 illuminationCenter = getIllumination(ipos, nsi_i++);
+        const float4 illuminationCenter = getIllumination(ipos, int2(0, 0), true);
         const float lIlluminationCenter = dot(illuminationCenter.rgb, luminanceParams);
 
         const float2 zCenter = getLinearZAndNormal(ipos).xy;
@@ -145,13 +148,10 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float historyParam, float3 lumi
                 const bool samePixel = (xx == 0 && yy == 0);
                 const float kernel = 1.0;
 
-                int force_nsi_i = nsi_i++;
-                int force_nsi_m = nsi_m++;
-
                 if (inside)
                 {
-                    const float3 illuminationP = getIllumination(p, force_nsi_i).rgb;
-                    const float2 momentsP = getMoments(p, force_nsi_m).xy;
+                    const float3 illuminationP = getIllumination(p, int2(xx, yy), false).rgb;
+                    const float2 momentsP = getMoments(p, int2(xx, yy)).xy;
                     const float lIlluminationP = dot(illuminationP.rgb, luminanceParams);
                     const float zP = getLinearZAndNormal(p).x;
                     const float3 nP = oct_to_ndir_snorm(getLinearZAndNormal(p).zw);
@@ -186,6 +186,6 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float historyParam, float3 lumi
     else
     {
         // do nothing, pass data unmodified
-        return getIllumination(ipos, nsi_i++);
+        return getIllumination(ipos, int2(0, 0), true);
     }
 }
