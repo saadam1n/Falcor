@@ -176,22 +176,7 @@ float computeVarianceCenter(int2 screenSize, int2 ipos, float[2][2] kernel)
     return vsum;
 }
 
-static float4 autodiff_sumIllumination;
-static float autodiff_sumWIllumination;
-
-static float4 manualdiff_dLdSumIllum;
-static float manualdiff_dLdSumW;
-
-[BackwardDifferentiable]
-float4 getFilteredIllumination(float4 sumIllumination, float sumWIllumination)
-{
-    return float4(sumIllumination / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination));
-}
-
 const uniform float epsVariance = 1e-10;
-
-static float diffWeights[5][5];
-static float4 tempResult;
 
 void d_atrous( FullScreenPassVsOut vsOut,
     inout DifferentialPair<float[3]> kernelWeights, inout DifferentialPair<float [2][2]> varianceKernel,
@@ -259,15 +244,11 @@ void d_atrous( FullScreenPassVsOut vsOut,
     }
 
     // renormalization is different for variance, check paper for the formula
-    const float4 filteredIllumination = float4(sumIllumination / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination));
-    tempResult = filteredIllumination;
+    // const float4 filteredIllumination = float4(sumIllumination / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination));
 
     float4 dLdSumIllum = dLoss / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination);
     float4 dLdSumW4 = -dLoss * sumIllumination / float4((sumWIllumination * sumWIllumination).xxx, 0.5f * sumWIllumination * sumWIllumination * sumWIllumination);
     float dLdSumW = dot(dLdSumW4, 1.0f.xxxx);
-
-    manualdiff_dLdSumIllum = dLdSumIllum;
-    manualdiff_dLdSumW = dLdSumW;
 
     // go though the loop again, propagating derivatives
     DifferentialPair<float> dpzCenterX = diffPair(zCenter.x);
@@ -326,7 +307,6 @@ void d_atrous( FullScreenPassVsOut vsOut,
                     weightsParams.p);
 
                 const float wIllumination = w.x * kernel;
-                diffWeights[yy + 2][xx + 2] -= wIllumination;
                 
                 // find both sources of loss for wIllum
                 float dLdwIllum = dLdSumW + dot(dLdSumIllum * float4(illuminationP.rgb, 2.0f * wIllumination * illuminationP.a), 1.0f.xxxx);
@@ -388,7 +368,7 @@ void d_atrous( FullScreenPassVsOut vsOut,
     __bwd_diff(computeVarianceCenter)(screenSize, ipos, varianceKernel, dLdVariance);
 }
 
-[BackwardDifferentiable]
+[BackwardDerivative(d_atrous)]
 float4 atrous(FullScreenPassVsOut vsOut, 
               float[3] kernelWeights, float [2][2] varianceKernel, 
               float3 luminanceParams, float[3] weightsParams, 
@@ -445,7 +425,6 @@ float4 atrous(FullScreenPassVsOut vsOut,
                     weightsParams );
 
                 const float wIllumination = w.x * kernel;
-                diffWeights[yy + 2][xx + 2] = wIllumination;
                 // alpha channel contains the variance, therefore the weights need to be squared, see paper for the formula
                 sumWIllumination += wIllumination;
                 sumIllumination += float4(wIllumination.xxx, wIllumination * wIllumination) * illuminationP;
@@ -454,10 +433,7 @@ float4 atrous(FullScreenPassVsOut vsOut,
     }
 
     // renormalization is different for variance, check paper for the formula
-    autodiff_sumIllumination = sumIllumination;
-    autodiff_sumWIllumination = sumWIllumination;
-    const float4 filteredIllumination = getFilteredIllumination(sumIllumination, sumWIllumination);
+    const float4 filteredIllumination = float4(sumIllumination / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination));
     return filteredIllumination;
-
 }
 
