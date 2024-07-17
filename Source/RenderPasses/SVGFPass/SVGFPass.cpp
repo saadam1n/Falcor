@@ -968,7 +968,7 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
 
     mDelta = 0.05f;
 
-    float& valToChange = mAtrousState.mIterationState[mDerivativeIteration].mVarianceKernel.dv[0][0];
+    float& valToChange = mAtrousState.mIterationState[mDerivativeIteration].mSigma.dv[0];
     float oldval = valToChange;
 
     valToChange = oldval - mDelta;
@@ -997,7 +997,7 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
 
     float4 falcorTest = float4(0.0f);
 
-    mpParallelReduction->execute(pRenderContext, mpDerivativeVerifyFbo->getColorTexture(2), ParallelReduction::Type::Sum, &falcorTest, mReadbackBuffer[1]);
+    mpParallelReduction->execute(pRenderContext, mpDerivativeVerifyFbo->getColorTexture(2), ParallelReduction::Type::Sum, &falcorTest);
 
     pRenderContext->submit(true);
 
@@ -1012,7 +1012,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVG
 
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[mDerivativeIteration].mVarianceKernel.da;
+    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[mDerivativeIteration].mSigma.da;
     perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
     perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
     perImageCB["delta"] = mDelta;

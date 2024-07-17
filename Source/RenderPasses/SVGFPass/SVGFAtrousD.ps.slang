@@ -16,6 +16,8 @@ struct FS_OUT
 {
     float4 diffdLdSumIllum : SV_TARGET0;
     float diffdLdSumWIllum : SV_TARGET1;
+    float4 diffResult : SV_TARGET2;
+    float diffWeights : SV_TARGET3;
 };
 
 FS_OUT main(FullScreenPassVsOut vsOut)
@@ -32,7 +34,7 @@ FS_OUT main(FullScreenPassVsOut vsOut)
 
     float4 dIllum = readDerivBuf4(drIllumination, ipos, gAlbedo);;
 
-    atrous(vsOut, dvKernel, dvVarianceKernel, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL, dvSigmaZ, dvSigmaN);
+    float4 fwdResult = atrous(vsOut, dvKernel, dvVarianceKernel, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL, dvSigmaZ, dvSigmaN);
     __bwd_diff(atrous)(vsOut, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, dIllum);
 
     storeDerivBuf4(daSigma, ipos, float4(dpSigmaL.d, dpSigmaZ.d, dpSigmaN.d, 0.0f), gAlbedo);
@@ -51,6 +53,14 @@ FS_OUT main(FullScreenPassVsOut vsOut)
 
     fs_out.diffdLdSumIllum = dpad_sI.d - manualdiff_dLdSumIllum;
     fs_out.diffdLdSumWIllum = dpad_sW.d - manualdiff_dLdSumW;
+    fs_out.diffResult = tempResult - fwdResult;
 
+    float errSum = 0.0f;
+    for (int i = 0; i < 5; i++)
+        for (int j = 0; j < 5; j++)
+            errSum += abs(diffWeights[i][j]);
+
+    fs_out.diffWeights = errSum;
+    
     return fs_out;
 }

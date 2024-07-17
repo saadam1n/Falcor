@@ -190,14 +190,15 @@ float4 getFilteredIllumination(float4 sumIllumination, float sumWIllumination)
 
 const uniform float epsVariance = 1e-10;
 
+static float diffWeights[5][5];
+static float4 tempResult;
+
 void d_atrous( FullScreenPassVsOut vsOut,
     inout DifferentialPair<float[3]> kernelWeights, inout DifferentialPair<float [2][2]> varianceKernel,
     inout DifferentialPair<float3> luminanceParams, inout DifferentialPair<float[3]> weightsParams,
     inout DifferentialPair<float> sigmaL, inout DifferentialPair<float> sigmaZ, inout DifferentialPair<float> sigmaN,
     float4 dLoss)
 {
-
-
     const int2 ipos = int2(vsOut.posH.xy);
     const int2 screenSize = getTextureDims(gAlbedo, 0);
 
@@ -209,18 +210,17 @@ void d_atrous( FullScreenPassVsOut vsOut,
     const float2 zCenter = getLinearZAndNormal(ipos).xy;
     if (zCenter.x < 0)
     {
-        // dump the incoming loss onto the center pixel
+        // not a valid depth => must be envmap => do not filter
         __bwd_diff(getIllumination)(ipos, int2(0, 0), false, dLoss);
         return;
     }
-
     // variance, filtered using 3x3 gaussin blur
     const float var = computeVarianceCenter(screenSize, ipos, varianceKernel.p);
+
     const float3 nCenter = oct_to_ndir_snorm(getLinearZAndNormal(ipos).zw);
 
     const float phiLIllumination = sigmaL.p * sqrt(max(0.0, epsVariance + var.r));
     const float phiDepth = sigmaZ.p * max(zCenter.y, 1e-8) * gStepSize;
-
     // explicitly store/accumulate center pixel with weight 1 to prevent issues
     // with the edge-stopping functions
     float sumWIllumination = 1.0;
@@ -260,6 +260,7 @@ void d_atrous( FullScreenPassVsOut vsOut,
 
     // renormalization is different for variance, check paper for the formula
     const float4 filteredIllumination = float4(sumIllumination / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination));
+    tempResult = filteredIllumination;
 
     float4 dLdSumIllum = dLoss / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination);
     float4 dLdSumW4 = -dLoss * sumIllumination / float4((sumWIllumination * sumWIllumination).xxx, 0.5f * sumWIllumination * sumWIllumination * sumWIllumination);
@@ -319,22 +320,22 @@ void d_atrous( FullScreenPassVsOut vsOut,
                 // compute the edge-stopping functions
                 DifferentialPair<float> dpphiDepth = diffPair(phiDepth * length(float2(xx, yy)));
                 const float w = computeWeight(
-                    dpzCenterX.p, zP, dpphiDepth.p * length(float2(xx, yy)),
+                    zCenter.x, zP, dpphiDepth.p,
                     nCenter, nP, sigmaN.p,
                     lIlluminationCenter, lIlluminationP, phiLIllumination,
-                    weightsParams.p );
+                    weightsParams.p);
 
-                const float wIllumination = w * kernel;
-
+                const float wIllumination = w.x * kernel;
+                diffWeights[yy + 2][xx + 2] -= wIllumination;
+                
                 // find both sources of loss for wIllum
                 float dLdwIllum = dLdSumW + dot(dLdSumIllum * float4(illuminationP.rgb, 2.0f * wIllumination * illuminationP.a), 1.0f.xxxx);
-
                 float dLdWeight = dLdwIllum * kernel;
                 float dLdKernelMult = dLdwIllum * w;
 
                 // propagate to the kernels
-                dLdKernel[abs(xx)] = dLdKernelMult * kernelWeights.p[abs(yy)];
-                dLdKernel[abs(yy)] = dLdKernelMult * kernelWeights.p[abs(xx)];
+                dLdKernel[abs(xx)] += dLdKernelMult * kernelWeights.p[abs(yy)];
+                dLdKernel[abs(yy)] += dLdKernelMult * kernelWeights.p[abs(xx)];
 
                 // now do the weight propagation
                 DifferentialPair<float> dpzP = diffPair(zP);
@@ -387,7 +388,7 @@ void d_atrous( FullScreenPassVsOut vsOut,
     __bwd_diff(computeVarianceCenter)(screenSize, ipos, varianceKernel, dLdVariance);
 }
 
-[BackwardDerivative(d_atrous)]
+[BackwardDifferentiable]
 float4 atrous(FullScreenPassVsOut vsOut, 
               float[3] kernelWeights, float [2][2] varianceKernel, 
               float3 luminanceParams, float[3] weightsParams, 
@@ -444,7 +445,7 @@ float4 atrous(FullScreenPassVsOut vsOut,
                     weightsParams );
 
                 const float wIllumination = w.x * kernel;
-
+                diffWeights[yy + 2][xx + 2] = wIllumination;
                 // alpha channel contains the variance, therefore the weights need to be squared, see paper for the formula
                 sumWIllumination += wIllumination;
                 sumIllumination += float4(wIllumination.xxx, wIllumination * wIllumination) * illuminationP;
