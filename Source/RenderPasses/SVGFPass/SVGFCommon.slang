@@ -219,3 +219,18 @@ float4 applyLossColorTransform(float4 val)
 
     return val;
 }
+
+cbuffer PatchInfo
+{
+    int2 minP;
+    int2 maxP;
+    bool shouldPatch;
+};
+
+bool isInPatch(int2 ipos)
+{
+    const bool inside = all(ipos >= minP) && all(ipos < maxP);
+    return (inside || !shouldPatch);
+}
+
+#define RETURN_IF_NOT_IN_PATCH(x) if (!isInPatch(x)) return;

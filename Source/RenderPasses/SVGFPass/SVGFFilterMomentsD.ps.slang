@@ -16,6 +16,9 @@ cbuffer PerImageCB_D
 // compute moments
 void main(FullScreenPassVsOut vsOut)
 {
+    const int2 ipos = int2(vsOut.posH.xy);
+    if (!isInPatch(ipos)) return;
+
     var dpVarianceBoostFactor = diffPair(dvVarianceBoostFactor, 0.0);
     var dpLuminanceParams = diffPair(dvLuminanceParams, float3(0.0));
     var dpWeightFunctionParams = diffPair(dvWeightFunctionParams, {0.0, 0.0, 0.0});
@@ -23,7 +26,6 @@ void main(FullScreenPassVsOut vsOut)
     var dpSigmaZ = diffPair(dvSigmaZ, 0.0);
     var dpSigmaN = diffPair(dvSigmaN, 0.0);
 
-    const int2 ipos = int2(vsOut.posH.xy);
     float4 dIllum = readDerivBuf4(drIllumination, ipos, gIllumination);
 
      __bwd_diff(filter_moments)(vsOut, dpVarianceBoostFactor, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, dIllum);

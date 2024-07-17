@@ -196,8 +196,8 @@ private:
     ref<Fbo> mpFinalFbo;
 
     ref<FullScreenPass> compactingPass;
-    ref<Buffer> pdaRawOutputBuffer[2];
-    ref<Buffer> pdaCompactedBuffer[2];
+    ref<Buffer> pdaRawOutputBuffer[3];
+    ref<Buffer> pdaCompactedBuffer[3];
     void runCompactingPass(RenderContext* pRenderContext, int idx, int n);
     void clearRawOutputBuffer(RenderContext* pRenderContext, int idx);
 
@@ -211,6 +211,15 @@ private:
 
     int mDatasetIndex = 0;
     SVGFTrainingDataset mTrainingDataset;
+
+    struct
+    {
+        int2 minP;
+        int2 maxP;
+    } mPatch;
+    bool mPatchingEnabled;
+
+    void setPatchingState(ref<FullScreenPass> fs);
 
     struct ParameterMetaInfo
     {

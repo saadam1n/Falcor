@@ -17,13 +17,14 @@ cbuffer PerImageCB_D
 };
 
 void main(FullScreenPassVsOut vsOut) {
+    const int2 ipos = int2(vsOut.posH.xy);
+    if (!isInPatch(ipos)) return;
+
     DifferentialPair<float3> dpLuminanceParams = diffPair(dvLuminanceParams, float3(1.0, 0.0, 0.0));
     DifferentialPair<float[3]> dpReprojKernel = diffPair(dvReprojKernel, {0, 0, 0});
     DifferentialPair<float[4]> dpReprojParams = diffPair(dvReprojParams, {0, 0, 0, 0});
     DifferentialPair<float> dpAlpha = diffPair(dvAlpha, 0.0);
     DifferentialPair<float> dpMomentsAlpha = diffPair(dvMomentsAlpha, 0.0);
-
-    const int2 ipos = int2(vsOut.posH.xy);
 
     REPROJ_OUT.Differential diffInput;
     diffInput.OutIllumination = readDerivBuf4(drIllumination, ipos, gIllumination);

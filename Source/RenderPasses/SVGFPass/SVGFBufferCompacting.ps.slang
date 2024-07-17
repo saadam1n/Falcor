@@ -15,7 +15,8 @@ cbuffer CompactingCB
 void main(FullScreenPassVsOut vsOut)
 {
     const int2 ipos = int2(vsOut.posH.xy);
-
+    if (!isInPatch(ipos)) return;
+    
     float4 dIllum = float4(0.0f);
     for(int i = 0; i < elements; i++)
     {

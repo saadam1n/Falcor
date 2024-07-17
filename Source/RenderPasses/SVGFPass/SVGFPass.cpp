@@ -452,9 +452,11 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
 
 
     // set some general utility states
-    for (int i = 0; i < 2; i++)
+    pdaRawOutputBuffer[0] = createAccumulationBuffer(pDevice, sizeof(float4) * 50);
+    pdaRawOutputBuffer[1] = createAccumulationBuffer(pDevice, sizeof(float4) * 49);
+    pdaRawOutputBuffer[2] = createAccumulationBuffer(pDevice, sizeof(float4) * 34);
+    for (int i = 0; i < 3; i++)
     {
-        pdaRawOutputBuffer[i] = createAccumulationBuffer(pDevice, sizeof(float4) * 50);
         pdaCompactedBuffer[i] = createAccumulationBuffer(pDevice);
     }
 
@@ -471,6 +473,9 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mAtrousState.mSaveIllum = createFullscreenTexture(pDevice, ResourceFormat::RGBA32Int);
 
     mpParallelReduction = std::make_unique<ParallelReduction>(mpDevice);
+
+    mPatch.minP = int2(200, 200);
+    mPatch.maxP = int2(800, 800);
 }
 
 ref<FullScreenPass> SVGFPass::createFullscreenPassAndDumpIR(const std::string& path)
@@ -740,7 +745,7 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    runDerivativeTest(pRenderContext, renderData);
+    runTrainingAndTesting(pRenderContext, renderData);
     std::cout.flush();
 }
 
@@ -750,6 +755,8 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
 
     if (!mTrained)
     {
+        mPatchingEnabled = false;
+
         runNextTrainingTask(pRenderContext);
         // display current results to screen
         pRenderContext->blit(mTrainingDataset.pOutputTexture->getSRV(), svgfrd.pOutputTexture->getRTV());
@@ -761,6 +768,9 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
     else
     {
         if(!pScene) return;
+
+        // allow us to see the loss for the entire screen
+        mPatchingEnabled = false;
 
         runSvgfFilter(pRenderContext, svgfrd, true);
 
@@ -809,14 +819,17 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
                 std::cout << "\tOn Frame " << mDatasetIndex << "\n";
             }
             // first clear all our buffers
-            for (int i = 0; i < mParameterReflector.size(); i++)
             {
-                mParameterReflector[i].mAddress->clearBuffer(pRenderContext);
-
-                if(mEpoch == 0)
+                FALCOR_PROFILE(pRenderContext, "Clr Param Buffers");
+                for (int i = 0; i < mParameterReflector.size(); i++)
                 {
-                    mParameterReflector[i].momentum = float4(0.0f);
-                    mParameterReflector[i].ssgrad = float4(0.0f);
+                    mParameterReflector[i].mAddress->clearBuffer(pRenderContext);
+
+                    if(mEpoch == 0)
+                    {
+                        mParameterReflector[i].momentum = float4(0.0f);
+                        mParameterReflector[i].ssgrad = float4(0.0f);
+                    }
                 }
             }
 
@@ -827,11 +840,14 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
                 computeDerivatives(pRenderContext, mTrainingDataset, true);
 
                 // now accumulate everything
-                int baseOffset = mDatasetIndex * mParameterReflector.size() * sizeof(float4);
-                for (int i = 0; i < mParameterReflector.size(); i++)
                 {
-                    int offset = i * sizeof(float4);
-                    reduceParameter(pRenderContext, *mParameterReflector[i].mAddress, baseOffset + offset);
+                    FALCOR_PROFILE(pRenderContext, "Parallel Reduction");
+                    int baseOffset = mDatasetIndex * mParameterReflector.size() * sizeof(float4);
+                    for (int i = 0; i < mParameterReflector.size(); i++)
+                    {
+                        int offset = i * sizeof(float4);
+                        reduceParameter(pRenderContext, *mParameterReflector[i].mAddress, baseOffset + offset);
+                    }
                 }
 
                 mpParallelReduction->execute<float4>(pRenderContext, mTrainingDataset.pLossTexture, ParallelReduction::Type::Sum, nullptr, mReadbackBuffer[2], mDatasetIndex * sizeof(float4));
@@ -1160,6 +1176,8 @@ void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Text
 {
     FALCOR_PROFILE(pRenderContext, "Bwd Final Modulate");
 
+    setPatchingState(mFinalModulateState.dPass);
+
     pRenderContext->clearUAV(mFinalModulateState.pdaIllumination->getUAV().get(), Falcor::uint4(0));
 
     auto perImageCB = mFinalModulateState.dPass->getRootVar()["PerImageCB"];
@@ -1239,6 +1257,8 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
 {
     FALCOR_PROFILE(pRenderContext, "Bwd Atrous");
 
+    setPatchingState(mAtrousState.dPass);
+
     auto perImageCB = mAtrousState.dPass->getRootVar()["PerImageCB"];
     auto perImageCB_D = mAtrousState.dPass->getRootVar()["PerImageCB_D"];
 
@@ -1252,7 +1272,7 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
         auto& curIterationState = mAtrousState.mIterationState[iteration];
 
         // clear raw output
-        clearRawOutputBuffer(pRenderContext, 0);
+        clearRawOutputBuffer(pRenderContext, 2);
 
         perImageCB_D["daSigma"] = curIterationState.mSigma.da;
         perImageCB_D["daKernel"] = curIterationState.mKernel.da;
@@ -1288,7 +1308,7 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
 
         mAtrousState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 
-        runCompactingPass(pRenderContext, 0, 9 + 25);
+        runCompactingPass(pRenderContext, 2, 9 + 25);
 
     }
 }
@@ -1326,6 +1346,8 @@ void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
 void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
 {
     FALCOR_PROFILE(pRenderContext, "Bwd Filter Moments");
+
+    setPatchingState(mFilterMomentsState.dPass);
 
     auto perImageCB = mFilterMomentsState.dPass->getRootVar()["PerImageCB"];
 
@@ -1423,6 +1445,8 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
 {
     FALCOR_PROFILE(pRenderContext, "Bwd Reproj");
 
+    setPatchingState(mReprojectState.dPass);
+
     auto perImageCB = mReprojectState.dPass->getRootVar()["PerImageCB"];
 
     // Setup textures for our reprojection shader pass
@@ -1469,6 +1493,10 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
 
 void SVGFPass::runCompactingPass(RenderContext* pRenderContext, int idx, int n)
 {
+    FALCOR_PROFILE(pRenderContext, "Compacting " + std::to_string(idx));
+
+    setPatchingState(compactingPass);
+
     auto compactingCB = compactingPass->getRootVar()["CompactingCB"];
     compactingCB["drIllumination"] = pdaRawOutputBuffer[idx];
     compactingCB["daIllumination"] = pdaCompactedBuffer[idx];
@@ -1481,6 +1509,7 @@ void SVGFPass::runCompactingPass(RenderContext* pRenderContext, int idx, int n)
 
 void SVGFPass::clearRawOutputBuffer(RenderContext* pRenderContext, int idx)
 {
+    FALCOR_PROFILE(pRenderContext, "Clr Raw Out " + std::to_string(idx));
     pRenderContext->clearUAV(pdaRawOutputBuffer[idx]->getUAV().get(), uint4(0));
 }
 
@@ -1489,6 +1518,8 @@ void SVGFPass::clearRawOutputBuffer(RenderContext* pRenderContext, int idx)
 void SVGFPass::reduceParameter(RenderContext* pRenderContext, SVGFParameter<float4>& param, int offset)
 {
 #ifdef USE_BUILTIN_PARALLEL_REDUCTION
+    setPatchingState(bufferToTexturePass);
+
     auto conversionCB = bufferToTexturePass->getRootVar()["ConversionCB"];
 
     conversionCB["drIllumination"] = param.da;
@@ -1543,6 +1574,16 @@ void SVGFPass::registerParameterManual(SVGFParameter<float4>* param, int cnt, co
 
     mParameterReflector.push_back(pmi);
 }
+
+void SVGFPass::setPatchingState(ref<FullScreenPass> fs)
+{
+    auto patchInfo = fs->getRootVar()["PatchInfo"];
+
+    patchInfo["minP"] = mPatch.minP;
+    patchInfo["maxP"] = mPatch.maxP;
+    patchInfo["shouldPatch"] = mPatchingEnabled;
+}
+
 
 // Extracts linear z and its derivative from the linear Z texture and packs
 // the normal from the world normal texture and packes them into the FBO.

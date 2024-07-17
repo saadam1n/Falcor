@@ -14,6 +14,9 @@ cbuffer PerImageCB_D
 
 void main(FullScreenPassVsOut vsOut)
 {
+    const int2 ipos = int2(vsOut.posH.xy);
+    if (!isInPatch(ipos)) return;
+
     var dpKernel = diffPair(dvKernel);
     var dpVarianceKernel = diffPair(dvVarianceKernel);
     var dpLuminanceParams =  diffPair(dvLuminanceParams);
@@ -22,9 +25,7 @@ void main(FullScreenPassVsOut vsOut)
     var dpSigmaZ = diffPair(dvSigmaZ);
     var dpSigmaN = diffPair(dvSigmaN);
     
-    const int2 ipos = int2(vsOut.posH.xy);
-
-    float4 dIllum = readDerivBuf4(drIllumination, ipos, gAlbedo);;
+    float4 dIllum = readDerivBuf4(drIllumination, ipos, gAlbedo);
 
     float4 fwdResult = atrous(vsOut, dvKernel, dvVarianceKernel, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL, dvSigmaZ, dvSigmaN);
     __bwd_diff(atrous)(vsOut, dpKernel, dpVarianceKernel, dpLuminanceParams, dpWeightFunctionParams, dpSigmaL, dpSigmaZ, dpSigmaN, dIllum);
