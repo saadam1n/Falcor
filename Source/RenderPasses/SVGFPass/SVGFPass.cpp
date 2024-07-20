@@ -480,7 +480,7 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    runTrainingAndTesting(pRenderContext, renderData);
+    runDerivativeTest(pRenderContext, renderData);
     std::cout.flush();
 }
 
@@ -714,6 +714,8 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData& renderData)
 {
     if(!pScene) return;
+
+    mPatchingEnabled = false;
 
     SVGFRenderData svgfrd(renderData);
 
@@ -1007,7 +1009,7 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
         auto& curIterationState = mAtrousState.mIterationState[iteration];
 
         // clear raw output
-        clearRawOutputBuffer(pRenderContext, 2);
+        clearRawOutputBuffer(pRenderContext, 0);
 
         perImageCB_D["daSigma"] = curIterationState.mSigma.da;
         perImageCB_D["daKernel"] = curIterationState.mKernel.da;
@@ -1043,7 +1045,7 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
 
         mAtrousState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
 
-        runCompactingPass(pRenderContext, 2, 9 + 25);
+        runCompactingPass(pRenderContext, 0, 9 + 25);
 
     }
 }
