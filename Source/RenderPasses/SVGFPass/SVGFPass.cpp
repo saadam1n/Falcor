@@ -47,7 +47,7 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 
 #define registerParameter(x) registerParameterUM(x, #x)
 
-SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), mTrainingDataset(pDevice, "C:/FalcorFiles/Dataset0/")
+SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), mUtilities(make_ref<SVGFUtilitySet>(pDevice)), mTrainingDataset(pDevice, mUtilities, "C:/FalcorFiles/Dataset0/")
 {
     for (const auto& [key, value] : props)
     {
@@ -89,7 +89,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mpFuncOutputUpper =  make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
 
     // set linear z params
-    mPackLinearZAndNormalState.pLinearZAndNormal = SVGFUtil::createFullscreenTexture(pDevice);
+    mPackLinearZAndNormalState.pLinearZAndNormal = mUtilities->createFullscreenTexture();
 
 
 
@@ -114,14 +114,14 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mReprojectState.mKernel.dv[2] = 1.0;
     registerParameter(mReprojectState.mKernel);
 
-    mReprojectState.pPrevFiltered = SVGFUtil::createFullscreenTexture(pDevice);
-    mReprojectState.pPrevMoments = SVGFUtil::createFullscreenTexture(pDevice);
-    mReprojectState.pPrevHistoryLength = SVGFUtil::createFullscreenTexture(pDevice);
+    mReprojectState.pPrevFiltered = mUtilities->createFullscreenTexture();
+    mReprojectState.pPrevMoments = mUtilities->createFullscreenTexture();
+    mReprojectState.pPrevHistoryLength = mUtilities->createFullscreenTexture();
 
 
 
     // set filter moments params
-    mFilterMomentsState.pdaHistoryLen = SVGFUtil::createAccumulationBuffer(pDevice);
+    mFilterMomentsState.pdaHistoryLen = mUtilities->createAccumulationBuffer();
 
     mFilterMomentsState.mSigma.dv = dvSigma;
     registerParameter(mFilterMomentsState.mSigma);
@@ -137,9 +137,9 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mFilterMomentsState.mVarianceBoostFactor.dv = 4.0;
     registerParameter(mFilterMomentsState.mVarianceBoostFactor);
 
-    mFilterMomentsState.pCurIllum = SVGFUtil::createFullscreenTexture(pDevice);
-    mFilterMomentsState.pCurMoments = SVGFUtil::createFullscreenTexture(pDevice);
-    mFilterMomentsState.pCurHistoryLength = SVGFUtil::createFullscreenTexture(pDevice);
+    mFilterMomentsState.pCurIllum = mUtilities->createFullscreenTexture();
+    mFilterMomentsState.pCurMoments = mUtilities->createFullscreenTexture();
+    mFilterMomentsState.pCurHistoryLength = mUtilities->createFullscreenTexture();
 
 
 
@@ -169,43 +169,43 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         iterationState.mVarianceKernel.dv[1][1] = 1.0 / 16.0;
         registerParameter(iterationState.mVarianceKernel);
 
-        iterationState.pgIllumination = SVGFUtil::createFullscreenTexture(pDevice);
+        iterationState.pgIllumination = mUtilities->createFullscreenTexture();
     }
 
     // set final modulate state vars
-    mFinalModulateState.pdaIllumination = SVGFUtil::createAccumulationBuffer(pDevice);
-    mFinalModulateState.pFinalFiltered = SVGFUtil::createFullscreenTexture(pDevice);
+    mFinalModulateState.pdaIllumination = mUtilities->createAccumulationBuffer();
+    mFinalModulateState.pFinalFiltered = mUtilities->createFullscreenTexture();
 
 
 
     // set loss vars
-    mLossState.pGaussianXInput = SVGFUtil::createFullscreenTexture(pDevice);
-    mLossState.pGaussianYInput = SVGFUtil::createFullscreenTexture(pDevice);
-    mLossState.pFilteredGaussian = SVGFUtil::createFullscreenTexture(pDevice);
-    mLossState.pReferenceGaussian = SVGFUtil::createFullscreenTexture(pDevice);
+    mLossState.pGaussianXInput = mUtilities->createFullscreenTexture();
+    mLossState.pGaussianYInput = mUtilities->createFullscreenTexture();
+    mLossState.pFilteredGaussian = mUtilities->createFullscreenTexture();
+    mLossState.pReferenceGaussian = mUtilities->createFullscreenTexture();
 
 
 
     // set some general utility states
-    pdaRawOutputBuffer[0] = SVGFUtil::createAccumulationBuffer(pDevice, sizeof(float4) * 50);
-    pdaRawOutputBuffer[1] = SVGFUtil::createAccumulationBuffer(pDevice, sizeof(float4) * 49);
-    pdaRawOutputBuffer[2] = SVGFUtil::createAccumulationBuffer(pDevice, sizeof(float4) * 34);
+    pdaRawOutputBuffer[0] = mUtilities->createAccumulationBuffer(sizeof(float4) * 50);
+    pdaRawOutputBuffer[1] = mUtilities->createAccumulationBuffer(sizeof(float4) * 49);
+    pdaRawOutputBuffer[2] = mUtilities->createAccumulationBuffer(sizeof(float4) * 34);
     for (int i = 0; i < 3; i++)
     {
-        pdaCompactedBuffer[i] = SVGFUtil::createAccumulationBuffer(pDevice);
+        pdaCompactedBuffer[i] = mUtilities->createAccumulationBuffer();
     }
 
     for (int i = 0; i < 2; i++)
     {
-        pdaPingPongSumBuffer[i] = SVGFUtil::createAccumulationBuffer(pDevice, sizeof(float4));
+        pdaPingPongSumBuffer[i] = mUtilities->createAccumulationBuffer(sizeof(float4));
     }
 
     for (int i = 0; i < 3; i++)
     {
-        mReadbackBuffer[i] = SVGFUtil::createAccumulationBuffer(pDevice, sizeof(float4), true);
+        mReadbackBuffer[i] = mUtilities->createAccumulationBuffer(sizeof(float4), true);
     }
 
-    mAtrousState.mSaveIllum = SVGFUtil::createFullscreenTexture(pDevice, ResourceFormat::RGBA32Int);
+    mAtrousState.mSaveIllum = mUtilities->createFullscreenTexture(ResourceFormat::RGBA32Int);
 
     mpParallelReduction = std::make_unique<ParallelReduction>(mpDevice);
 
@@ -1299,7 +1299,7 @@ void SVGFPass::reduceParameter(RenderContext* pRenderContext, SVGFParameter<floa
 
 void SVGFPass::registerParameterManual(SVGFParameter<float4>* param, int cnt, const std::string& name)
 {
-    param->da = SVGFUtil::createAccumulationBuffer(mpDevice);
+    param->da = mUtilities->createAccumulationBuffer();
 
     ParameterMetaInfo pmi;
 

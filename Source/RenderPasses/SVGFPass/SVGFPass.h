@@ -56,6 +56,8 @@ public:
     }
 
 private:
+    ref<SVGFUtilitySet> mUtilities;
+
     ref<Scene> pScene;
 
     bool mTrained = false;

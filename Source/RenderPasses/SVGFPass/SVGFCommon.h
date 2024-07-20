@@ -107,11 +107,31 @@ namespace
     const float dvWeightFunctionParams[3] {1.0, 1.0, 1.0};
 }
 
-namespace SVGFUtil
+template<typename T>
+struct SVGFParameter
 {
-    ref<Buffer> createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem = sizeof(float4), bool need_reaback = false);
-    ref<Texture> createFullscreenTexture(ref<Device> pDevice, ResourceFormat fmt = ResourceFormat::RGBA32Float);
-}
+    ref<Buffer> da;
+    T dv;
+
+    void clearBuffer(RenderContext* pRenderContext)
+    {
+        pRenderContext->clearUAV(da->getUAV().get(), uint4(0));
+    }
+};
+
+class SVGFUtilitySet : public Object
+{
+public:
+    SVGFUtilitySet(ref<Device> pDevice);
+
+    ref<Buffer> createAccumulationBuffer(int bytes_per_elem = sizeof(float4), bool need_reaback = false);
+    ref<Texture> createFullscreenTexture(ResourceFormat fmt = ResourceFormat::RGBA32Float);
+private:
+    ref<Device> mpDevice;
+
+    int mBufferMemUsage = 0;
+    int mTextureMemUsage = 0;
+};
 
 struct SVGFRenderData
 {
@@ -145,24 +165,28 @@ public:
 struct SVGFTrainingDataset : public SVGFRenderData
 {
 public:
-    SVGFTrainingDataset(ref<Device> pDevice, const std::string& folder);
+    SVGFTrainingDataset(ref<Device> pDevice, ref<SVGFUtilitySet> utilities, const std::string& folder);
     bool loadNext(RenderContext* pRenderContext);
 
     // preload all bitmaps, if not already
     void preloadBitmaps();
 private:
+    // utils
+    ref<SVGFUtilitySet> mUtilities;
+    // keep track of this for whatever reason
+    ref<Device> mpDevice;
     // the folder containing the dataset
     std::string mFolder;
     // whatever sample we are reading from
     int mSampleIdx;
-    // list of bitmaps that are being currently preloaded
-    std::map<std::string, std::future<Bitmap::UniqueConstPtr>> mPreloadedBitmaps;
     // cache of preloaded bitmaps
     std::map<std::string, Bitmap::UniqueConstPtr> mCachedBitmaps;
     // cache of texture name to pointer mappings
     std::map<std::string, ref<Texture>> mTextureNameMappings;
    
-
+    // list of bitmaps that are being currently preloaded
+    std::map<std::string, std::future<Bitmap::UniqueConstPtr>> mPreloadingBitmaps;
+    // whether a preload request was submitted in the past
     bool mPreloaded = false;
 
     bool atValidIndex() const;
@@ -171,14 +195,4 @@ private:
     void loadSampleBuffer(RenderContext* pRenderContext, ref<Texture> tex, const std::string& buffer);
 };
 
-template<typename T>
-struct SVGFParameter
-{
-    ref<Buffer> da;
-    T dv;
 
-    void clearBuffer(RenderContext* pRenderContext)
-    {
-        pRenderContext->clearUAV(da->getUAV().get(), uint4(0));
-    }
-};

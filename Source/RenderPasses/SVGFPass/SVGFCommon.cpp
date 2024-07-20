@@ -3,17 +3,20 @@
 
 using namespace Falcor;
 
-namespace SVGFUtil
+SVGFUtilitySet::SVGFUtilitySet(ref<Device> pDevice) : mpDevice(pDevice)
 {
-    ref<Buffer> createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem, bool need_reaback) {
-        return make_ref<Buffer>(pDevice, bytes_per_elem * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, need_reaback ? MemoryType::ReadBack : MemoryType::DeviceLocal, nullptr);
-    }
 
-    ref<Texture> SVGFUtil::createFullscreenTexture(ref<Device> pDevice, ResourceFormat fmt)
-    {
-        return make_ref<Texture>(pDevice, Resource::Type::Texture2D, fmt, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, nullptr);
-    }
+}
 
+ref<Buffer> SVGFUtilitySet::createAccumulationBuffer(int bytes_per_elem, bool need_reaback) {
+    mBufferMemUsage += numPixels * bytes_per_elem;
+    return make_ref<Buffer>(mpDevice, bytes_per_elem * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, need_reaback ? MemoryType::ReadBack : MemoryType::DeviceLocal, nullptr);
+}
+
+ref<Texture> SVGFUtilitySet::createFullscreenTexture(ResourceFormat fmt)
+{
+    mTextureMemUsage += numPixels * sizeof(float4); // TODO: take format into consideration
+    return make_ref<Texture>(mpDevice, Resource::Type::Texture2D, fmt, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, nullptr);
 }
 
 SVGFRenderData::SVGFRenderData(const RenderData& renderData) {
@@ -40,8 +43,8 @@ SVGFRenderData::SVGFRenderData(const RenderData& renderData) {
     pPrevReference = renderData.getTexture(kInternalBufferPreviousReference);
 }
 
-SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, const std::string& folder) : mFolder(folder), mSampleIdx(0) {
-#define MarkDatasetTexture(x) p##x##Texture = SVGFUtil::createFullscreenTexture(pDevice); mTextureNameMappings[kDataset##x] = p##x##Texture;
+SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, ref<SVGFUtilitySet> utilities, const std::string& folder) : mUtilities(utilities), mpDevice(pDevice), mFolder(folder), mSampleIdx(0) {
+#define MarkDatasetTexture(x) p##x##Texture = mUtilities->createFullscreenTexture(); mTextureNameMappings[kDataset##x] = p##x##Texture;
 
     MarkDatasetTexture(Reference);
     MarkDatasetTexture(Albedo);
@@ -54,17 +57,17 @@ SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, const std::string&
     MarkDatasetTexture(LinearZ);
     MarkDatasetTexture(MotionVector);
 
-    pLossTexture = SVGFUtil::createFullscreenTexture(pDevice);
-    pCenterLossTexture = SVGFUtil::createFullscreenTexture(pDevice);
-    pGradientLossTexture = SVGFUtil::createFullscreenTexture(pDevice);
-    pTemporalLossTexture = SVGFUtil::createFullscreenTexture(pDevice);
-    pPrevLinearZAndNormalTexture = SVGFUtil::createFullscreenTexture(pDevice);
-    pOutputTexture = SVGFUtil::createFullscreenTexture(pDevice);
-    pDebugTexture = SVGFUtil::createFullscreenTexture(pDevice);
-    pDerivVerifyTexture = SVGFUtil::createFullscreenTexture(pDevice);
+    pLossTexture = mUtilities->createFullscreenTexture();
+    pCenterLossTexture = mUtilities->createFullscreenTexture();
+    pGradientLossTexture = mUtilities->createFullscreenTexture();
+    pTemporalLossTexture = mUtilities->createFullscreenTexture();
+    pPrevLinearZAndNormalTexture = mUtilities->createFullscreenTexture();
+    pOutputTexture = mUtilities->createFullscreenTexture();
+    pDebugTexture = mUtilities->createFullscreenTexture();
+    pDerivVerifyTexture = mUtilities->createFullscreenTexture();
 
-    pPrevFiltered = SVGFUtil::createFullscreenTexture(pDevice);
-    pPrevReference = SVGFUtil::createFullscreenTexture(pDevice);
+    pPrevFiltered = mUtilities->createFullscreenTexture();
+    pPrevReference = mUtilities->createFullscreenTexture();
 }
 
 bool SVGFTrainingDataset::loadNext(RenderContext* pRenderContext)
@@ -95,7 +98,7 @@ void SVGFTrainingDataset::preloadBitmaps()
         mPreloaded = true;
 
         // preload all textures
-        std::cout << "Submitting async dataset preload... this may cause high background CPU usuage for a bit!" << std::endl;
+        std::cout << "Starting async dataset preload... this may cause high background CPU usuage for a bit!" << std::endl;
 
         std::map<std::string, std::future<Bitmap::UniqueConstPtr>> preloadTasks;
         while(atValidIndex())
@@ -103,7 +106,7 @@ void SVGFTrainingDataset::preloadBitmaps()
             for(auto [buffer, tex] : mTextureNameMappings)
             {
                 std::string path = getSampleBufferPath(buffer);
-                mPreloadedBitmaps[path] = std::async(std::launch::async, &readBitmapFromFile, path);
+                mPreloadingBitmaps[path] = std::async(std::launch::async, &readBitmapFromFile, path);
             }
 
             mSampleIdx++;
@@ -159,10 +162,10 @@ void SVGFTrainingDataset::loadSampleBuffer(RenderContext* pRenderContext, ref<Te
     if(mCachedBitmaps.count(path) == 0)
     {
         // check if already loaded
-        if (mPreloadedBitmaps.count(path) == 1)
+        if (mPreloadingBitmaps.count(path) == 1)
         {
-            mCachedBitmaps[path] = std::move(mPreloadedBitmaps[path].get());
-            mPreloadedBitmaps.erase(path);
+            mCachedBitmaps[path] = std::move(mPreloadingBitmaps[path].get());
+            mPreloadingBitmaps.erase(path);
         }
         else
         {
