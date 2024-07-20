@@ -36,276 +36,11 @@ TODO:
 - enum for fbo channel indices
 */
 
-namespace
-{
-    // Shader source files
-    const char kPackLinearZAndNormalShader[] = "RenderPasses/SVGFPass/SVGFPackLinearZAndNormal.ps.slang";
-
-    const char kReprojectShaderS[]            = "RenderPasses/SVGFPass/SVGFReprojectS.ps.slang";
-    const char kReprojectShaderD[]            = "RenderPasses/SVGFPass/SVGFReprojectD.ps.slang";
-
-    const char kAtrousShaderS[]               = "RenderPasses/SVGFPass/SVGFAtrousS.ps.slang";
-    const char kAtrousShaderD[]               = "RenderPasses/SVGFPass/SVGFAtrousD.ps.slang";
-
-    const char kBufferShaderCompacting[]      = "RenderPasses/SVGFPass/SVGFBufferCompacting.ps.slang";
-    const char kBufferShaderSumming[]         = "RenderPasses/SVGFPass/SVGFBufferSumming.cs.slang";
-    const char kBufferShaderToTexture[]       = "RenderPasses/SVGFPass/SVGFBufferToTexture.ps.slang";
-
-    const char kDerivativeVerifyShader[]      = "RenderPasses/SVGFPass/SVGFDerivativeVerify.ps.slang";
-
-    const char kFilterMomentShaderS[]         = "RenderPasses/SVGFPass/SVGFFilterMomentsS.ps.slang";
-    const char kFilterMomentShaderD[]         = "RenderPasses/SVGFPass/SVGFFilterMomentsD.ps.slang";
-
-    const char kFinalModulateShaderS[]        = "RenderPasses/SVGFPass/SVGFFinalModulateS.ps.slang";
-    const char kFinalModulateShaderD[]        = "RenderPasses/SVGFPass/SVGFFinalModulateD.ps.slang";
-
-    const char kLossShader[]                  = "RenderPasses/SVGFPass/SVGFLoss.ps.slang";
-    const char kLossGaussianShaderS[]         = "RenderPasses/SVGFPass/SVGFLossGaussianS.ps.slang";
-    const char kLossGaussianShaderD[]         = "RenderPasses/SVGFPass/SVGFLossGaussianD.ps.slang";
-
-    // Names of valid entries in the parameter dictionary.
-    const char kEnabled[] = "Enabled";
-    const char kIterations[] = "Iterations";
-    const char kFeedbackTap[] = "FeedbackTap";
-    const char kVarianceEpsilon[] = "VarianceEpsilon";
-    const char kPhiColor[] = "PhiColor";
-    const char kPhiNormal[] = "PhiNormal";
-    const char kAlpha[] = "Alpha";
-    const char kMomentsAlpha[] = "MomentsAlpha";
-
-    // Input buffer names
-    const char kInputBufferAlbedo[] = "Albedo";
-    const char kInputBufferColor[] = "Color";
-    const char kInputBufferEmission[] = "Emission";
-    const char kInputBufferWorldPosition[] = "WorldPosition";
-    const char kInputBufferWorldNormal[] = "WorldNormal";
-    const char kInputBufferPosNormalFwidth[] = "PositionNormalFwidth";
-    const char kInputBufferLinearZ[] = "LinearZ";
-    const char kInputBufferMotionVector[] = "MotionVec";
-
-    // Internal buffer names
-    const char kInternalBufferPreviousLinearZAndNormal[] = "Previous Linear Z and Packed Normal";
-    const char kInternalBufferPreviousLighting[] = "Previous Lighting";
-    const char kInternalBufferPreviousMoments[] = "Previous Moments";
-    const char kInternalBufferPreviousFiltered[] = "Previous Filtered";
-    const char kInternalBufferPreviousReference[] = "Previous Reference";
-
-    // Output buffer name
-    const char kOutputBufferFilteredImage[] = "Filtered image";
-    const char kOutputDebugBuffer[] = "DebugBuf";
-    const char kOutputDerivVerifyBuf[] = "DerivVerify";
-    const char kOutputFuncLower[] = "FuncLower";
-    const char kOutputFuncUpper[] = "FuncUpper";
-    const char kOutputFdCol[] = "FdCol";
-    const char kOutputBdCol[] = "BdCol";
-    const char kOutputReference[] = "Reference";
-    const char kOutputLoss[] = "Loss";
-    const char kOutputCenterLoss[] = "CenterLoss";
-    const char kOutputGradientLoss[] = "GradientLoss";
-    const char kOutputTemporalLoss[] = "TemporalLoss";
-
-    // Stuff from dataset
-    const std::string kDatasetReference = "Reference";
-    const std::string kDatasetColor = "Color";
-    const std::string kDatasetAlbedo = "Albedo";
-    const std::string kDatasetEmission = "Emission";
-    const std::string kDatasetWorldPosition = "WorldPosition";
-    const std::string kDatasetWorldNormal = "WorldNormal";
-    const std::string kDatasetPosNormalFwidth = "PositionNormalFwidth";
-    const std::string kDatasetLinearZ = "LinearZ";
-    const std::string kDatasetMotionVector = "MotionVec";
-
-    // set common stuff first
-    const size_t screenWidth = 1920;
-    const size_t screenHeight = 1080;
-    const size_t numPixels = screenWidth * screenHeight;
-
-    const float3 dvLuminanceParams = float3(0.2126f, 0.7152f, 0.0722f);
-
-    const float   dvSigmaL              = 10.0f;
-    const float   dvSigmaZ              = 1.0;
-    const float   dvSigmaN              = 128.0f;
-    const float   dvAlpha               = 0.05f;
-    const float   dvMomentsAlpha        = 0.2f;
-
-    // x is L
-    // y is Z
-    // z is N
-    const float3  dvSigma = float3(dvSigmaL, dvSigmaZ, dvSigmaN);
-
-    const float dvWeightFunctionParams[3] {1.0, 1.0, 1.0};
-}
-
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
     registry.registerClass<RenderPass, SVGFPass>();
 }
 
-
-ref<Buffer> createAccumulationBuffer(ref<Device> pDevice, int bytes_per_elem = sizeof(float4), bool need_reaback = false) {
-    return make_ref<Buffer>(pDevice, bytes_per_elem * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, need_reaback ? MemoryType::ReadBack : MemoryType::DeviceLocal, nullptr);
-}
-
-ref<Texture> createFullscreenTexture(ref<Device> pDevice, ResourceFormat fmt = ResourceFormat::RGBA32Float)
-{
-    return make_ref<Texture>(pDevice, Resource::Type::Texture2D, fmt, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, nullptr);
-}
-
-SVGFRenderData::SVGFRenderData(const RenderData& renderData) {
-    pAlbedoTexture = renderData.getTexture(kInputBufferAlbedo);
-    pColorTexture = renderData.getTexture(kInputBufferColor);
-    pEmissionTexture = renderData.getTexture(kInputBufferEmission);
-    pWorldPositionTexture = renderData.getTexture(kInputBufferWorldPosition);
-    pWorldNormalTexture = renderData.getTexture(kInputBufferWorldNormal);
-    pPosNormalFwidthTexture = renderData.getTexture(kInputBufferPosNormalFwidth);
-    pLinearZTexture = renderData.getTexture(kInputBufferLinearZ);
-    pMotionVectorTexture = renderData.getTexture(kInputBufferMotionVector);
-    pPrevLinearZAndNormalTexture = renderData.getTexture(kInternalBufferPreviousLinearZAndNormal);
-    pOutputTexture = renderData.getTexture(kOutputBufferFilteredImage);
-    pDebugTexture = renderData.getTexture(kOutputDebugBuffer);
-    pDerivVerifyTexture = renderData.getTexture(kOutputDerivVerifyBuf);
-
-    // loss buffers
-    pLossTexture = renderData.getTexture(kOutputLoss);
-    pCenterLossTexture = renderData.getTexture(kOutputCenterLoss);
-    pGradientLossTexture = renderData.getTexture(kOutputGradientLoss);
-    pTemporalLossTexture = renderData.getTexture(kOutputTemporalLoss);
-    pReferenceTexture = renderData.getTexture(kOutputReference);
-    pPrevFiltered = renderData.getTexture(kInternalBufferPreviousFiltered);
-    pPrevReference = renderData.getTexture(kInternalBufferPreviousReference);
-}
-
-SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, const std::string& folder) : mFolder(folder), mSampleIdx(0) {
-#define MarkDatasetTexture(x) p##x##Texture = createFullscreenTexture(pDevice); mTextureNameMappings[kDataset##x] = p##x##Texture;
-
-    MarkDatasetTexture(Reference);
-    MarkDatasetTexture(Albedo);
-    MarkDatasetTexture(Color);
-    MarkDatasetTexture(Emission);
-    MarkDatasetTexture(WorldPosition);
-    MarkDatasetTexture(WorldNormal);
-    MarkDatasetTexture(PosNormalFwidth);
-    MarkDatasetTexture(Reference);
-    MarkDatasetTexture(LinearZ);
-    MarkDatasetTexture(MotionVector);
-
-    pLossTexture = createFullscreenTexture(pDevice);
-    pCenterLossTexture = createFullscreenTexture(pDevice);
-    pGradientLossTexture = createFullscreenTexture(pDevice);
-    pTemporalLossTexture = createFullscreenTexture(pDevice);
-    pPrevLinearZAndNormalTexture = createFullscreenTexture(pDevice);
-    pOutputTexture = createFullscreenTexture(pDevice);
-    pDebugTexture = createFullscreenTexture(pDevice);
-    pDerivVerifyTexture = createFullscreenTexture(pDevice);
-
-    pPrevFiltered = createFullscreenTexture(pDevice);
-    pPrevReference = createFullscreenTexture(pDevice);
-}
-
-bool SVGFTrainingDataset::loadNext(RenderContext* pRenderContext)
-{
-    // check if we have more samples to read
-    if (!atValidIndex())
-    {
-        mSampleIdx = 0;
-        return false;
-    }
-
-    // continue with loading of samples
-    for(auto [buffer, tex] : mTextureNameMappings)
-    {
-        loadSampleBuffer(pRenderContext, tex, buffer);
-    }
-
-    mSampleIdx++;
-
-    // indicate to callee that we this sample was successfully read
-    return true;
-}
-
-void SVGFTrainingDataset::preloadBitmaps()
-{
-    if(!mPreloaded)
-    {
-        mPreloaded = true;
-
-        // preload all textures
-        std::cout << "Preloading the dataset..." << std::endl;
-
-        std::map<std::string, std::future<Bitmap::UniqueConstPtr>> preloadTasks;
-        while(atValidIndex())
-        {
-            for(auto [buffer, tex] : mTextureNameMappings)
-            {
-                std::string path = getSampleBufferPath(buffer);
-                preloadTasks[path] = std::async(std::launch::async, &readBitmapFromFile, path);
-            }
-
-            mSampleIdx++;
-        }
-
-        mSampleIdx = 0;
-
-        for(auto& [path, bitmap] : preloadTasks)
-        {
-            mPreloadedBitmaps[path] = std::move(bitmap.get());
-        }
-    }
-}
-
-bool SVGFTrainingDataset::atValidIndex() const
-{
-    return std::filesystem::exists(getSampleBufferPath(kDatasetColor));
-}
-
-std::string SVGFTrainingDataset::getSampleBufferPath(const std::string& buffer) const
-{
-    return mFolder + std::to_string(mSampleIdx) + "-" + buffer + ".exr";
-}
-
-Bitmap::UniqueConstPtr SVGFTrainingDataset::readBitmapFromFile(const std::string& path)
-{
-    std::string name = std::filesystem::path(path).filename().string();
-    std::string cachePath = "C:\\FalcorFiles\\Cache\\" + std::to_string(getFileModifiedTime(path)) + "-" + name + ".bin";
-
-    Bitmap::UniqueConstPtr bitmap;
-    if(!std::filesystem::exists(cachePath))
-    {
-        bitmap = std::move(Bitmap::createFromFile(path, true));
-
-        std::ofstream fs(cachePath, std::ios::binary);
-        fs.write((char*)bitmap->getData(), numPixels * sizeof(float4));
-        fs.close();
-    }
-    else
-    {
-        auto len = std::filesystem::file_size(cachePath);
-
-        bitmap = std::move(Bitmap::create(screenWidth, screenHeight, ResourceFormat::RGBA32Float, nullptr));
-
-        // do this all with DMA instead of CPU memcpys
-        std::ifstream fs(cachePath, std::ios::binary);
-        fs.read((char*)bitmap->getData(), len);
-        fs.close();
-    }
-
-    return bitmap;
-}
-
-void SVGFTrainingDataset::loadSampleBuffer(RenderContext* pRenderContext, ref<Texture> tex, const std::string& buffer)
-{
-    std::string path = getSampleBufferPath(buffer);
-
-    if(mPreloadedBitmaps.count(path) == 0)
-    {
-        mPreloadedBitmaps[path] = std::move(readBitmapFromFile(path));
-
-    }
-
-    if(pRenderContext) {
-        pRenderContext->updateTextureData(tex.get(), (const void*)mPreloadedBitmaps[path]->getData());
-    }
-}
 
 
 
@@ -354,7 +89,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mpFuncOutputUpper =  make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
 
     // set linear z params
-    mPackLinearZAndNormalState.pLinearZAndNormal = createFullscreenTexture(pDevice);
+    mPackLinearZAndNormalState.pLinearZAndNormal = SVGFUtil::createFullscreenTexture(pDevice);
 
 
 
@@ -379,14 +114,14 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mReprojectState.mKernel.dv[2] = 1.0;
     registerParameter(mReprojectState.mKernel);
 
-    mReprojectState.pPrevFiltered = createFullscreenTexture(pDevice);
-    mReprojectState.pPrevMoments = createFullscreenTexture(pDevice);
-    mReprojectState.pPrevHistoryLength = createFullscreenTexture(pDevice);
+    mReprojectState.pPrevFiltered = SVGFUtil::createFullscreenTexture(pDevice);
+    mReprojectState.pPrevMoments = SVGFUtil::createFullscreenTexture(pDevice);
+    mReprojectState.pPrevHistoryLength = SVGFUtil::createFullscreenTexture(pDevice);
 
 
 
     // set filter moments params
-    mFilterMomentsState.pdaHistoryLen = createAccumulationBuffer(pDevice);
+    mFilterMomentsState.pdaHistoryLen = SVGFUtil::createAccumulationBuffer(pDevice);
 
     mFilterMomentsState.mSigma.dv = dvSigma;
     registerParameter(mFilterMomentsState.mSigma);
@@ -402,9 +137,9 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mFilterMomentsState.mVarianceBoostFactor.dv = 4.0;
     registerParameter(mFilterMomentsState.mVarianceBoostFactor);
 
-    mFilterMomentsState.pCurIllum = createFullscreenTexture(pDevice);
-    mFilterMomentsState.pCurMoments = createFullscreenTexture(pDevice);
-    mFilterMomentsState.pCurHistoryLength = createFullscreenTexture(pDevice);
+    mFilterMomentsState.pCurIllum = SVGFUtil::createFullscreenTexture(pDevice);
+    mFilterMomentsState.pCurMoments = SVGFUtil::createFullscreenTexture(pDevice);
+    mFilterMomentsState.pCurHistoryLength = SVGFUtil::createFullscreenTexture(pDevice);
 
 
 
@@ -434,43 +169,43 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         iterationState.mVarianceKernel.dv[1][1] = 1.0 / 16.0;
         registerParameter(iterationState.mVarianceKernel);
 
-        iterationState.pgIllumination = createFullscreenTexture(pDevice);
+        iterationState.pgIllumination = SVGFUtil::createFullscreenTexture(pDevice);
     }
 
     // set final modulate state vars
-    mFinalModulateState.pdaIllumination = createAccumulationBuffer(pDevice);
-    mFinalModulateState.pFinalFiltered = createFullscreenTexture(pDevice);
+    mFinalModulateState.pdaIllumination = SVGFUtil::createAccumulationBuffer(pDevice);
+    mFinalModulateState.pFinalFiltered = SVGFUtil::createFullscreenTexture(pDevice);
 
 
 
     // set loss vars
-    mLossState.pGaussianXInput = createFullscreenTexture(pDevice);
-    mLossState.pGaussianYInput = createFullscreenTexture(pDevice);
-    mLossState.pFilteredGaussian = createFullscreenTexture(pDevice);
-    mLossState.pReferenceGaussian = createFullscreenTexture(pDevice);
+    mLossState.pGaussianXInput = SVGFUtil::createFullscreenTexture(pDevice);
+    mLossState.pGaussianYInput = SVGFUtil::createFullscreenTexture(pDevice);
+    mLossState.pFilteredGaussian = SVGFUtil::createFullscreenTexture(pDevice);
+    mLossState.pReferenceGaussian = SVGFUtil::createFullscreenTexture(pDevice);
 
 
 
     // set some general utility states
-    pdaRawOutputBuffer[0] = createAccumulationBuffer(pDevice, sizeof(float4) * 50);
-    pdaRawOutputBuffer[1] = createAccumulationBuffer(pDevice, sizeof(float4) * 49);
-    pdaRawOutputBuffer[2] = createAccumulationBuffer(pDevice, sizeof(float4) * 34);
+    pdaRawOutputBuffer[0] = SVGFUtil::createAccumulationBuffer(pDevice, sizeof(float4) * 50);
+    pdaRawOutputBuffer[1] = SVGFUtil::createAccumulationBuffer(pDevice, sizeof(float4) * 49);
+    pdaRawOutputBuffer[2] = SVGFUtil::createAccumulationBuffer(pDevice, sizeof(float4) * 34);
     for (int i = 0; i < 3; i++)
     {
-        pdaCompactedBuffer[i] = createAccumulationBuffer(pDevice);
+        pdaCompactedBuffer[i] = SVGFUtil::createAccumulationBuffer(pDevice);
     }
 
     for (int i = 0; i < 2; i++)
     {
-        pdaPingPongSumBuffer[i] = createAccumulationBuffer(pDevice, sizeof(float4));
+        pdaPingPongSumBuffer[i] = SVGFUtil::createAccumulationBuffer(pDevice, sizeof(float4));
     }
 
     for (int i = 0; i < 3; i++)
     {
-        mReadbackBuffer[i] = createAccumulationBuffer(pDevice, sizeof(float4), true);
+        mReadbackBuffer[i] = SVGFUtil::createAccumulationBuffer(pDevice, sizeof(float4), true);
     }
 
-    mAtrousState.mSaveIllum = createFullscreenTexture(pDevice, ResourceFormat::RGBA32Int);
+    mAtrousState.mSaveIllum = SVGFUtil::createFullscreenTexture(pDevice, ResourceFormat::RGBA32Int);
 
     mpParallelReduction = std::make_unique<ParallelReduction>(mpDevice);
 
@@ -1564,7 +1299,7 @@ void SVGFPass::reduceParameter(RenderContext* pRenderContext, SVGFParameter<floa
 
 void SVGFPass::registerParameterManual(SVGFParameter<float4>* param, int cnt, const std::string& name)
 {
-    param->da = createAccumulationBuffer(mpDevice);
+    param->da = SVGFUtil::createAccumulationBuffer(mpDevice);
 
     ParameterMetaInfo pmi;
 

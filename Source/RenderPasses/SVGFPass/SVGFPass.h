@@ -31,74 +31,9 @@
 #include "Core/Pass/FullScreenPass.h"
 #include "Utils/Algorithm/ParallelReduction.h"
 
+#include "SVGFCommon.h"
+
 using namespace Falcor;
-
-struct SVGFRenderData
-{
-public:
-    SVGFRenderData() = default;
-    SVGFRenderData(const RenderData& renderData);
-
-    ref<Texture> pAlbedoTexture;
-    ref<Texture> pColorTexture;
-    ref<Texture> pEmissionTexture;
-    ref<Texture> pWorldPositionTexture;
-    ref<Texture> pWorldNormalTexture;
-    ref<Texture> pPosNormalFwidthTexture;
-    ref<Texture> pLinearZTexture;
-    ref<Texture> pMotionVectorTexture;
-    ref<Texture> pPrevLinearZAndNormalTexture;
-    ref<Texture> pOutputTexture;
-    ref<Texture> pDebugTexture;
-    ref<Texture> pDerivVerifyTexture;
-
-    // only used in training
-    ref<Texture> pReferenceTexture;
-    ref<Texture> pLossTexture;
-    ref<Texture> pCenterLossTexture;
-    ref<Texture> pGradientLossTexture;
-    ref<Texture> pTemporalLossTexture;
-    ref<Texture> pPrevFiltered;
-    ref<Texture> pPrevReference;
-};
-
-struct SVGFTrainingDataset : public SVGFRenderData
-{
-public:
-    SVGFTrainingDataset(ref<Device> pDevice, const std::string& folder);
-    bool loadNext(RenderContext* pRenderContext);
-
-    // preload all bitmaps, if not already
-    void preloadBitmaps();
-private:
-    // the folder containing the dataset
-    std::string mFolder;
-    // whatever sample we are reading from
-    int mSampleIdx;
-    // cache of preloaded bitmaps
-    std::map<std::string, Bitmap::UniqueConstPtr> mPreloadedBitmaps;
-    // cache of texture name to pointer mappings
-    std::map<std::string, ref<Texture>> mTextureNameMappings;
-
-    bool mPreloaded = false;
-
-    bool atValidIndex() const;
-    std::string getSampleBufferPath(const std::string& buffer) const;
-    static Bitmap::UniqueConstPtr readBitmapFromFile(const std::string& path);
-    void loadSampleBuffer(RenderContext* pRenderContext, ref<Texture> tex, const std::string& buffer);
-};
-
-template<typename T>
-struct SVGFParameter
-{
-    ref<Buffer> da;
-    T dv;
-
-    void clearBuffer(RenderContext* pRenderContext)
-    {
-        pRenderContext->clearUAV(da->getUAV().get(), uint4(0));
-    }
-};
 
 class SVGFPass : public RenderPass
 {

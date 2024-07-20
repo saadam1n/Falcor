@@ -9,6 +9,9 @@ target_sources(SVGFPass PRIVATE
     SVGFBufferSumming.cs.slang
     SVGFBufferToTexture.ps.slang
 
+    SVGFCommon.cpp
+    SVGFCommon.h
+
     SVGFCommon.slang
 
     SVGFDerivativeVerify.ps.slang
