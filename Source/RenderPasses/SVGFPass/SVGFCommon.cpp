@@ -95,7 +95,7 @@ void SVGFTrainingDataset::preloadBitmaps()
         mPreloaded = true;
 
         // preload all textures
-        std::cout << "Preloading the dataset..." << std::endl;
+        std::cout << "Submitting async dataset preload... this may cause high background CPU usuage for a bit!" << std::endl;
 
         std::map<std::string, std::future<Bitmap::UniqueConstPtr>> preloadTasks;
         while(atValidIndex())
@@ -103,18 +103,13 @@ void SVGFTrainingDataset::preloadBitmaps()
             for(auto [buffer, tex] : mTextureNameMappings)
             {
                 std::string path = getSampleBufferPath(buffer);
-                preloadTasks[path] = std::async(std::launch::async, &readBitmapFromFile, path);
+                mPreloadedBitmaps[path] = std::async(std::launch::async, &readBitmapFromFile, path);
             }
 
             mSampleIdx++;
         }
 
         mSampleIdx = 0;
-
-        for(auto& [path, bitmap] : preloadTasks)
-        {
-            mPreloadedBitmaps[path] = std::move(bitmap.get());
-        }
     }
 }
 
@@ -161,13 +156,22 @@ void SVGFTrainingDataset::loadSampleBuffer(RenderContext* pRenderContext, ref<Te
 {
     std::string path = getSampleBufferPath(buffer);
 
-    if(mPreloadedBitmaps.count(path) == 0)
+    if(mCachedBitmaps.count(path) == 0)
     {
-        mPreloadedBitmaps[path] = std::move(readBitmapFromFile(path));
-
+        // check if already loaded
+        if (mPreloadedBitmaps.count(path) == 1)
+        {
+            mCachedBitmaps[path] = std::move(mPreloadedBitmaps[path].get());
+            mPreloadedBitmaps.erase(path);
+        }
+        else
+        {
+            // manually load
+            mCachedBitmaps[path] = std::move(readBitmapFromFile(path));
+        }
     }
 
     if(pRenderContext) {
-        pRenderContext->updateTextureData(tex.get(), (const void*)mPreloadedBitmaps[path]->getData());
+        pRenderContext->updateTextureData(tex.get(), (const void*)mCachedBitmaps[path]->getData());
     }
 }

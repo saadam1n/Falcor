@@ -155,10 +155,13 @@ private:
     std::string mFolder;
     // whatever sample we are reading from
     int mSampleIdx;
+    // list of bitmaps that are being currently preloaded
+    std::map<std::string, std::future<Bitmap::UniqueConstPtr>> mPreloadedBitmaps;
     // cache of preloaded bitmaps
-    std::map<std::string, Bitmap::UniqueConstPtr> mPreloadedBitmaps;
+    std::map<std::string, Bitmap::UniqueConstPtr> mCachedBitmaps;
     // cache of texture name to pointer mappings
     std::map<std::string, ref<Texture>> mTextureNameMappings;
+   
 
     bool mPreloaded = false;
 
