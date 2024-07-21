@@ -127,6 +127,7 @@ public:
 
     ref<Buffer> createAccumulationBuffer(int bytes_per_elem = sizeof(float4), bool need_reaback = false);
     ref<Texture> createFullscreenTexture(ResourceFormat fmt = ResourceFormat::RGBA32Float);
+    ref<FullScreenPass> createFullscreenPassAndDumpIR(const std::string& path);
 
     ref<Fbo> getDummyFullscreenFbo();
 private:

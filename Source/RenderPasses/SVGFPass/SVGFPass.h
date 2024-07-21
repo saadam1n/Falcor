@@ -102,7 +102,6 @@ private:
 
     void computeDerivVerification(RenderContext* pRenderContext, const SVGFRenderData& renderData);
 
-    ref<FullScreenPass> createFullscreenPassAndDumpIR(const std::string& path);
 
     bool mBuffersNeedClear = false;
 

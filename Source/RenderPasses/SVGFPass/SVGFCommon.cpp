@@ -33,6 +33,14 @@ ref<Texture> SVGFUtilitySet::createFullscreenTexture(ResourceFormat fmt)
     return make_ref<Texture>(mpDevice, Resource::Type::Texture2D, fmt, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, nullptr);
 }
 
+ref<FullScreenPass> SVGFUtilitySet::createFullscreenPassAndDumpIR(const std::string& path)
+{
+    ProgramDesc desc;
+    desc.compilerFlags |= SlangCompilerFlags::DumpIntermediates;
+    desc.addShaderLibrary(path).psEntry("main");
+    return FullScreenPass::create(mpDevice, desc);
+}
+
 ref<Fbo> SVGFUtilitySet::getDummyFullscreenFbo()
 {
     return mpDummyFullscreenFbo;

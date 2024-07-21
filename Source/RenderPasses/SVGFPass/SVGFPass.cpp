@@ -62,29 +62,29 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         else logWarning("Unknown field '{}' in SVGFPass dictionary.", key);
     }
 
-    mPackLinearZAndNormalState.sPass = createFullscreenPassAndDumpIR(kPackLinearZAndNormalShader);
+    mPackLinearZAndNormalState.sPass = mpUtilities->createFullscreenPassAndDumpIR(kPackLinearZAndNormalShader);
 
-    mReprojectState.sPass = createFullscreenPassAndDumpIR(kReprojectShaderS);
-    mReprojectState.dPass = createFullscreenPassAndDumpIR(kReprojectShaderD);
+    mReprojectState.sPass = mpUtilities->createFullscreenPassAndDumpIR(kReprojectShaderS);
+    mReprojectState.dPass = mpUtilities->createFullscreenPassAndDumpIR(kReprojectShaderD);
 
-    mFilterMomentsState.sPass = createFullscreenPassAndDumpIR(kFilterMomentShaderS);
-    mFilterMomentsState.dPass = createFullscreenPassAndDumpIR(kFilterMomentShaderD);
+    mFilterMomentsState.sPass = mpUtilities->createFullscreenPassAndDumpIR(kFilterMomentShaderS);
+    mFilterMomentsState.dPass = mpUtilities->createFullscreenPassAndDumpIR(kFilterMomentShaderD);
 
-    mAtrousState.sPass = createFullscreenPassAndDumpIR(kAtrousShaderS);
-    mAtrousState.dPass = createFullscreenPassAndDumpIR(kAtrousShaderD);
+    mAtrousState.sPass = mpUtilities->createFullscreenPassAndDumpIR(kAtrousShaderS);
+    mAtrousState.dPass = mpUtilities->createFullscreenPassAndDumpIR(kAtrousShaderD);
 
-    mFinalModulateState.sPass = createFullscreenPassAndDumpIR(kFinalModulateShaderS);
-    mFinalModulateState.dPass = createFullscreenPassAndDumpIR(kFinalModulateShaderD);
+    mFinalModulateState.sPass = mpUtilities->createFullscreenPassAndDumpIR(kFinalModulateShaderS);
+    mFinalModulateState.dPass = mpUtilities->createFullscreenPassAndDumpIR(kFinalModulateShaderD);
 
-    compactingPass = createFullscreenPassAndDumpIR(kBufferShaderCompacting);
+    compactingPass = mpUtilities->createFullscreenPassAndDumpIR(kBufferShaderCompacting);
     summingPass = ComputePass::create(mpDevice, kBufferShaderSumming);
-    bufferToTexturePass = createFullscreenPassAndDumpIR(kBufferShaderToTexture);
+    bufferToTexturePass = mpUtilities->createFullscreenPassAndDumpIR(kBufferShaderToTexture);
 
-    mLossState.dPass = createFullscreenPassAndDumpIR(kLossShader);
-    mLossState.sGaussianPass = createFullscreenPassAndDumpIR(kLossGaussianShaderS);
-    mLossState.dGaussianPass = createFullscreenPassAndDumpIR(kLossGaussianShaderD);
+    mLossState.dPass = mpUtilities->createFullscreenPassAndDumpIR(kLossShader);
+    mLossState.sGaussianPass = mpUtilities->createFullscreenPassAndDumpIR(kLossGaussianShaderS);
+    mLossState.dGaussianPass = mpUtilities->createFullscreenPassAndDumpIR(kLossGaussianShaderD);
 
-    mpDerivativeVerify = createFullscreenPassAndDumpIR(kDerivativeVerifyShader);
+    mpDerivativeVerify = mpUtilities->createFullscreenPassAndDumpIR(kDerivativeVerifyShader);
     mpFuncOutputLower =  make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
     mpFuncOutputUpper =  make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
 
@@ -212,15 +212,6 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mPatch.minP = int2(200, 200);
     mPatch.maxP = int2(800, 800);
 }
-
-ref<FullScreenPass> SVGFPass::createFullscreenPassAndDumpIR(const std::string& path)
-{
-    ProgramDesc desc;
-    desc.compilerFlags |= SlangCompilerFlags::DumpIntermediates;
-    desc.addShaderLibrary(path).psEntry("main");
-    return FullScreenPass::create(mpDevice, desc);
-}
-
 
 void SVGFPass::clearBuffers(RenderContext* pRenderContext, const SVGFRenderData& renderData)
 {
