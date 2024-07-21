@@ -123,14 +123,19 @@ class SVGFUtilitySet : public Object
 {
 public:
     SVGFUtilitySet(ref<Device> pDevice);
+    void allocateFbos(uint2 dim, RenderContext* pRenderContext);
 
     ref<Buffer> createAccumulationBuffer(int bytes_per_elem = sizeof(float4), bool need_reaback = false);
     ref<Texture> createFullscreenTexture(ResourceFormat fmt = ResourceFormat::RGBA32Float);
+
+    ref<Fbo> getDummyFullscreenFbo();
 private:
     ref<Device> mpDevice;
 
     int mBufferMemUsage = 0;
     int mTextureMemUsage = 0;
+
+    ref<Fbo> mpDummyFullscreenFbo;
 };
 
 struct SVGFRenderData
@@ -172,7 +177,7 @@ public:
     void preloadBitmaps();
 private:
     // utils
-    ref<SVGFUtilitySet> mUtilities;
+    ref<SVGFUtilitySet> mpUtilities;
     // keep track of this for whatever reason
     ref<Device> mpDevice;
     // the folder containing the dataset

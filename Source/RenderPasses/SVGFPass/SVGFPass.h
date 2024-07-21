@@ -56,7 +56,7 @@ public:
     }
 
 private:
-    ref<SVGFUtilitySet> mUtilities;
+    ref<SVGFUtilitySet> mpUtilities;
 
     ref<Scene> pScene;
 
@@ -120,8 +120,6 @@ private:
     float mDelta;
     ref<Texture> mpFuncOutputLower;
     ref<Texture> mpFuncOutputUpper;
-
-    ref<Fbo> mpDummyFullscreenFbo;
 
     // Intermediate framebuffers
     ref<Fbo> mpPingPongFbo[2];

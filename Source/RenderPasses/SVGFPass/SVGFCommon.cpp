@@ -8,6 +8,20 @@ SVGFUtilitySet::SVGFUtilitySet(ref<Device> pDevice) : mpDevice(pDevice)
 
 }
 
+void SVGFUtilitySet::allocateFbos(uint2 dim, RenderContext* pRenderContext)
+{
+    {
+        // contains a debug buffer for whatever we want to store
+        Fbo::Desc desc;
+        desc.setSampleCount(0);
+        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(2, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(3, Falcor::ResourceFormat::RGBA32Float);
+        mpDummyFullscreenFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+    }
+}
+
 ref<Buffer> SVGFUtilitySet::createAccumulationBuffer(int bytes_per_elem, bool need_reaback) {
     mBufferMemUsage += numPixels * bytes_per_elem;
     return make_ref<Buffer>(mpDevice, bytes_per_elem * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, need_reaback ? MemoryType::ReadBack : MemoryType::DeviceLocal, nullptr);
@@ -17,6 +31,11 @@ ref<Texture> SVGFUtilitySet::createFullscreenTexture(ResourceFormat fmt)
 {
     mTextureMemUsage += numPixels * sizeof(float4); // TODO: take format into consideration
     return make_ref<Texture>(mpDevice, Resource::Type::Texture2D, fmt, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, nullptr);
+}
+
+ref<Fbo> SVGFUtilitySet::getDummyFullscreenFbo()
+{
+    return mpDummyFullscreenFbo;
 }
 
 SVGFRenderData::SVGFRenderData(const RenderData& renderData) {
@@ -43,8 +62,8 @@ SVGFRenderData::SVGFRenderData(const RenderData& renderData) {
     pPrevReference = renderData.getTexture(kInternalBufferPreviousReference);
 }
 
-SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, ref<SVGFUtilitySet> utilities, const std::string& folder) : mUtilities(utilities), mpDevice(pDevice), mFolder(folder), mSampleIdx(0) {
-#define MarkDatasetTexture(x) p##x##Texture = mUtilities->createFullscreenTexture(); mTextureNameMappings[kDataset##x] = p##x##Texture;
+SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, ref<SVGFUtilitySet> utilities, const std::string& folder) : mpUtilities(utilities), mpDevice(pDevice), mFolder(folder), mSampleIdx(0) {
+#define MarkDatasetTexture(x) p##x##Texture = mpUtilities->createFullscreenTexture(); mTextureNameMappings[kDataset##x] = p##x##Texture;
 
     MarkDatasetTexture(Reference);
     MarkDatasetTexture(Albedo);
@@ -57,17 +76,17 @@ SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, ref<SVGFUtilitySet
     MarkDatasetTexture(LinearZ);
     MarkDatasetTexture(MotionVector);
 
-    pLossTexture = mUtilities->createFullscreenTexture();
-    pCenterLossTexture = mUtilities->createFullscreenTexture();
-    pGradientLossTexture = mUtilities->createFullscreenTexture();
-    pTemporalLossTexture = mUtilities->createFullscreenTexture();
-    pPrevLinearZAndNormalTexture = mUtilities->createFullscreenTexture();
-    pOutputTexture = mUtilities->createFullscreenTexture();
-    pDebugTexture = mUtilities->createFullscreenTexture();
-    pDerivVerifyTexture = mUtilities->createFullscreenTexture();
+    pLossTexture = mpUtilities->createFullscreenTexture();
+    pCenterLossTexture = mpUtilities->createFullscreenTexture();
+    pGradientLossTexture = mpUtilities->createFullscreenTexture();
+    pTemporalLossTexture = mpUtilities->createFullscreenTexture();
+    pPrevLinearZAndNormalTexture = mpUtilities->createFullscreenTexture();
+    pOutputTexture = mpUtilities->createFullscreenTexture();
+    pDebugTexture = mpUtilities->createFullscreenTexture();
+    pDerivVerifyTexture = mpUtilities->createFullscreenTexture();
 
-    pPrevFiltered = mUtilities->createFullscreenTexture();
-    pPrevReference = mUtilities->createFullscreenTexture();
+    pPrevFiltered = mpUtilities->createFullscreenTexture();
+    pPrevReference = mpUtilities->createFullscreenTexture();
 }
 
 bool SVGFTrainingDataset::loadNext(RenderContext* pRenderContext)

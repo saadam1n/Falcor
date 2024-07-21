@@ -47,7 +47,7 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 
 #define registerParameter(x) registerParameterUM(x, #x)
 
-SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), mUtilities(make_ref<SVGFUtilitySet>(pDevice)), mTrainingDataset(pDevice, mUtilities, "C:/FalcorFiles/Dataset0/")
+SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), mpUtilities(make_ref<SVGFUtilitySet>(pDevice)), mTrainingDataset(pDevice, mpUtilities, "C:/FalcorFiles/Dataset0/")
 {
     for (const auto& [key, value] : props)
     {
@@ -89,7 +89,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mpFuncOutputUpper =  make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
 
     // set linear z params
-    mPackLinearZAndNormalState.pLinearZAndNormal = mUtilities->createFullscreenTexture();
+    mPackLinearZAndNormalState.pLinearZAndNormal = mpUtilities->createFullscreenTexture();
 
 
 
@@ -114,14 +114,14 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mReprojectState.mKernel.dv[2] = 1.0;
     registerParameter(mReprojectState.mKernel);
 
-    mReprojectState.pPrevFiltered = mUtilities->createFullscreenTexture();
-    mReprojectState.pPrevMoments = mUtilities->createFullscreenTexture();
-    mReprojectState.pPrevHistoryLength = mUtilities->createFullscreenTexture();
+    mReprojectState.pPrevFiltered = mpUtilities->createFullscreenTexture();
+    mReprojectState.pPrevMoments = mpUtilities->createFullscreenTexture();
+    mReprojectState.pPrevHistoryLength = mpUtilities->createFullscreenTexture();
 
 
 
     // set filter moments params
-    mFilterMomentsState.pdaHistoryLen = mUtilities->createAccumulationBuffer();
+    mFilterMomentsState.pdaHistoryLen = mpUtilities->createAccumulationBuffer();
 
     mFilterMomentsState.mSigma.dv = dvSigma;
     registerParameter(mFilterMomentsState.mSigma);
@@ -137,9 +137,9 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mFilterMomentsState.mVarianceBoostFactor.dv = 4.0;
     registerParameter(mFilterMomentsState.mVarianceBoostFactor);
 
-    mFilterMomentsState.pCurIllum = mUtilities->createFullscreenTexture();
-    mFilterMomentsState.pCurMoments = mUtilities->createFullscreenTexture();
-    mFilterMomentsState.pCurHistoryLength = mUtilities->createFullscreenTexture();
+    mFilterMomentsState.pCurIllum = mpUtilities->createFullscreenTexture();
+    mFilterMomentsState.pCurMoments = mpUtilities->createFullscreenTexture();
+    mFilterMomentsState.pCurHistoryLength = mpUtilities->createFullscreenTexture();
 
 
 
@@ -169,43 +169,43 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
         iterationState.mVarianceKernel.dv[1][1] = 1.0 / 16.0;
         registerParameter(iterationState.mVarianceKernel);
 
-        iterationState.pgIllumination = mUtilities->createFullscreenTexture();
+        iterationState.pgIllumination = mpUtilities->createFullscreenTexture();
     }
 
     // set final modulate state vars
-    mFinalModulateState.pdaIllumination = mUtilities->createAccumulationBuffer();
-    mFinalModulateState.pFinalFiltered = mUtilities->createFullscreenTexture();
+    mFinalModulateState.pdaIllumination = mpUtilities->createAccumulationBuffer();
+    mFinalModulateState.pFinalFiltered = mpUtilities->createFullscreenTexture();
 
 
 
     // set loss vars
-    mLossState.pGaussianXInput = mUtilities->createFullscreenTexture();
-    mLossState.pGaussianYInput = mUtilities->createFullscreenTexture();
-    mLossState.pFilteredGaussian = mUtilities->createFullscreenTexture();
-    mLossState.pReferenceGaussian = mUtilities->createFullscreenTexture();
+    mLossState.pGaussianXInput = mpUtilities->createFullscreenTexture();
+    mLossState.pGaussianYInput = mpUtilities->createFullscreenTexture();
+    mLossState.pFilteredGaussian = mpUtilities->createFullscreenTexture();
+    mLossState.pReferenceGaussian = mpUtilities->createFullscreenTexture();
 
 
 
     // set some general utility states
-    pdaRawOutputBuffer[0] = mUtilities->createAccumulationBuffer(sizeof(float4) * 50);
-    pdaRawOutputBuffer[1] = mUtilities->createAccumulationBuffer(sizeof(float4) * 49);
-    pdaRawOutputBuffer[2] = mUtilities->createAccumulationBuffer(sizeof(float4) * 34);
+    pdaRawOutputBuffer[0] = mpUtilities->createAccumulationBuffer(sizeof(float4) * 50);
+    pdaRawOutputBuffer[1] = mpUtilities->createAccumulationBuffer(sizeof(float4) * 49);
+    pdaRawOutputBuffer[2] = mpUtilities->createAccumulationBuffer(sizeof(float4) * 34);
     for (int i = 0; i < 3; i++)
     {
-        pdaCompactedBuffer[i] = mUtilities->createAccumulationBuffer();
+        pdaCompactedBuffer[i] = mpUtilities->createAccumulationBuffer();
     }
 
     for (int i = 0; i < 2; i++)
     {
-        pdaPingPongSumBuffer[i] = mUtilities->createAccumulationBuffer(sizeof(float4));
+        pdaPingPongSumBuffer[i] = mpUtilities->createAccumulationBuffer(sizeof(float4));
     }
 
     for (int i = 0; i < 3; i++)
     {
-        mReadbackBuffer[i] = mUtilities->createAccumulationBuffer(sizeof(float4), true);
+        mReadbackBuffer[i] = mpUtilities->createAccumulationBuffer(sizeof(float4), true);
     }
 
-    mAtrousState.mSaveIllum = mUtilities->createFullscreenTexture(ResourceFormat::RGBA32Int);
+    mAtrousState.mSaveIllum = mpUtilities->createFullscreenTexture(ResourceFormat::RGBA32Int);
 
     mpParallelReduction = std::make_unique<ParallelReduction>(mpDevice);
 
@@ -284,17 +284,6 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
     }
 
     {
-        // contains a debug buffer for whatever we want to store
-        Fbo::Desc desc;
-        desc.setSampleCount(0);
-        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
-        desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Float);
-        desc.setColorTarget(2, Falcor::ResourceFormat::RGBA32Float);
-        desc.setColorTarget(3, Falcor::ResourceFormat::RGBA32Float);
-        mpDummyFullscreenFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
-    }
-
-    {
         Fbo::Desc desc;
         desc.setSampleCount(0);
         desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
@@ -312,6 +301,8 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         }
 
     }
+
+    mpUtilities->allocateFbos(dim, pRenderContext);
 
     mBuffersNeedClear = true;
 }
@@ -791,7 +782,8 @@ void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const SVGFRende
         else
         {
             // set everything to 1.0 (except the alpha channel)
-            float4 defaultDerivative = float4(1.0, 1.0, 1.0, 0.0);
+            // we set everything to numepixels because the final modulate state divides by num pixels
+            float4 defaultDerivative = float4(1.0, 1.0, 1.0, 0.0) * (float)numPixels;
             uint4* dPtr = (uint4*)&defaultDerivative;
             pRenderContext->clearUAV(pdaCompactedBuffer[1]->getUAV().get(), *dPtr);
         }
@@ -838,12 +830,12 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, const SVGFRenderData& 
     perImageCB["pdaFilteredGaussian"] = pdaRawOutputBuffer[0];
     perImageCB["pdaFilteredImage"] = pdaRawOutputBuffer[1];
 
-    mLossState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
+    mLossState.dPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
 
-    pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(0)->getSRV(), renderData.pLossTexture->getRTV());
-    pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(1)->getSRV(), renderData.pCenterLossTexture->getRTV());
-    pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(2)->getSRV(), renderData.pGradientLossTexture->getRTV());
-    pRenderContext->blit(mpDummyFullscreenFbo->getColorTexture(3)->getSRV(), renderData.pTemporalLossTexture->getRTV());
+    pRenderContext->blit(mpUtilities->getDummyFullscreenFbo()->getColorTexture(0)->getSRV(), renderData.pLossTexture->getRTV());
+    pRenderContext->blit(mpUtilities->getDummyFullscreenFbo()->getColorTexture(1)->getSRV(), renderData.pCenterLossTexture->getRTV());
+    pRenderContext->blit(mpUtilities->getDummyFullscreenFbo()->getColorTexture(2)->getSRV(), renderData.pGradientLossTexture->getRTV());
+    pRenderContext->blit(mpUtilities->getDummyFullscreenFbo()->getColorTexture(3)->getSRV(), renderData.pTemporalLossTexture->getRTV());
     runCompactingPass(pRenderContext, 0, 9);
 
     // update the previous textures
@@ -895,14 +887,14 @@ void SVGFPass::computeDerivGaussian(RenderContext* pRenderContext)
     perImageCB["image"] = mLossState.pGaussianYInput;
     perImageCB["yaxis"] = true;
     perImageCB["pdaIllumination"] = pdaRawOutputBuffer[0];
-    mLossState.dGaussianPass->execute(pRenderContext, mpDummyFullscreenFbo);
+    mLossState.dGaussianPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
 
     runCompactingPass(pRenderContext, 0, 11);
 
     perImageCB["image"] = mLossState.pGaussianXInput;
     perImageCB["yaxis"] = false;
     perImageCB["pdaIllumination"] = pdaRawOutputBuffer[1];
-    mLossState.dGaussianPass->execute(pRenderContext, mpDummyFullscreenFbo);
+    mLossState.dGaussianPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
 
     // we have the extra derivative from the loss pass
     // not a great way to encapsulate stuff but whatever
@@ -1043,7 +1035,7 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
         perImageCB["gIllumination"] = curIterationState.pgIllumination;
         perImageCB["gStepSize"] = 1 << iteration;
 
-        mAtrousState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
+        mAtrousState.dPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
 
         runCompactingPass(pRenderContext, 0, 9 + 25);
 
@@ -1120,7 +1112,7 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
     perImageCB_D["daLuminanceParams"] = mFilterMomentsState.mLuminanceParams.da;
     perImageCB_D["daWeightFunctionParams"] = mFilterMomentsState.mWeightFunctionParams.da;
 
-    mFilterMomentsState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
+    mFilterMomentsState.dPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
 
     runCompactingPass(pRenderContext, 0, 50);
     runCompactingPass(pRenderContext, 1, 49);
@@ -1224,7 +1216,7 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
     perImageCB_D["daAlpha"] = mReprojectState.mAlpha.da;
     perImageCB_D["daMomentsAlpha"] = mReprojectState.mMomentsAlpha.da;
 
-    mReprojectState.dPass->execute(pRenderContext, mpDummyFullscreenFbo);
+    mReprojectState.dPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
 }
 
 
@@ -1237,11 +1229,11 @@ void SVGFPass::runCompactingPass(RenderContext* pRenderContext, int idx, int n)
     auto compactingCB = compactingPass->getRootVar()["CompactingCB"];
     compactingCB["drIllumination"] = pdaRawOutputBuffer[idx];
     compactingCB["daIllumination"] = pdaCompactedBuffer[idx];
-    compactingCB["gAlbedo"] = mpDummyFullscreenFbo->getColorTexture(0);
+    compactingCB["gAlbedo"] = mpUtilities->getDummyFullscreenFbo()->getColorTexture(0);
 
     compactingCB["elements"] = n;
     // compact the raw output
-    compactingPass->execute(pRenderContext, mpDummyFullscreenFbo);
+    compactingPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
 }
 
 void SVGFPass::clearRawOutputBuffer(RenderContext* pRenderContext, int idx)
@@ -1301,7 +1293,7 @@ void SVGFPass::reduceParameter(RenderContext* pRenderContext, SVGFParameter<floa
 
 void SVGFPass::registerParameterManual(SVGFParameter<float4>* param, int cnt, const std::string& name)
 {
-    param->da = mUtilities->createAccumulationBuffer();
+    param->da = mpUtilities->createAccumulationBuffer();
 
     ParameterMetaInfo pmi;
 
