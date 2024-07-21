@@ -5,7 +5,16 @@ using namespace Falcor;
 
 SVGFUtilitySet::SVGFUtilitySet(ref<Device> pDevice) : mpDevice(pDevice)
 {
+    // set some general utility states
+    mpCompactingPass = createFullscreenPassAndDumpIR(kBufferShaderCompacting);
 
+    mpdaRawOutputBuffer[0] = createAccumulationBuffer(sizeof(float4) * 50);
+    mpdaRawOutputBuffer[1] = createAccumulationBuffer(sizeof(float4) * 49);
+    mpdaRawOutputBuffer[2] = createAccumulationBuffer(sizeof(float4) * 34);
+    for (int i = 0; i < 3; i++)
+    {
+        mpdrCompactedBuffer[i] = createAccumulationBuffer();
+    }
 }
 
 void SVGFUtilitySet::allocateFbos(uint2 dim, RenderContext* pRenderContext)
@@ -44,6 +53,28 @@ ref<FullScreenPass> SVGFUtilitySet::createFullscreenPassAndDumpIR(const std::str
 ref<Fbo> SVGFUtilitySet::getDummyFullscreenFbo()
 {
     return mpDummyFullscreenFbo;
+}
+
+void SVGFUtilitySet::runCompactingPass(RenderContext* pRenderContext, int idx, int n)
+{
+    FALCOR_PROFILE(pRenderContext, "Compacting " + std::to_string(idx));
+
+    //setPatchingState(compactingPass);
+
+    auto compactingCB = mpCompactingPass->getRootVar()["CompactingCB"];
+    compactingCB["drIllumination"] = mpdaRawOutputBuffer[idx];
+    compactingCB["daIllumination"] = mpdrCompactedBuffer[idx];
+    compactingCB["gAlbedo"] = getDummyFullscreenFbo()->getColorTexture(0);
+
+    compactingCB["elements"] = n;
+    // compact the raw output
+    mpCompactingPass->execute(pRenderContext, getDummyFullscreenFbo());
+}
+
+void SVGFUtilitySet::clearRawOutputBuffer(RenderContext* pRenderContext, int idx)
+{
+    FALCOR_PROFILE(pRenderContext, "Clr Raw Out " + std::to_string(idx));
+    pRenderContext->clearUAV(mpdaRawOutputBuffer[idx]->getUAV().get(), uint4(0));
 }
 
 SVGFRenderData::SVGFRenderData(const RenderData& renderData) {

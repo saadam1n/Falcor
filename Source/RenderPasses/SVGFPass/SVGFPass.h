@@ -129,11 +129,7 @@ private:
     ref<Fbo> mpFilteredIlluminationFbo;
     ref<Fbo> mpFinalFbo;
 
-    ref<FullScreenPass> compactingPass;
-    ref<Buffer> pdaRawOutputBuffer[3];
-    ref<Buffer> pdaCompactedBuffer[3];
-    void runCompactingPass(RenderContext* pRenderContext, int idx, int n);
-    void clearRawOutputBuffer(RenderContext* pRenderContext, int idx);
+
 
     ref<ComputePass> summingPass;
     ref<FullScreenPass> bufferToTexturePass;

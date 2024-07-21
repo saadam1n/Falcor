@@ -76,7 +76,6 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mFinalModulateState.sPass = mpUtilities->createFullscreenPassAndDumpIR(kFinalModulateShaderS);
     mFinalModulateState.dPass = mpUtilities->createFullscreenPassAndDumpIR(kFinalModulateShaderD);
 
-    compactingPass = mpUtilities->createFullscreenPassAndDumpIR(kBufferShaderCompacting);
     summingPass = ComputePass::create(mpDevice, kBufferShaderSumming);
     bufferToTexturePass = mpUtilities->createFullscreenPassAndDumpIR(kBufferShaderToTexture);
 
@@ -183,17 +182,6 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mLossState.pGaussianYInput = mpUtilities->createFullscreenTexture();
     mLossState.pFilteredGaussian = mpUtilities->createFullscreenTexture();
     mLossState.pReferenceGaussian = mpUtilities->createFullscreenTexture();
-
-
-
-    // set some general utility states
-    pdaRawOutputBuffer[0] = mpUtilities->createAccumulationBuffer(sizeof(float4) * 50);
-    pdaRawOutputBuffer[1] = mpUtilities->createAccumulationBuffer(sizeof(float4) * 49);
-    pdaRawOutputBuffer[2] = mpUtilities->createAccumulationBuffer(sizeof(float4) * 34);
-    for (int i = 0; i < 3; i++)
-    {
-        pdaCompactedBuffer[i] = mpUtilities->createAccumulationBuffer();
-    }
 
     for (int i = 0; i < 2; i++)
     {
@@ -776,7 +764,7 @@ void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const SVGFRende
             // we set everything to numepixels because the final modulate state divides by num pixels
             float4 defaultDerivative = float4(1.0, 1.0, 1.0, 0.0) * (float)numPixels;
             uint4* dPtr = (uint4*)&defaultDerivative;
-            pRenderContext->clearUAV(pdaCompactedBuffer[1]->getUAV().get(), *dPtr);
+            pRenderContext->clearUAV(mpUtilities->mpdrCompactedBuffer[1]->getUAV().get(), *dPtr);
         }
 
         computeDerivFinalModulate(pRenderContext, renderData.pOutputTexture, pIllumTexture, renderData.pAlbedoTexture, renderData.pEmissionTexture);
@@ -804,8 +792,8 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, const SVGFRenderData& 
     computeGaussian(pRenderContext, renderData.pReferenceTexture, mLossState.pReferenceGaussian, false);
     computeGaussian(pRenderContext, renderData.pOutputTexture, mLossState.pFilteredGaussian, true);
 
-    clearRawOutputBuffer(pRenderContext, 0);
-    clearRawOutputBuffer(pRenderContext, 1);
+    mpUtilities->clearRawOutputBuffer(pRenderContext, 0);
+    mpUtilities->clearRawOutputBuffer(pRenderContext, 1);
 
     auto perImageCB = mLossState.dPass->getRootVar()["PerImageCB"];
 
@@ -818,8 +806,8 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, const SVGFRenderData& 
     perImageCB["prevFiltered"] = renderData.pPrevFiltered;
     perImageCB["prevReference"] = renderData.pPrevReference;
 
-    perImageCB["pdaFilteredGaussian"] = pdaRawOutputBuffer[0];
-    perImageCB["pdaFilteredImage"] = pdaRawOutputBuffer[1];
+    perImageCB["pdaFilteredGaussian"] = mpUtilities->mpdaRawOutputBuffer[0];
+    perImageCB["pdaFilteredImage"] = mpUtilities->mpdaRawOutputBuffer[1];
 
     mLossState.dPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
 
@@ -827,7 +815,7 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, const SVGFRenderData& 
     pRenderContext->blit(mpUtilities->getDummyFullscreenFbo()->getColorTexture(1)->getSRV(), renderData.pCenterLossTexture->getRTV());
     pRenderContext->blit(mpUtilities->getDummyFullscreenFbo()->getColorTexture(2)->getSRV(), renderData.pGradientLossTexture->getRTV());
     pRenderContext->blit(mpUtilities->getDummyFullscreenFbo()->getColorTexture(3)->getSRV(), renderData.pTemporalLossTexture->getRTV());
-    runCompactingPass(pRenderContext, 0, 9);
+    mpUtilities->runCompactingPass(pRenderContext, 0, 9);
 
     // update the previous textures
     pRenderContext->blit(renderData.pOutputTexture->getSRV(), renderData.pPrevFiltered->getRTV());
@@ -872,24 +860,24 @@ void SVGFPass::computeDerivGaussian(RenderContext* pRenderContext)
     auto perImageCB = mLossState.dGaussianPass->getRootVar()["PerImageCB"];
     auto perImageCB_D = mLossState.dGaussianPass->getRootVar()["PerImageCB_D"];
 
-    clearRawOutputBuffer(pRenderContext, 0);
-    perImageCB_D["drIllumination"] = pdaCompactedBuffer[0];
+    mpUtilities->clearRawOutputBuffer(pRenderContext, 0);
+    perImageCB_D["drIllumination"] = mpUtilities->mpdrCompactedBuffer[0];
 
     perImageCB["image"] = mLossState.pGaussianYInput;
     perImageCB["yaxis"] = true;
-    perImageCB["pdaIllumination"] = pdaRawOutputBuffer[0];
+    perImageCB["pdaIllumination"] = mpUtilities->mpdaRawOutputBuffer[0];
     mLossState.dGaussianPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
 
-    runCompactingPass(pRenderContext, 0, 11);
+    mpUtilities->runCompactingPass(pRenderContext, 0, 11);
 
     perImageCB["image"] = mLossState.pGaussianXInput;
     perImageCB["yaxis"] = false;
-    perImageCB["pdaIllumination"] = pdaRawOutputBuffer[1];
+    perImageCB["pdaIllumination"] = mpUtilities->mpdaRawOutputBuffer[1];
     mLossState.dGaussianPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
 
     // we have the extra derivative from the loss pass
     // not a great way to encapsulate stuff but whatever
-    runCompactingPass(pRenderContext, 1, 12);
+    mpUtilities->runCompactingPass(pRenderContext, 1, 12);
 }
 
 void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pOutputTexture, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture)
@@ -907,7 +895,7 @@ void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Text
     perImageCB["daIllumination"] = mFinalModulateState.pdaIllumination;
 
     auto perImageCB_D = mFinalModulateState.dPass->getRootVar()["PerImageCB_D"];
-    perImageCB_D["drFilteredImage"] = pdaCompactedBuffer[1];
+    perImageCB_D["drFilteredImage"] = mpUtilities->mpdrCompactedBuffer[1];
 
     mFinalModulateState.dPass->execute(pRenderContext, mpDerivativeVerifyFbo);
 }
@@ -992,7 +980,7 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
         auto& curIterationState = mAtrousState.mIterationState[iteration];
 
         // clear raw output
-        clearRawOutputBuffer(pRenderContext, 0);
+        mpUtilities->clearRawOutputBuffer(pRenderContext, 0);
 
         perImageCB_D["daSigma"] = curIterationState.mSigma.da;
         perImageCB_D["daKernel"] = curIterationState.mKernel.da;
@@ -1020,15 +1008,15 @@ void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, re
             }
         }
 
-        perImageCB_D["drIllumination"] = (iteration == mFilterIterations - 1 ? mFinalModulateState.pdaIllumination : pdaCompactedBuffer[0]);
-        perImageCB["daIllumination"] = pdaRawOutputBuffer[0];
+        perImageCB_D["drIllumination"] = (iteration == mFilterIterations - 1 ? mFinalModulateState.pdaIllumination : mpUtilities->mpdrCompactedBuffer[0]);
+        perImageCB["daIllumination"] = mpUtilities->mpdaRawOutputBuffer[0];
 
         perImageCB["gIllumination"] = curIterationState.pgIllumination;
         perImageCB["gStepSize"] = 1 << iteration;
 
         mAtrousState.dPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
 
-        runCompactingPass(pRenderContext, 0, 9 + 25);
+        mpUtilities->runCompactingPass(pRenderContext, 0, 9 + 25);
 
     }
 }
@@ -1076,11 +1064,11 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
     perImageCB["gHistoryLength"]    = mFilterMomentsState.pCurHistoryLength;
     perImageCB["gLinearZAndNormal"] = mPackLinearZAndNormalState.pLinearZAndNormal;
 
-    clearRawOutputBuffer(pRenderContext, 0);
-    clearRawOutputBuffer(pRenderContext, 1);
+    mpUtilities->clearRawOutputBuffer(pRenderContext, 0);
+    mpUtilities->clearRawOutputBuffer(pRenderContext, 1);
 
-    perImageCB["daIllumination"]     = pdaRawOutputBuffer[0];
-    perImageCB["daMoments"]          = pdaRawOutputBuffer[1];
+    perImageCB["daIllumination"]     = mpUtilities->mpdaRawOutputBuffer[0];
+    perImageCB["daMoments"]          = mpUtilities->mpdaRawOutputBuffer[1];
     perImageCB["daHistoryLen"]    = mFilterMomentsState.pdaHistoryLen;
 
     perImageCB["dvSigmaL"] = mFilterMomentsState.mSigma.dv.x;
@@ -1096,7 +1084,7 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
 
     auto perImageCB_D = mFilterMomentsState.dPass->getRootVar()["PerImageCB_D"];
 
-    perImageCB_D["drIllumination"] = pdaCompactedBuffer[0];
+    perImageCB_D["drIllumination"] = mpUtilities->mpdrCompactedBuffer[0];
 
     perImageCB_D["daSigma"] = mFilterMomentsState.mSigma.da;
     perImageCB_D["daVarianceBoostFactor"] = mFilterMomentsState.mVarianceBoostFactor.da;
@@ -1105,8 +1093,8 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
 
     mFilterMomentsState.dPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
 
-    runCompactingPass(pRenderContext, 0, 50);
-    runCompactingPass(pRenderContext, 1, 49);
+    mpUtilities->runCompactingPass(pRenderContext, 0, 50);
+    mpUtilities->runCompactingPass(pRenderContext, 1, 49);
 }
 
 void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture,
@@ -1197,8 +1185,8 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
 
     auto perImageCB_D = mReprojectState.dPass->getRootVar()["PerImageCB_D"];
 
-    perImageCB_D["drIllumination"] = pdaCompactedBuffer[0];
-    perImageCB_D["drMoments"] = pdaCompactedBuffer[1];
+    perImageCB_D["drIllumination"] = mpUtilities->mpdrCompactedBuffer[0];
+    perImageCB_D["drMoments"] = mpUtilities->mpdrCompactedBuffer[1];
     perImageCB_D["drHistoryLen"] = mFilterMomentsState.pdaHistoryLen;
 
     perImageCB_D["daLuminanceParams"] = mReprojectState.mLuminanceParams.da;
@@ -1210,28 +1198,6 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
     mReprojectState.dPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
 }
 
-
-void SVGFPass::runCompactingPass(RenderContext* pRenderContext, int idx, int n)
-{
-    FALCOR_PROFILE(pRenderContext, "Compacting " + std::to_string(idx));
-
-    setPatchingState(compactingPass);
-
-    auto compactingCB = compactingPass->getRootVar()["CompactingCB"];
-    compactingCB["drIllumination"] = pdaRawOutputBuffer[idx];
-    compactingCB["daIllumination"] = pdaCompactedBuffer[idx];
-    compactingCB["gAlbedo"] = mpUtilities->getDummyFullscreenFbo()->getColorTexture(0);
-
-    compactingCB["elements"] = n;
-    // compact the raw output
-    compactingPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
-}
-
-void SVGFPass::clearRawOutputBuffer(RenderContext* pRenderContext, int idx)
-{
-    FALCOR_PROFILE(pRenderContext, "Clr Raw Out " + std::to_string(idx));
-    pRenderContext->clearUAV(pdaRawOutputBuffer[idx]->getUAV().get(), uint4(0));
-}
 
 
 #define USE_BUILTIN_PARALLEL_REDUCTION

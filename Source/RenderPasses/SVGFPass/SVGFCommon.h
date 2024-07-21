@@ -130,6 +130,13 @@ public:
     ref<FullScreenPass> createFullscreenPassAndDumpIR(const std::string& path);
 
     ref<Fbo> getDummyFullscreenFbo();
+
+
+    void runCompactingPass(RenderContext* pRenderContext, int idx, int n);
+    void clearRawOutputBuffer(RenderContext* pRenderContext, int idx);
+
+    ref<Buffer> mpdaRawOutputBuffer[3];
+    ref<Buffer> mpdrCompactedBuffer[3];
 private:
     ref<Device> mpDevice;
 
@@ -137,6 +144,9 @@ private:
     int mTextureMemUsage = 0;
 
     ref<Fbo> mpDummyFullscreenFbo;
+
+    ref<FullScreenPass> mpCompactingPass;
+
 };
 
 struct SVGFRenderData
