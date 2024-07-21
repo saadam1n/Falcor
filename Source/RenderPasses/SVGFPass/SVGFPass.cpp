@@ -480,7 +480,7 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    runDerivativeTest(pRenderContext, renderData);
+    runTrainingAndTesting(pRenderContext, renderData);
     std::cout.flush();
 }
 
@@ -628,7 +628,7 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 
                         float nextMomentum = K_BETA_MOMENTUM * pmi.momentum[j] + (1.0f - K_BETA_MOMENTUM) * totalGradient[j];
                         float nextSsgrad = K_BETA_SSGRAD * pmi.ssgrad[j] + (1.0f - K_BETA_SSGRAD) * totalGradient[j] * totalGradient[j];
-                        
+
                         pmi.momentum[j] = nextMomentum;
                         pmi.ssgrad[j] = nextSsgrad;
 
@@ -734,9 +734,9 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
     runSvgfFilter(pRenderContext, svgfrd, false);
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), mpFuncOutputUpper->getRTV());
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(),  renderData.getTexture(kOutputFuncUpper)->getRTV());
-     
+
     valToChange = oldval;
-     
+
     runSvgfFilter(pRenderContext, svgfrd, true);
     computeDerivatives(pRenderContext, svgfrd, false);
     computeDerivVerification(pRenderContext, svgfrd);
@@ -946,12 +946,12 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Tex
 
         perImageCB["dvSigmaL"] = curIterationState.mSigma.dv.x;
         perImageCB["dvSigmaZ"] = curIterationState.mSigma.dv.y;
-        perImageCB["dvSigmaN"] = curIterationState.mSigma.dv.z; 
+        perImageCB["dvSigmaN"] = curIterationState.mSigma.dv.z;
 
         perImageCB["dvLuminanceParams"] = curIterationState.mLuminanceParams.dv;
 
         for (int i = 0; i < 3; i++) {
-            perImageCB["dvWeightFunctionParams"][i] = curIterationState.mWeightFunctionParams.dv[i]; 
+            perImageCB["dvWeightFunctionParams"][i] = curIterationState.mWeightFunctionParams.dv[i];
         }
 
         for (int i = 0; i < 3; i++) {

@@ -17,7 +17,7 @@ void main(FullScreenPassVsOut vsOut) : SV_TARGET0
     uint numPixels = dim.x * dim.y;
     dIllum /= float(numPixels);
 
-    dIllum = float4(1.0f, 1.0f, 1.0f, 0.0f);
+    //dIllum = float4(1.0f, 1.0f, 1.0f, 0.0f);
 
     __bwd_diff(final_mod)(vsOut, dIllum);
 }
