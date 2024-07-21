@@ -41,13 +41,11 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
     registry.registerClass<RenderPass, SVGFPass>();
 }
 
-
-
-
-
-#define registerParameter(x) registerParameterUM(x, #x)
-
-SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), mpUtilities(make_ref<SVGFUtilitySet>(pDevice)), mTrainingDataset(pDevice, mpUtilities, "C:/FalcorFiles/Dataset0/")
+SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
+    RenderPass(pDevice),
+    mpUtilities(make_ref<SVGFUtilitySet>(pDevice)),
+    mpParameterReflector(make_ref<FilterParameterReflector>(mpUtilities)),
+    mTrainingDataset(pDevice, mpUtilities, "C:/FalcorFiles/Dataset0/")
 {
     for (const auto& [key, value] : props)
     {
@@ -94,24 +92,24 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
 
     // set reproj params
     mReprojectState.mLuminanceParams.dv = dvLuminanceParams;
-    registerParameter(mReprojectState.mLuminanceParams);
+    REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mLuminanceParams);
 
     mReprojectState.mAlpha.dv = dvAlpha;
-    registerParameter(mReprojectState.mAlpha);
+    REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mAlpha);
 
     mReprojectState.mMomentsAlpha.dv = dvMomentsAlpha;
-    registerParameter(mReprojectState.mMomentsAlpha);
+    REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mMomentsAlpha);
 
     mReprojectState.mParams.dv[0] = 32.0;
     mReprojectState.mParams.dv[1] = 1.0;
     mReprojectState.mParams.dv[2] = 10.0;
     mReprojectState.mParams.dv[3] = 16.0;
-    registerParameter(mReprojectState.mParams);
+    REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mParams);
 
     mReprojectState.mKernel.dv[0] = 1.0;
     mReprojectState.mKernel.dv[1] = 1.0;
     mReprojectState.mKernel.dv[2] = 1.0;
-    registerParameter(mReprojectState.mKernel);
+    REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mKernel);
 
     mReprojectState.pPrevFiltered = mpUtilities->createFullscreenTexture();
     mReprojectState.pPrevMoments = mpUtilities->createFullscreenTexture();
@@ -123,18 +121,18 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     mFilterMomentsState.pdaHistoryLen = mpUtilities->createAccumulationBuffer();
 
     mFilterMomentsState.mSigma.dv = dvSigma;
-    registerParameter(mFilterMomentsState.mSigma);
+    REGISTER_PARAMETER(mpParameterReflector, mFilterMomentsState.mSigma);
 
     mFilterMomentsState.mLuminanceParams.dv = dvLuminanceParams;
-    registerParameter(mFilterMomentsState.mLuminanceParams);
+    REGISTER_PARAMETER(mpParameterReflector, mFilterMomentsState.mLuminanceParams);
 
     for (int i = 0; i < 3; i++) {
         mFilterMomentsState.mWeightFunctionParams.dv[i] = dvWeightFunctionParams[i];
     }
-    registerParameter(mFilterMomentsState.mWeightFunctionParams);
+    REGISTER_PARAMETER(mpParameterReflector, mFilterMomentsState.mWeightFunctionParams);
 
     mFilterMomentsState.mVarianceBoostFactor.dv = 4.0;
-    registerParameter(mFilterMomentsState.mVarianceBoostFactor);
+    REGISTER_PARAMETER(mpParameterReflector, mFilterMomentsState.mVarianceBoostFactor);
 
     mFilterMomentsState.pCurIllum = mpUtilities->createFullscreenTexture();
     mFilterMomentsState.pCurMoments = mpUtilities->createFullscreenTexture();
@@ -147,26 +145,26 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pD
     for (auto& iterationState : mAtrousState.mIterationState)
     {
         iterationState.mSigma.dv = dvSigma;
-        registerParameter(iterationState.mSigma);
+        REGISTER_PARAMETER(mpParameterReflector, iterationState.mSigma);
 
         for (int i = 0; i < 3; i++) {
             iterationState.mWeightFunctionParams.dv[i] = dvWeightFunctionParams[i];
         }
-        registerParameter(iterationState.mWeightFunctionParams);
+        REGISTER_PARAMETER(mpParameterReflector, iterationState.mWeightFunctionParams);
 
         iterationState.mLuminanceParams.dv = dvLuminanceParams;
-        registerParameter(iterationState.mLuminanceParams);
+        REGISTER_PARAMETER(mpParameterReflector, iterationState.mLuminanceParams);
 
         iterationState.mKernel.dv[0] = 1.0;
         iterationState.mKernel.dv[1] = 2.0f / 3.0f;
         iterationState.mKernel.dv[2] = 1.0f / 6.0f;
-        registerParameter(iterationState.mKernel);
+        REGISTER_PARAMETER(mpParameterReflector, iterationState.mKernel);
 
         iterationState.mVarianceKernel.dv[0][0] = 1.0 / 4.0;
         iterationState.mVarianceKernel.dv[0][1] = 1.0 / 8.0;
         iterationState.mVarianceKernel.dv[1][0] = 1.0 / 8.0;
         iterationState.mVarianceKernel.dv[1][1] = 1.0 / 16.0;
-        registerParameter(iterationState.mVarianceKernel);
+        REGISTER_PARAMETER(mpParameterReflector, iterationState.mVarianceKernel);
 
         iterationState.pgIllumination = mpUtilities->createFullscreenTexture();
     }
@@ -526,14 +524,14 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
             // first clear all our buffers
             {
                 FALCOR_PROFILE(pRenderContext, "Clr Param Buffers");
-                for (int i = 0; i < mParameterReflector.size(); i++)
+                for (int i = 0; i < mpParameterReflector->getNumParams(); i++)
                 {
-                    mParameterReflector[i].mAddress->clearBuffer(pRenderContext);
+                    mpParameterReflector->mRegistry[i].mAddress->clearBuffer(pRenderContext);
 
                     if(mEpoch == 0)
                     {
-                        mParameterReflector[i].momentum = float4(0.0f);
-                        mParameterReflector[i].ssgrad = float4(0.0f);
+                        mpParameterReflector->mRegistry[i].momentum = float4(0.0f);
+                        mpParameterReflector->mRegistry[i].ssgrad = float4(0.0f);
                     }
                 }
             }
@@ -547,11 +545,11 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
                 // now accumulate everything
                 {
                     FALCOR_PROFILE(pRenderContext, "Parallel Reduction");
-                    int baseOffset = mDatasetIndex * mParameterReflector.size() * sizeof(float4);
-                    for (int i = 0; i < mParameterReflector.size(); i++)
+                    int baseOffset = mDatasetIndex * mpParameterReflector->getNumParams() * sizeof(float4);
+                    for (int i = 0; i < mpParameterReflector->getNumParams(); i++)
                     {
                         int offset = i * sizeof(float4);
-                        reduceParameter(pRenderContext, *mParameterReflector[i].mAddress, baseOffset + offset);
+                        reduceParameter(pRenderContext, *mpParameterReflector->mRegistry[i].mAddress, baseOffset + offset);
                     }
                 }
 
@@ -582,14 +580,14 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
             {
                 float4* gradient = (float4*)mReadbackBuffer[0]->map();
 
-                for (int i = 0; i < mParameterReflector.size(); i++)
+                for (int i = 0; i < mpParameterReflector->getNumParams(); i++)
                 {
-                    auto& pmi = mParameterReflector[i];
+                    auto& pmi = mpParameterReflector->mRegistry[i];
 
                     float4 totalGradient = float4(0.0f);
                     for(int j = K_FRAME_SAMPLE_START; j < batchSize; j++)
                     {
-                        totalGradient += gradient[j * mParameterReflector.size() + i];
+                        totalGradient += gradient[j * mpParameterReflector->getNumParams() + i];
                     }
 
                     for (int j = 0; j < pmi.mNumElements; j++)
@@ -1248,18 +1246,7 @@ void SVGFPass::reduceParameter(RenderContext* pRenderContext, SVGFParameter<floa
 }
 
 
-void SVGFPass::registerParameterManual(SVGFParameter<float4>* param, int cnt, const std::string& name)
-{
-    param->da = mpUtilities->createAccumulationBuffer();
 
-    ParameterMetaInfo pmi;
-
-    pmi.mAddress = param;
-    pmi.mNumElements = cnt;
-    pmi.mName = name;
-
-    mParameterReflector.push_back(pmi);
-}
 
 void SVGFPass::setPatchingState(ref<FullScreenPass> fs)
 {

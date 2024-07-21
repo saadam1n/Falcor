@@ -149,6 +149,39 @@ private:
 
 };
 
+struct ParameterMetaInfo
+{
+    // float4 is max allowed size
+    SVGFParameter<float4>* mAddress;
+    float4 momentum;
+    float4 ssgrad;
+    int mNumElements;
+    std::string mName;
+};
+
+class FilterParameterReflector : public Object
+{
+public:
+    FilterParameterReflector(ref<SVGFUtilitySet> pUtilities);
+
+    //  manually registers parameter (but it still is auto trained)
+    void registerParameterManual(SVGFParameter<float4>* param, int cnt, const std::string& name);
+
+    // registers parameter into list of parameters so we automatically train it
+    template<typename T>
+    void registerParameterAuto(SVGFParameter<T>& param, const std::string& name)
+    {
+        registerParameterManual((SVGFParameter<float4>*)&param, sizeof(T) / sizeof(float), name);
+    }
+
+    size_t getNumParams();
+
+    std::vector<ParameterMetaInfo> mRegistry;
+private:
+    ref<SVGFUtilitySet> mpUtilities;
+};
+#define REGISTER_PARAMETER(reflector, x) reflector->registerParameterAuto(x, #x)
+
 struct SVGFRenderData
 {
 public:

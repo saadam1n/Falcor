@@ -57,6 +57,7 @@ public:
 
 private:
     ref<SVGFUtilitySet> mpUtilities;
+    ref<FilterParameterReflector> mpParameterReflector;
 
     ref<Scene> pScene;
 
@@ -150,17 +151,6 @@ private:
     bool mPatchingEnabled;
 
     void setPatchingState(ref<FullScreenPass> fs);
-
-    struct ParameterMetaInfo
-    {
-        // float4 is max allowed size
-        SVGFParameter<float4>* mAddress;
-        float4 momentum;
-        float4 ssgrad;
-        int mNumElements;
-        std::string mName;
-    };
-    std::vector<ParameterMetaInfo> mParameterReflector;
 
     //  manually registers parameter (but it still is auto trained)
     void registerParameterManual(SVGFParameter<float4>* param, int cnt, const std::string& name);

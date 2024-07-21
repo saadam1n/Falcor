@@ -3,6 +3,8 @@
 
 using namespace Falcor;
 
+
+
 SVGFUtilitySet::SVGFUtilitySet(ref<Device> pDevice) : mpDevice(pDevice)
 {
     // set some general utility states
@@ -75,6 +77,26 @@ void SVGFUtilitySet::clearRawOutputBuffer(RenderContext* pRenderContext, int idx
 {
     FALCOR_PROFILE(pRenderContext, "Clr Raw Out " + std::to_string(idx));
     pRenderContext->clearUAV(mpdaRawOutputBuffer[idx]->getUAV().get(), uint4(0));
+}
+
+FilterParameterReflector::FilterParameterReflector(ref<SVGFUtilitySet> pUtilities) : mpUtilities(pUtilities) {}
+
+void FilterParameterReflector::registerParameterManual(SVGFParameter<float4>* param, int cnt, const std::string& name)
+{
+    param->da = mpUtilities->createAccumulationBuffer();
+
+    ParameterMetaInfo pmi;
+
+    pmi.mAddress = param;
+    pmi.mNumElements = cnt;
+    pmi.mName = name;
+
+    mRegistry.push_back(pmi);
+}
+
+size_t FilterParameterReflector::getNumParams()
+{
+    return mRegistry.size();
 }
 
 SVGFRenderData::SVGFRenderData(const RenderData& renderData) {
