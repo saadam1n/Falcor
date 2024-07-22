@@ -197,6 +197,8 @@ public:
     SVGFRenderData() = default;
     SVGFRenderData(const RenderData& renderData);
 
+    void copyTextureReferences(const RenderData& renderData);
+
     ref<Texture> pAlbedoTexture;
     ref<Texture> pColorTexture;
     ref<Texture> pEmissionTexture;

@@ -62,6 +62,8 @@ private:
 
     ref<Scene> pScene;
 
+    SVGFRenderData mRenderData;
+
     bool mTrained = false;
     int mEpoch = 0;
     void runNextTrainingTask(RenderContext* pRenderContext);

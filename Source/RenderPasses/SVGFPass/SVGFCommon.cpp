@@ -113,7 +113,13 @@ size_t FilterParameterReflector::getNumParams()
     return mRegistry.size();
 }
 
-SVGFRenderData::SVGFRenderData(const RenderData& renderData) {
+SVGFRenderData::SVGFRenderData(const RenderData& renderData)
+{
+    copyTextureReferences(renderData);
+}
+
+void SVGFRenderData::copyTextureReferences(const RenderData& renderData)
+{
     pAlbedoTexture = renderData.getTexture(kInputBufferAlbedo);
     pColorTexture = renderData.getTexture(kInputBufferColor);
     pEmissionTexture = renderData.getTexture(kInputBufferEmission);

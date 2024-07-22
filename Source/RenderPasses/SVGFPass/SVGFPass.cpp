@@ -421,30 +421,30 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 
 void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    SVGFRenderData svgfrd(renderData);
+    mRenderData.copyTextureReferences(renderData);
 
     if (!mTrained)
     {
         runNextTrainingTask(pRenderContext);
         // display current results to screen
-        pRenderContext->blit(mTrainingDataset.pOutputTexture->getSRV(), svgfrd.pOutputTexture->getRTV());
-        pRenderContext->blit(mTrainingDataset.pLossTexture->getSRV(), svgfrd.pLossTexture->getRTV());
-        pRenderContext->blit(mTrainingDataset.pCenterLossTexture->getSRV(), svgfrd.pCenterLossTexture->getRTV());
-        pRenderContext->blit(mTrainingDataset.pGradientLossTexture->getSRV(), svgfrd.pGradientLossTexture->getRTV());
-        pRenderContext->blit(mTrainingDataset.pTemporalLossTexture->getSRV(), svgfrd.pTemporalLossTexture->getRTV());
+        pRenderContext->blit(mTrainingDataset.pOutputTexture->getSRV(), mRenderData.pOutputTexture->getRTV());
+        pRenderContext->blit(mTrainingDataset.pLossTexture->getSRV(), mRenderData.pLossTexture->getRTV());
+        pRenderContext->blit(mTrainingDataset.pCenterLossTexture->getSRV(), mRenderData.pCenterLossTexture->getRTV());
+        pRenderContext->blit(mTrainingDataset.pGradientLossTexture->getSRV(), mRenderData.pGradientLossTexture->getRTV());
+        pRenderContext->blit(mTrainingDataset.pTemporalLossTexture->getSRV(), mRenderData.pTemporalLossTexture->getRTV());
     }
     else
     {
         if(!pScene) return;
 
-        runSvgfFilter(pRenderContext, svgfrd, true);
+        runSvgfFilter(pRenderContext, mRenderData, true);
 
         // compute loss so we can see it on the screen
-        pRenderContext->blit(mTrainingDataset.pReferenceTexture->getSRV(), svgfrd.pReferenceTexture->getRTV());
-        computeLoss(pRenderContext, svgfrd);
+        pRenderContext->blit(mTrainingDataset.pReferenceTexture->getSRV(), mRenderData.pReferenceTexture->getRTV());
+        computeLoss(pRenderContext, mRenderData);
 
         float4 loss;
-        mpParallelReduction->execute(pRenderContext, svgfrd.pLossTexture, ParallelReduction::Type::Sum, &loss);
+        mpParallelReduction->execute(pRenderContext, mRenderData.pLossTexture, ParallelReduction::Type::Sum, &loss);
 
         // wait for all pending actions to execute
         pRenderContext->submit(true);
@@ -661,7 +661,7 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
 {
     if(!pScene) return;
 
-    SVGFRenderData svgfrd(renderData);
+    mRenderData.copyTextureReferences(renderData);
 
     mDelta = 0.05f;
 
@@ -669,21 +669,21 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
     float oldval = valToChange;
 
     valToChange = oldval - mDelta;
-    runSvgfFilter(pRenderContext, svgfrd, false);
+    runSvgfFilter(pRenderContext, mRenderData, false);
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), mpFuncOutputLower->getRTV());
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), renderData.getTexture(kOutputFuncLower)->getRTV());
 
 
     valToChange = oldval + mDelta;
-    runSvgfFilter(pRenderContext, svgfrd, false);
+    runSvgfFilter(pRenderContext, mRenderData, false);
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), mpFuncOutputUpper->getRTV());
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(),  renderData.getTexture(kOutputFuncUpper)->getRTV());
 
     valToChange = oldval;
 
-    runSvgfFilter(pRenderContext, svgfrd, true);
-    computeDerivatives(pRenderContext, svgfrd, false);
-    computeDerivVerification(pRenderContext, svgfrd);
+    runSvgfFilter(pRenderContext, mRenderData, true);
+    computeDerivatives(pRenderContext, mRenderData, false);
+    computeDerivVerification(pRenderContext, mRenderData);
     pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(1)->getSRV(),  renderData.getTexture(kOutputFdCol)->getRTV());
     pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(2)->getSRV(),  renderData.getTexture(kOutputBdCol)->getRTV());
 
