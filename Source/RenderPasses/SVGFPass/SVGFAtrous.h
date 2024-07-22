@@ -41,7 +41,7 @@ public: // public so we can do derivative stuff
         SVGFParameter<float3> mLuminanceParams;
 
         SVGFParameter<float[2][2]> mVarianceKernel;
-        SVGFParameter<float[3]> mKernel;
+        SVGFParameter<float[5][5]> mKernel;
     };
 
     std::vector<PerIterationState> mIterationState;

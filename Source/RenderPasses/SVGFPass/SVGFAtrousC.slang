@@ -44,7 +44,7 @@ cbuffer PerImageCB
     float3 dvLuminanceParams;
 
     float dvWeightFunctionParams[3];
-    float dvKernel[3];
+    float dvKernel[5][5];
     float dvVarianceKernel[2][2];
 
     RWByteAddressBuffer daIllumination;
@@ -179,7 +179,7 @@ float computeVarianceCenter(int2 screenSize, int2 ipos, float[2][2] kernel)
 const uniform float epsVariance = 1e-10;
 
 void d_atrous( FullScreenPassVsOut vsOut,
-    inout DifferentialPair<float[3]> kernelWeights, inout DifferentialPair<float [2][2]> varianceKernel,
+    inout DifferentialPair<float[5][5]> kernelWeights, inout DifferentialPair<float [2][2]> varianceKernel,
     inout DifferentialPair<float3> luminanceParams, inout DifferentialPair<float[3]> weightsParams,
     inout DifferentialPair<float> sigmaL, inout DifferentialPair<float> sigmaZ, inout DifferentialPair<float> sigmaN,
     float4 dLoss)
@@ -218,7 +218,7 @@ void d_atrous( FullScreenPassVsOut vsOut,
             const int2 p = ipos + int2(xx, yy) * gStepSize;
             const bool inside = all(p >= int2(0, 0)) && all(p < screenSize);
 
-            const float kernel = kernelWeights.p[abs(xx)] * kernelWeights.p[abs(yy)];
+            const float kernel = kernelWeights.p[yy + 2][xx + 2];
 
             if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
             {
@@ -276,11 +276,7 @@ void d_atrous( FullScreenPassVsOut vsOut,
 
     float3 dLdLuminanceParams = float3(0.0f);
 
-    float dLdKernel[3];
-    for (int i = 0; i < 3; i++)
-    {
-        dLdKernel[i] = 0.0f;
-    }
+    float dLdKernel[5][5];
 
     for (int yy = -2; yy <= 2; yy++)
     {
@@ -289,7 +285,7 @@ void d_atrous( FullScreenPassVsOut vsOut,
             const int2 p = ipos + int2(xx, yy) * gStepSize;
             const bool inside = all(p >= int2(0, 0)) && all(p < screenSize);
 
-            const float kernel = kernelWeights.p[abs(xx)] * kernelWeights.p[abs(yy)];
+            const float kernel = kernelWeights.p[yy + 2][xx + 2];
 
             if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
             {
@@ -307,24 +303,22 @@ void d_atrous( FullScreenPassVsOut vsOut,
                     weightsParams.p);
 
                 const float wIllumination = w.x * kernel;
-                
+
                 // find both sources of loss for wIllum
                 float dLdwIllum = dLdSumW + dot(dLdSumIllum * float4(illuminationP.rgb, 2.0f * wIllumination * illuminationP.a), 1.0f.xxxx);
                 float dLdWeight = dLdwIllum * kernel;
-                float dLdKernelMult = dLdwIllum * w;
 
                 // propagate to the kernels
-                dLdKernel[abs(xx)] += dLdKernelMult * kernelWeights.p[abs(yy)];
-                dLdKernel[abs(yy)] += dLdKernelMult * kernelWeights.p[abs(xx)];
+                dLdKernel[yy + 2][xx + 2] = dLdwIllum * w;
 
                 // now do the weight propagation
                 DifferentialPair<float> dpzP = diffPair(zP);
                 DifferentialPair<float3> dpnP = diffPair(nP);
                 DifferentialPair<float> dplIlluminationP = diffPair(lIlluminationP);
-                
-                __bwd_diff(computeWeight)(dpzCenterX, dpzP, 
-                    dpphiDepth, dpnCenter, dpnP, sigmaN, 
-                    dplIlluminationCenter, dplIlluminationP, 
+
+                __bwd_diff(computeWeight)(dpzCenterX, dpzP,
+                    dpphiDepth, dpnCenter, dpnP, sigmaN,
+                    dplIlluminationCenter, dplIlluminationP,
                     dpPhiLIllumination, weightsParams, dLdWeight);
 
                 // get the accum operation in flight asap
@@ -348,6 +342,10 @@ void d_atrous( FullScreenPassVsOut vsOut,
                 }
 
             }
+            else
+            {
+                dLdKernel[yy + 2][xx + 2] = 0.0f;
+            }
         }
     }
 
@@ -369,9 +367,9 @@ void d_atrous( FullScreenPassVsOut vsOut,
 }
 
 [BackwardDerivative(d_atrous)]
-float4 atrous(FullScreenPassVsOut vsOut, 
-              float[3] kernelWeights, float [2][2] varianceKernel, 
-              float3 luminanceParams, float[3] weightsParams, 
+float4 atrous(FullScreenPassVsOut vsOut,
+              float[5][5] kernelWeights, float [2][2] varianceKernel,
+              float3 luminanceParams, float[3] weightsParams,
               float sigmaL, float sigmaZ, float sigmaN) {
     const int2 ipos = int2(vsOut.posH.xy);
     const int2 screenSize = getTextureDims(gAlbedo, 0);
@@ -408,7 +406,7 @@ float4 atrous(FullScreenPassVsOut vsOut,
             const int2 p = ipos + int2(xx, yy) * gStepSize;
             const bool inside = all(p >= int2(0, 0)) && all(p < screenSize);
 
-            const float kernel = kernelWeights[abs(xx)] * kernelWeights[abs(yy)];
+            const float kernel = kernelWeights[yy + 2][xx + 2];
 
             if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
             {

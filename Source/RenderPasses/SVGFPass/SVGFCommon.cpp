@@ -81,15 +81,19 @@ void SVGFUtilitySet::clearRawOutputBuffer(RenderContext* pRenderContext, int idx
 
 FilterParameterReflector::FilterParameterReflector(ref<SVGFUtilitySet> pUtilities) : mpUtilities(pUtilities) {}
 
-void FilterParameterReflector::registerParameterManual(SVGFParameter<float4>* param, int cnt, const std::string& name)
+void FilterParameterReflector::registerParameterManual(float* addr, ref<Buffer>* accum, int cnt, const std::string& name)
 {
-    param->da = mpUtilities->createAccumulationBuffer();
+    *accum = mpUtilities->createAccumulationBuffer(sizeof(float4) * ((cnt + 3) / 4));
 
     ParameterMetaInfo pmi;
 
-    pmi.mAddress = param;
+    pmi.mAddress = addr;
+    pmi.mAccum = *accum;
     pmi.mNumElements = cnt;
     pmi.mName = name;
+
+    pmi.momentum.resize(cnt);
+    pmi.ssgrad.resize(cnt);
 
     mRegistry.push_back(pmi);
 }

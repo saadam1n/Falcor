@@ -482,7 +482,7 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
     {
         if (mDatasetIndex == 0) {
             mBuffersNeedClear = true;
-
+            mReductionAddress = 0;
             std::cout << "Running epoch\t" << mEpoch << "\n";
         }
 
@@ -496,12 +496,16 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
                 FALCOR_PROFILE(pRenderContext, "Clr Param Buffers");
                 for (int i = 0; i < mpParameterReflector->getNumParams(); i++)
                 {
-                    mpParameterReflector->mRegistry[i].mAddress->clearBuffer(pRenderContext);
+                    //mpParameterReflector->mRegistry[i].mAddress->clearBuffer(pRenderContext);
+                    pRenderContext->clearUAV(mpParameterReflector->mRegistry[i].mAccum->getUAV().get(), float4(0));
 
                     if(mEpoch == 0)
                     {
-                        mpParameterReflector->mRegistry[i].momentum = float4(0.0f);
-                        mpParameterReflector->mRegistry[i].ssgrad = float4(0.0f);
+                        for(int j = 0; j < mpParameterReflector->mRegistry[i].mNumElements; j++)
+                        {
+                            mpParameterReflector->mRegistry[i].momentum[j] = 0.0f;
+                            mpParameterReflector->mRegistry[i].ssgrad[j] = 0.0f;
+                        }
                     }
                 }
             }
@@ -515,11 +519,9 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
                 // now accumulate everything
                 {
                     FALCOR_PROFILE(pRenderContext, "Parallel Reduction");
-                    int baseOffset = mDatasetIndex * mpParameterReflector->getNumParams() * sizeof(float4);
                     for (int i = 0; i < mpParameterReflector->getNumParams(); i++)
                     {
-                        int offset = i * sizeof(float4);
-                        reduceParameter(pRenderContext, *mpParameterReflector->mRegistry[i].mAddress, baseOffset + offset);
+                        mReductionAddress = reduceParameter(pRenderContext, mpParameterReflector->mRegistry[i], mReductionAddress);
                     }
                 }
 
@@ -543,29 +545,41 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 
             float learningRate = K_LRATE_NUMER / (K_LRATE_DENOM + mEpoch);
 
+            int stride = 0;
+            for (int i = 0; i < mpParameterReflector->getNumParams(); i++)
+            {
+                stride += 4 * ((mpParameterReflector->mRegistry[i].mNumElements + 3) / 4);
+            }
+
+            int currentOffset = 0;
+
             // adjust values
             float maxAdjValue = 0.0f;
             std::string maxAdjParamName = "none";
             std::vector<std::string> mismatchedParameters;
             {
-                float4* gradient = (float4*)mReadbackBuffer[0]->map();
+                float* gradient = (float*)mReadbackBuffer[0]->map();
 
                 for (int i = 0; i < mpParameterReflector->getNumParams(); i++)
                 {
                     auto& pmi = mpParameterReflector->mRegistry[i];
 
-                    float4 totalGradient = float4(0.0f);
-                    for(int j = K_FRAME_SAMPLE_START; j < batchSize; j++)
-                    {
-                        totalGradient += gradient[j * mpParameterReflector->getNumParams() + i];
-                    }
-
                     for (int j = 0; j < pmi.mNumElements; j++)
                     {
-                        totalGradient[j] /= sampledFrames;
+                        float totalGradient = 0.0f;
+                        for (int k = 0; k < sampledFrames; k++)
+                        {
+                            totalGradient += gradient[k * stride + currentOffset];
+                            if(pmi.mName.find("mKernel") != std::string::npos && j == 14)
+                            {
+                                std::cout << gradient[k * stride + currentOffset] << " " << k * stride + currentOffset << " " << mReductionAddress << "\n";
+                            }
+                        }
 
-                        float nextMomentum = K_BETA_MOMENTUM * pmi.momentum[j] + (1.0f - K_BETA_MOMENTUM) * totalGradient[j];
-                        float nextSsgrad = K_BETA_SSGRAD * pmi.ssgrad[j] + (1.0f - K_BETA_SSGRAD) * totalGradient[j] * totalGradient[j];
+                        totalGradient /= sampledFrames;
+
+                        float nextMomentum = K_BETA_MOMENTUM * pmi.momentum[j] + (1.0f - K_BETA_MOMENTUM) * totalGradient;
+                        float nextSsgrad = K_BETA_SSGRAD * pmi.ssgrad[j] + (1.0f - K_BETA_SSGRAD) * totalGradient * totalGradient;
 
                         pmi.momentum[j] = nextMomentum;
                         pmi.ssgrad[j] = nextSsgrad;
@@ -575,22 +589,22 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 
 
                         float adjustment = learningRate * unbiasedMomentum / (sqrt(unbiasedSsgrad) + 5e-3f);
-                        pmi.mAddress->dv[j] -= adjustment;
+                        pmi.mAddress[j] -= adjustment;
 
-                        std::cout << "\tAdjusting " << pmi.mName << "\tby " << -adjustment << "\twhen negative gradient is " << -totalGradient[j] << "\n";
+                        std::cout << "\tAdjusting " << pmi.mName << "\tby " << -adjustment << "\twhen negative gradient is " << -totalGradient << "\n";
 
-                        if(sign(adjustment) != sign(totalGradient[j]))
+                        if(sign(adjustment) != sign(totalGradient))
                         {
-                            std::cout << "\tSign mismatch with " << totalGradient[j] << "\n";
+                            std::cout << "\tSign mismatch with " << totalGradient << "\n";
                             mismatchedParameters.push_back(pmi.mName);
                         }
 
                         std::cout << "\n";
 
                         // ensure greater than zero
-                        if (pmi.mAddress->dv[j] < 0.0f)
+                        if (pmi.mAddress[j] < 0.0f)
                         {
-                            pmi.mAddress->dv[j] = 0.0f;
+                            pmi.mAddress[j] = 0.0f;
                         }
 
                         if(abs(adjustment) > abs(maxAdjValue))
@@ -598,7 +612,12 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
                             maxAdjValue = adjustment;
                             maxAdjParamName = pmi.mName;
                         }
+
+                        currentOffset++;
                     }
+
+                    // round up divide
+                    currentOffset = 4 * ((currentOffset + 3) / 4);
                 }
 
                 mReadbackBuffer[0]->unmap();
@@ -638,6 +657,7 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
             betaMomentumCorrection *= K_BETA_MOMENTUM;
             betaSsgradCorrection *= K_BETA_SSGRAD;
 
+            mReductionAddress = 0;
             mDatasetIndex = 0;
             mEpoch++;
         }
@@ -1053,17 +1073,24 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
 
 
 #define USE_BUILTIN_PARALLEL_REDUCTION
-void SVGFPass::reduceParameter(RenderContext* pRenderContext, SVGFParameter<float4>& param, int offset)
+int SVGFPass::reduceParameter(RenderContext* pRenderContext, ParameterMetaInfo& param, int offset)
 {
 #ifdef USE_BUILTIN_PARALLEL_REDUCTION
     setPatchingState(bufferToTexturePass);
 
     auto conversionCB = bufferToTexturePass->getRootVar()["ConversionCB"];
 
-    conversionCB["drIllumination"] = param.da;
+    int numPasses = (param.mNumElements + 3) / 4;
 
-    bufferToTexturePass->execute(pRenderContext, bufferToTextureFbo);
-    mpParallelReduction->execute<float4>(pRenderContext, bufferToTextureFbo->getColorTexture(0), ParallelReduction::Type::Sum, nullptr, mReadbackBuffer[0], offset);
+    conversionCB["drIllumination"] = param.mAccum;
+    for(int i = 0; i < numPasses; i++)
+    {
+        conversionCB["index"] = i;
+        bufferToTexturePass->execute(pRenderContext, bufferToTextureFbo);
+        mpParallelReduction->execute<float4>(pRenderContext, bufferToTextureFbo->getColorTexture(0), ParallelReduction::Type::Sum, nullptr, mReadbackBuffer[0], offset + i * sizeof(float4));
+    }
+
+    return offset + numPasses * sizeof(float4);
 #else
     const int K_NUM_ITERATIONS = 3;
 

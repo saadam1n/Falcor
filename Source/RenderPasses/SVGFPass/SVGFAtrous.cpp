@@ -20,9 +20,15 @@ SVGFAtrousSubpass::SVGFAtrousSubpass(ref<Device> pDevice, ref<SVGFUtilitySet> pU
         iterationState.mLuminanceParams.dv = dvLuminanceParams;
         REGISTER_PARAMETER(mpParameterReflector, iterationState.mLuminanceParams);
 
-        iterationState.mKernel.dv[0] = 1.0;
-        iterationState.mKernel.dv[1] = 2.0f / 3.0f;
-        iterationState.mKernel.dv[2] = 1.0f / 6.0f;
+        float defaultKernel[] = {1.0f, 2.0f / 3.0f, 1.0f / 6.0f};
+        for (int yy = -2; yy <= 2; yy++)
+        {
+            for (int xx = -2; xx <= 2; xx++)
+            {
+                iterationState.mKernel.dv[yy + 2][xx + 2] = defaultKernel[abs(xx)] * defaultKernel[abs(yy)];
+            }
+        }
+
         REGISTER_PARAMETER(mpParameterReflector, iterationState.mKernel);
 
         iterationState.mVarianceKernel.dv[0][0] = 1.0 / 4.0;
@@ -72,8 +78,11 @@ void SVGFAtrousSubpass::computeEvaluation(RenderContext* pRenderContext, SVGFRen
             perImageCB["dvWeightFunctionParams"][i] = curIterationState.mWeightFunctionParams.dv[i];
         }
 
-        for (int i = 0; i < 3; i++) {
-            perImageCB["dvKernel"][i] = curIterationState.mKernel.dv[i];
+        for (int i = 0; i < 5; i++) {
+            for (int j = 0; j < 5; j++)
+            {
+                perImageCB["dvKernel"][i][j] = curIterationState.mKernel.dv[i][j];
+            }
         }
 
         for (int i = 0; i < 2; i++) {
@@ -147,8 +156,11 @@ void SVGFAtrousSubpass::computeBackPropagation(RenderContext* pRenderContext, SV
             perImageCB["dvWeightFunctionParams"][i] = curIterationState.mWeightFunctionParams.dv[i];
         }
 
-        for (int i = 0; i < 3; i++) {
-            perImageCB["dvKernel"][i] = curIterationState.mKernel.dv[i];
+        for (int i = 0; i < 5; i++) {
+            for (int j = 0; j < 5; j++)
+            {
+                perImageCB["dvKernel"][i][j] = curIterationState.mKernel.dv[i][j];
+            }
         }
 
         for (int i = 0; i < 2; i++) {

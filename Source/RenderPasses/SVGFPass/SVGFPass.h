@@ -122,11 +122,12 @@ private:
     ref<FullScreenPass> bufferToTexturePass;
     ref<Fbo> bufferToTextureFbo;
     ref<Buffer> pdaPingPongSumBuffer[2];
-    void reduceParameter(RenderContext* pRenderContext, SVGFParameter<float4>& param, int offset);
+    int reduceParameter(RenderContext* pRenderContext, ParameterMetaInfo& param, int offset);
 
     std::unique_ptr<ParallelReduction> mpParallelReduction; 
 
     int mDatasetIndex = 0;
+    int mReductionAddress;
     SVGFTrainingDataset mTrainingDataset;
 
     struct

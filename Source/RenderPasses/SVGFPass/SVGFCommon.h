@@ -152,11 +152,14 @@ private:
 struct ParameterMetaInfo
 {
     // float4 is max allowed size
-    SVGFParameter<float4>* mAddress;
-    float4 momentum;
-    float4 ssgrad;
+    float* mAddress;
+    ref<Buffer> mAccum;
     int mNumElements;
     std::string mName;
+
+    // parameters to use during learning
+    std::vector<float> momentum;
+    std::vector<float> ssgrad;
 };
 
 class FilterParameterReflector : public Object
@@ -165,13 +168,13 @@ public:
     FilterParameterReflector(ref<SVGFUtilitySet> pUtilities);
 
     //  manually registers parameter (but it still is auto trained)
-    void registerParameterManual(SVGFParameter<float4>* param, int cnt, const std::string& name);
+    void registerParameterManual(float* addr, ref<Buffer>* accum, int cnt, const std::string& name);
 
     // registers parameter into list of parameters so we automatically train it
     template<typename T>
     void registerParameterAuto(SVGFParameter<T>& param, const std::string& name)
     {
-        registerParameterManual((SVGFParameter<float4>*)&param, sizeof(T) / sizeof(float), name);
+        registerParameterManual((float*) &param.dv, &param.da, sizeof(T) / sizeof(float), name);
     }
 
     size_t getNumParams();
@@ -180,7 +183,7 @@ public:
 private:
     ref<SVGFUtilitySet> mpUtilities;
 };
-#define REGISTER_PARAMETER(reflector, x) reflector->registerParameterAuto(x, #x)
+#define REGISTER_PARAMETER(reflector, x) reflector->registerParameterAuto(x, #x); 
 
 // the renderdata class contains external inputs and outputs for the SVGF algorithm
 struct SVGFRenderData
