@@ -68,8 +68,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     mFilterMomentsState.sPass = mpUtilities->createFullscreenPassAndDumpIR(kFilterMomentShaderS);
     mFilterMomentsState.dPass = mpUtilities->createFullscreenPassAndDumpIR(kFilterMomentShaderD);
 
-    mAtrousState.sPass = mpUtilities->createFullscreenPassAndDumpIR(kAtrousShaderS);
-    mAtrousState.dPass = mpUtilities->createFullscreenPassAndDumpIR(kAtrousShaderD);
+
 
     mFinalModulateState.sPass = mpUtilities->createFullscreenPassAndDumpIR(kFinalModulateShaderS);
     mFinalModulateState.dPass = mpUtilities->createFullscreenPassAndDumpIR(kFinalModulateShaderD);
@@ -139,35 +138,9 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     mFilterMomentsState.pCurHistoryLength = mpUtilities->createFullscreenTexture();
 
 
+    // set atrous state
+    mpAtrousSubpass = make_ref<SVGFAtrousSubpass>(mpDevice, mpUtilities, mpParameterReflector);
 
-    // Set atrous state vars
-    mAtrousState.mIterationState.resize(mFilterIterations);
-    for (auto& iterationState : mAtrousState.mIterationState)
-    {
-        iterationState.mSigma.dv = dvSigma;
-        REGISTER_PARAMETER(mpParameterReflector, iterationState.mSigma);
-
-        for (int i = 0; i < 3; i++) {
-            iterationState.mWeightFunctionParams.dv[i] = dvWeightFunctionParams[i];
-        }
-        REGISTER_PARAMETER(mpParameterReflector, iterationState.mWeightFunctionParams);
-
-        iterationState.mLuminanceParams.dv = dvLuminanceParams;
-        REGISTER_PARAMETER(mpParameterReflector, iterationState.mLuminanceParams);
-
-        iterationState.mKernel.dv[0] = 1.0;
-        iterationState.mKernel.dv[1] = 2.0f / 3.0f;
-        iterationState.mKernel.dv[2] = 1.0f / 6.0f;
-        REGISTER_PARAMETER(mpParameterReflector, iterationState.mKernel);
-
-        iterationState.mVarianceKernel.dv[0][0] = 1.0 / 4.0;
-        iterationState.mVarianceKernel.dv[0][1] = 1.0 / 8.0;
-        iterationState.mVarianceKernel.dv[1][0] = 1.0 / 8.0;
-        iterationState.mVarianceKernel.dv[1][1] = 1.0 / 16.0;
-        REGISTER_PARAMETER(mpParameterReflector, iterationState.mVarianceKernel);
-
-        iterationState.pgIllumination = mpUtilities->createFullscreenTexture();
-    }
 
     // set final modulate state vars
     mFinalModulateState.pdaIllumination = mpUtilities->createAccumulationBuffer();
@@ -190,8 +163,6 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     {
         mReadbackBuffer[i] = mpUtilities->createAccumulationBuffer(sizeof(float4), true);
     }
-
-    mAtrousState.mSaveIllum = mpUtilities->createFullscreenTexture(ResourceFormat::RGBA32Int);
 
     mpParallelReduction = std::make_unique<ParallelReduction>(mpDevice);
 
@@ -280,6 +251,7 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
     }
 
     mpUtilities->allocateFbos(dim, pRenderContext);
+    mpAtrousSubpass->allocateFbos(dim, pRenderContext);
 
     mBuffersNeedClear = true;
 }
@@ -364,7 +336,7 @@ void SVGFPass::compile(RenderContext* pRenderContext, const CompileData& compile
     mBuffersNeedClear = true;
 }
 
-void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool updateInternalBuffers)
+void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, SVGFRenderData& renderData, bool updateInternalBuffers)
 {
     FALCOR_PROFILE(pRenderContext, "SVGF Filter");
 
@@ -383,21 +355,19 @@ void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, const SVGFRenderData
     {
         // Grab linear z and its derivative and also pack the normal into
         // the last two channels of the mpLinearZAndNormalFbo.
-        computeLinearZAndNormal(pRenderContext, renderData.pLinearZTexture, renderData.pWorldNormalTexture);
+        computeLinearZAndNormal(pRenderContext, renderData);
 
         // Demodulate input color & albedo to get illumination and lerp in
         // reprojected filtered illumination from the previous frame.
         // Stores the result as well as initial moments and an updated
         // per-pixel history length in mpCurReprojFbo.
 
-        computeReprojection(pRenderContext, renderData.pAlbedoTexture, renderData.pColorTexture, renderData.pEmissionTexture,
-                            renderData.pMotionVectorTexture, renderData.pPosNormalFwidthTexture,
-                            renderData.pPrevLinearZAndNormalTexture, renderData.pDebugTexture);
+        computeReprojection(pRenderContext, renderData);
 
         // Do a first cross-bilateral filtering of the illumination and
         // estimate its variance, storing the result into a float4 in
         // mpPingPongFbo[0].  Takes mpCurReprojFbo as input.
-        computeFilteredMoments(pRenderContext);
+        computeFilteredMoments(pRenderContext, renderData);
 
         //pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(1)->getSRV(), pDebugTexture->getRTV());
 
@@ -405,13 +375,13 @@ void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, const SVGFRenderData
         // in mpPingPongFbo[0].  Along the way (or at the end, depending on
         // the value of mFeedbackTap), save the filtered illumination for
         // next time into mpFilteredPastFbo.
-        computeAtrousDecomposition(pRenderContext, renderData.pAlbedoTexture, updateInternalBuffers);
+        computeAtrousDecomposition(pRenderContext, renderData, updateInternalBuffers);
 
         // Compute albedo * filtered illumination and add emission back in.
         auto perImageCB = mFinalModulateState.sPass->getRootVar()["PerImageCB"];
         perImageCB["gAlbedo"] = renderData.pAlbedoTexture;
         perImageCB["gEmission"] = renderData.pEmissionTexture;
-        perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
+        perImageCB["gIllumination"] = renderData.fetchTexTable("FinalModulateInIllumination");
         mFinalModulateState.sPass->execute(pRenderContext, mpFinalFbo);
         pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), mFinalModulateState.pFinalFiltered->getRTV());
 
@@ -689,7 +659,7 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
 
     mDelta = 0.05f;
 
-    float& valToChange = mAtrousState.mIterationState[mDerivativeIteration].mSigma.dv[0];
+    float& valToChange = mpAtrousSubpass->mIterationState[mDerivativeIteration].mSigma.dv[0];
     float oldval = valToChange;
 
     valToChange = oldval - mDelta;
@@ -711,7 +681,7 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
     pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(1)->getSRV(),  renderData.getTexture(kOutputFdCol)->getRTV());
     pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(2)->getSRV(),  renderData.getTexture(kOutputBdCol)->getRTV());
 
-    pRenderContext->blit(mAtrousState.mSaveIllum->getSRV(),   renderData.getTexture(kOutputDebugBuffer)->getRTV());
+    //pRenderContext->blit(mAtrousState.mSaveIllum->getSRV(),   renderData.getTexture(kOutputDebugBuffer)->getRTV());
 
     std::cout << "Fwd Diff Sum:\t" << getTexSum(pRenderContext, mpDerivativeVerifyFbo->getColorTexture(1)) << std::endl;
     std::cout << "Bwd Diff Sum:\t" << getTexSum(pRenderContext, mpDerivativeVerifyFbo->getColorTexture(2)) << std::endl;
@@ -733,7 +703,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVG
 
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mAtrousState.mIterationState[mDerivativeIteration].mSigma.da;
+    perImageCB["drBackwardsDiffBuffer"] = mpAtrousSubpass->mIterationState[mDerivativeIteration].mSigma.da;
     perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
     perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
     perImageCB["delta"] = mDelta;
@@ -744,7 +714,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVG
 
 
 // I'll move parts of this off to other function as need be
-void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool useLoss)
+void SVGFPass::computeDerivatives(RenderContext* pRenderContext, SVGFRenderData& renderData, bool useLoss)
 {
     FALCOR_PROFILE(pRenderContext, "Bwd Pass");
 
@@ -765,7 +735,7 @@ void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const SVGFRende
             pRenderContext->clearUAV(mpUtilities->mpdrCompactedBuffer[1]->getUAV().get(), *dPtr);
         }
 
-        computeDerivFinalModulate(pRenderContext, renderData.pOutputTexture, pIllumTexture, renderData.pAlbedoTexture, renderData.pEmissionTexture);
+        computeDerivFinalModulate(pRenderContext, renderData);
 
         // now, the derivative is stored in mFinalModulateState.pdaIllum
         // now, we will have to computer the atrous decomposition reverse
@@ -775,15 +745,15 @@ void SVGFPass::computeDerivatives(RenderContext* pRenderContext, const SVGFRende
         // ideally, we will want a buffer and specific variables for each stage
         // right now, I'll just set up the buffers
 
-        computeDerivAtrousDecomposition(pRenderContext, renderData.pAlbedoTexture, renderData.pOutputTexture);
+        computeDerivAtrousDecomposition(pRenderContext, renderData);
 
-        computeDerivFilteredMoments(pRenderContext);
+        computeDerivFilteredMoments(pRenderContext, renderData);
 
-        computeDerivReprojection(pRenderContext, renderData.pAlbedoTexture, renderData.pColorTexture, renderData.pEmissionTexture, renderData.pMotionVectorTexture, renderData.pPosNormalFwidthTexture, renderData.pLinearZTexture, renderData.pDebugTexture);
+        computeDerivReprojection(pRenderContext, renderData);
     }
 }
 
-void SVGFPass::computeLoss(RenderContext* pRenderContext, const SVGFRenderData& renderData)
+void SVGFPass::computeLoss(RenderContext* pRenderContext, SVGFRenderData& renderData)
 {
     FALCOR_PROFILE(pRenderContext, "Loss");
 
@@ -878,7 +848,7 @@ void SVGFPass::computeDerivGaussian(RenderContext* pRenderContext)
     mpUtilities->runCompactingPass(pRenderContext, 1, 12);
 }
 
-void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pOutputTexture, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture)
+void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
 {
     FALCOR_PROFILE(pRenderContext, "Bwd Final Modulate");
 
@@ -887,8 +857,8 @@ void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Text
     pRenderContext->clearUAV(mFinalModulateState.pdaIllumination->getUAV().get(), Falcor::uint4(0));
 
     auto perImageCB = mFinalModulateState.dPass->getRootVar()["PerImageCB"];
-    perImageCB["gAlbedo"] = pAlbedoTexture;
-    perImageCB["gEmission"] = pEmissionTexture;
+    perImageCB["gAlbedo"] = svgfrd.pAlbedoTexture;
+    perImageCB["gEmission"] = svgfrd.pEmissionTexture;
     perImageCB["gIllumination"] = mFinalModulateState.pFinalFiltered;
     perImageCB["daIllumination"] = mFinalModulateState.pdaIllumination;
 
@@ -896,130 +866,21 @@ void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, ref<Text
     perImageCB_D["drFilteredImage"] = mpUtilities->mpdrCompactedBuffer[1];
 
     mFinalModulateState.dPass->execute(pRenderContext, mpDerivativeVerifyFbo);
+
+    svgfrd.fetchBufTable("AtrousInIllumination") = mFinalModulateState.pdaIllumination;
 }
 
-void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, bool updateInternalBuffers)
+void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, SVGFRenderData& svgfrd, bool updateInternalBuffers)
 {
-    FALCOR_PROFILE(pRenderContext, "Atrous");
-
-    auto perImageCB = mAtrousState.sPass->getRootVar()["PerImageCB"];
-
-    perImageCB["gAlbedo"] = pAlbedoTexture;
-    perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
-
-    for (int iteration = 0; iteration < mFilterIterations; iteration++)
-    {
-        FALCOR_PROFILE(pRenderContext, "Iteration" + std::to_string(iteration));
-
-        auto& curIterationState = mAtrousState.mIterationState[iteration];
-
-        perImageCB["dvSigmaL"] = curIterationState.mSigma.dv.x;
-        perImageCB["dvSigmaZ"] = curIterationState.mSigma.dv.y;
-        perImageCB["dvSigmaN"] = curIterationState.mSigma.dv.z;
-
-        perImageCB["dvLuminanceParams"] = curIterationState.mLuminanceParams.dv;
-
-        for (int i = 0; i < 3; i++) {
-            perImageCB["dvWeightFunctionParams"][i] = curIterationState.mWeightFunctionParams.dv[i];
-        }
-
-        for (int i = 0; i < 3; i++) {
-            perImageCB["dvKernel"][i] = curIterationState.mKernel.dv[i];
-        }
-
-        for (int i = 0; i < 2; i++) {
-            for (int j = 0; j < 2; j++) {
-                perImageCB["dvVarianceKernel"][i][j] = curIterationState.mVarianceKernel.dv[i][j];
-            }
-        }
-
-
-        ref<Fbo> curTargetFbo = mpPingPongFbo[1];
-        // keep a copy of our input for backwards differation
-        pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), curIterationState.pgIllumination->getRTV());
-
-        perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
-        perImageCB["gStepSize"] = 1 << iteration;
-
-
-        mAtrousState.sPass->execute(pRenderContext, curTargetFbo);
-
-        // store the filtered color for the feedback path
-        if (updateInternalBuffers && iteration == std::min(mFeedbackTap, mFilterIterations - 1))
-        {
-            pRenderContext->blit(curTargetFbo->getColorTexture(0)->getSRV(), mpFilteredPastFbo->getRenderTargetView(0));
-        }
-
-        std::swap(mpPingPongFbo[0], mpPingPongFbo[1]);
-    }
-
-    if (updateInternalBuffers && mFeedbackTap < 0)
-    {
-        pRenderContext->blit(mpCurReprojFbo->getColorTexture(0)->getSRV(), mpFilteredPastFbo->getRenderTargetView(0));
-    }
+    mpAtrousSubpass->computeEvaluation(pRenderContext, svgfrd, updateInternalBuffers);
 }
 
-void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, ref<Texture> pOutputTexture)
+void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
 {
-    FALCOR_PROFILE(pRenderContext, "Bwd Atrous");
-
-    setPatchingState(mAtrousState.dPass);
-
-    auto perImageCB = mAtrousState.dPass->getRootVar()["PerImageCB"];
-    auto perImageCB_D = mAtrousState.dPass->getRootVar()["PerImageCB_D"];
-
-    perImageCB["gAlbedo"]        = pAlbedoTexture;
-    perImageCB["gLinearZAndNormal"]       = mPackLinearZAndNormalState.pLinearZAndNormal;
-
-    for (int iteration = mFilterIterations - 1; iteration >= 0; iteration--)
-    {
-        FALCOR_PROFILE(pRenderContext, "Iteration" + std::to_string(iteration));
-
-        auto& curIterationState = mAtrousState.mIterationState[iteration];
-
-        // clear raw output
-        mpUtilities->clearRawOutputBuffer(pRenderContext, 0);
-
-        perImageCB_D["daSigma"] = curIterationState.mSigma.da;
-        perImageCB_D["daKernel"] = curIterationState.mKernel.da;
-        perImageCB_D["daVarianceKernel"] = curIterationState.mVarianceKernel.da;
-        perImageCB_D["daLuminanceParams"] = curIterationState.mLuminanceParams.da;
-        perImageCB_D["daWeightFunctionParams"] = curIterationState.mWeightFunctionParams.da;
-
-        perImageCB["dvSigmaL"] = curIterationState.mSigma.dv.x;
-        perImageCB["dvSigmaZ"] = curIterationState.mSigma.dv.y;
-        perImageCB["dvSigmaN"] = curIterationState.mSigma.dv.z;
-
-        perImageCB["dvLuminanceParams"] = curIterationState.mLuminanceParams.dv;
-
-        for (int i = 0; i < 3; i++) {
-            perImageCB["dvWeightFunctionParams"][i] = curIterationState.mWeightFunctionParams.dv[i];
-        }
-
-        for (int i = 0; i < 3; i++) {
-            perImageCB["dvKernel"][i] = curIterationState.mKernel.dv[i];
-        }
-
-        for (int i = 0; i < 2; i++) {
-            for (int j = 0; j < 2; j++) {
-                perImageCB["dvVarianceKernel"][i][j] = curIterationState.mVarianceKernel.dv[i][j];
-            }
-        }
-
-        perImageCB_D["drIllumination"] = (iteration == mFilterIterations - 1 ? mFinalModulateState.pdaIllumination : mpUtilities->mpdrCompactedBuffer[0]);
-        perImageCB["daIllumination"] = mpUtilities->mpdaRawOutputBuffer[0];
-
-        perImageCB["gIllumination"] = curIterationState.pgIllumination;
-        perImageCB["gStepSize"] = 1 << iteration;
-
-        mAtrousState.dPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
-
-        mpUtilities->runCompactingPass(pRenderContext, 0, 9 + 25);
-
-    }
+    mpAtrousSubpass->computeBackPropagation(pRenderContext, svgfrd);
 }
 
-void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
+void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
 {
     FALCOR_PROFILE(pRenderContext, "Filter Moments");
 
@@ -1047,9 +908,11 @@ void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
     pRenderContext->blit(mpCurReprojFbo->getColorTexture(0)->getSRV(), mFilterMomentsState.pCurIllum->getRTV());
     pRenderContext->blit(mpCurReprojFbo->getColorTexture(1)->getSRV(), mFilterMomentsState.pCurMoments->getRTV());
     pRenderContext->blit(mpCurReprojFbo->getColorTexture(2)->getSRV(), mFilterMomentsState.pCurHistoryLength->getRTV());
+
+    svgfrd.fetchTexTable("AtrousInputIllumination") = mpPingPongFbo[0]->getColorTexture(0);
 }
 
-void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
+void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
 {
     FALCOR_PROFILE(pRenderContext, "Bwd Filter Moments");
 
@@ -1082,7 +945,7 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
 
     auto perImageCB_D = mFilterMomentsState.dPass->getRootVar()["PerImageCB_D"];
 
-    perImageCB_D["drIllumination"] = mpUtilities->mpdrCompactedBuffer[0];
+    perImageCB_D["drIllumination"] = svgfrd.fetchBufTable("FilterMomentsInIllumination");
 
     perImageCB_D["daSigma"] = mFilterMomentsState.mSigma.da;
     perImageCB_D["daVarianceBoostFactor"] = mFilterMomentsState.mVarianceBoostFactor.da;
@@ -1095,28 +958,22 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext)
     mpUtilities->runCompactingPass(pRenderContext, 1, 49);
 }
 
-void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture,
-                                   ref<Texture> pColorTexture, ref<Texture> pEmissionTexture,
-                                   ref<Texture> pMotionVectorTexture,
-                                   ref<Texture> pPositionNormalFwidthTexture,
-                                   ref<Texture> pPrevLinearZTexture,
-                                   ref<Texture> pDebugTexture
-    )
+void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
 {
     FALCOR_PROFILE(pRenderContext, "Reproj");
 
     auto perImageCB = mReprojectState.sPass->getRootVar()["PerImageCB"];
 
     // Setup textures for our reprojection shader pass
-    perImageCB["gMotion"] = pMotionVectorTexture;
-    perImageCB["gColor"] = pColorTexture;
-    perImageCB["gEmission"] = pEmissionTexture;
-    perImageCB["gAlbedo"] = pAlbedoTexture;
-    perImageCB["gPositionNormalFwidth"] = pPositionNormalFwidthTexture;
+    perImageCB["gMotion"] = svgfrd.pMotionVectorTexture;
+    perImageCB["gColor"] = svgfrd.pColorTexture;
+    perImageCB["gEmission"] = svgfrd.pEmissionTexture;
+    perImageCB["gAlbedo"] = svgfrd.pAlbedoTexture;
+    perImageCB["gPositionNormalFwidth"] = svgfrd.pPosNormalFwidthTexture;
     perImageCB["gPrevIllum"] = mpFilteredPastFbo->getColorTexture(0);
     perImageCB["gPrevMoments"] = mpPrevReprojFbo->getColorTexture(1);
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
-    perImageCB["gPrevLinearZAndNormal"] = pPrevLinearZTexture;
+    perImageCB["gPrevLinearZAndNormal"] = svgfrd.pPrevLinearZAndNormalTexture;
     perImageCB["gPrevHistoryLength"] = mpPrevReprojFbo->getColorTexture(2);
 
     // Setup variables for our reprojection pass
@@ -1139,15 +996,12 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, ref<Texture> p
     pRenderContext->blit(mpFilteredPastFbo->getColorTexture(0)->getSRV(), mReprojectState.pPrevFiltered->getRTV());
     pRenderContext->blit(mpPrevReprojFbo->getColorTexture(1)->getSRV(), mReprojectState.pPrevMoments->getRTV());
     pRenderContext->blit(mpPrevReprojFbo->getColorTexture(2)->getSRV(), mReprojectState.pPrevHistoryLength->getRTV());
+
+    svgfrd.fetchTexTable("FilteredPast") = mpFilteredPastFbo->getColorTexture(0);
+    svgfrd.fetchTexTable("ReprojOutputCurIllum") = mpCurReprojFbo->getColorTexture(0);
 }
 
-void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture,
-                                   ref<Texture> pColorTexture, ref<Texture> pEmissionTexture,
-                                   ref<Texture> pMotionVectorTexture,
-                                   ref<Texture> pPositionNormalFwidthTexture,
-                                   ref<Texture> pPrevLinearZTexture,
-                                   ref<Texture> pDebugTexture
-    )
+void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
 {
     FALCOR_PROFILE(pRenderContext, "Bwd Reproj");
 
@@ -1156,15 +1010,15 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, ref<Textu
     auto perImageCB = mReprojectState.dPass->getRootVar()["PerImageCB"];
 
     // Setup textures for our reprojection shader pass
-    perImageCB["gMotion"]        = pMotionVectorTexture;
-    perImageCB["gColor"]         = pColorTexture;
-    perImageCB["gEmission"]      = pEmissionTexture;
-    perImageCB["gAlbedo"]        = pAlbedoTexture;
-    perImageCB["gPositionNormalFwidth"] = pPositionNormalFwidthTexture;
+    perImageCB["gMotion"]        = svgfrd.pMotionVectorTexture;
+    perImageCB["gColor"]         = svgfrd.pColorTexture;
+    perImageCB["gEmission"]      = svgfrd.pEmissionTexture;
+    perImageCB["gAlbedo"]        = svgfrd.pAlbedoTexture;
+    perImageCB["gPositionNormalFwidth"] = svgfrd.pPosNormalFwidthTexture;
     perImageCB["gPrevIllum"]     = mReprojectState.pPrevFiltered;
     perImageCB["gPrevMoments"]   = mReprojectState.pPrevMoments;
     perImageCB["gLinearZAndNormal"]       = mPackLinearZAndNormalState.pLinearZAndNormal;
-    perImageCB["gPrevLinearZAndNormal"]   = pPrevLinearZTexture;
+    perImageCB["gPrevLinearZAndNormal"]   = svgfrd.pPrevLinearZAndNormalTexture;
     perImageCB["gPrevHistoryLength"] =  mReprojectState.pPrevHistoryLength;
 
     // Setup variables for our reprojection pass
@@ -1263,17 +1117,19 @@ void SVGFPass::setPatchingState(ref<FullScreenPass> fs)
 // (It's slightly wasteful to copy linear z here, but having this all
 // together in a single buffer is a small simplification, since we make a
 // copy of it to refer to in the next frame.)
-void SVGFPass::computeLinearZAndNormal(RenderContext* pRenderContext, ref<Texture> pLinearZTexture, ref<Texture> pWorldNormalTexture)
+void SVGFPass::computeLinearZAndNormal(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
 {
     FALCOR_PROFILE(pRenderContext, "Linear Z and Normal");
 
     auto perImageCB = mPackLinearZAndNormalState.sPass->getRootVar()["PerImageCB"];
-    perImageCB["gLinearZ"] = pLinearZTexture;
-    perImageCB["gNormal"] = pWorldNormalTexture;
+    perImageCB["gLinearZ"] = svgfrd.pLinearZTexture;
+    perImageCB["gNormal"] = svgfrd.pWorldNormalTexture;
 
     mPackLinearZAndNormalState.sPass->execute(pRenderContext, mpLinearZAndNormalFbo);
 
     pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(), mPackLinearZAndNormalState.pLinearZAndNormal->getRTV());
+
+    svgfrd.fetchTexTable("gLinearZAndNormal") = mPackLinearZAndNormalState.pLinearZAndNormal;
 }
 
 void SVGFPass::renderUI(Gui::Widgets& widget)

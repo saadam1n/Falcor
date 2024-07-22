@@ -182,6 +182,7 @@ private:
 };
 #define REGISTER_PARAMETER(reflector, x) reflector->registerParameterAuto(x, #x)
 
+// the renderdata class contains external inputs and outputs for the SVGF algorithm
 struct SVGFRenderData
 {
 public:
@@ -196,7 +197,7 @@ public:
     ref<Texture> pPosNormalFwidthTexture;
     ref<Texture> pLinearZTexture;
     ref<Texture> pMotionVectorTexture;
-    ref<Texture> pPrevLinearZAndNormalTexture;
+    ref<Texture> pPrevLinearZAndNormalTexture; // todo: move this out of render data because it is an internal buffer
     ref<Texture> pOutputTexture;
     ref<Texture> pDebugTexture;
     ref<Texture> pDerivVerifyTexture;
@@ -209,6 +210,14 @@ public:
     ref<Texture> pTemporalLossTexture;
     ref<Texture> pPrevFiltered;
     ref<Texture> pPrevReference;
+
+    // access the texture table
+    ref<Texture>& fetchTexTable(const std::string& s);
+    ref<Buffer>& fetchBufTable(const std::string& s);
+private:
+    // the advantage of using a ref here is that we do not have to blit
+    std::map<std::string, ref<Texture>> mTextureTable;
+    std::map<std::string, ref<Buffer>> mBufferTable;
 };
 
 struct SVGFTrainingDataset : public SVGFRenderData
@@ -232,7 +241,7 @@ private:
     std::map<std::string, Bitmap::UniqueConstPtr> mCachedBitmaps;
     // cache of texture name to pointer mappings
     std::map<std::string, ref<Texture>> mTextureNameMappings;
-   
+
     // list of bitmaps that are being currently preloaded
     std::map<std::string, std::future<Bitmap::UniqueConstPtr>> mPreloadingBitmaps;
     // whether a preload request was submitted in the past

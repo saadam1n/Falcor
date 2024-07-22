@@ -1,6 +1,9 @@
 add_plugin(SVGFPass)
 
 target_sources(SVGFPass PRIVATE
+    SVGFAtrous.cpp
+    SVGFAtrous.h
+
     SVGFAtrousC.slang
     SVGFAtrousD.ps.slang
     SVGFAtrousS.ps.slang

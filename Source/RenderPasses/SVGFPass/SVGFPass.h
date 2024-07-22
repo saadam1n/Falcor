@@ -32,6 +32,7 @@
 #include "Utils/Algorithm/ParallelReduction.h"
 
 #include "SVGFCommon.h"
+#include "SVGFAtrous.h"
 
 using namespace Falcor;
 
@@ -71,35 +72,20 @@ private:
     void allocateFbos(uint2 dim, RenderContext* pRenderContext);
     void clearBuffers(RenderContext* pRenderContext, const SVGFRenderData& renderData);
 
-    void computeLinearZAndNormal(RenderContext* pRenderContext, ref<Texture> pLinearZTexture,
-                                 ref<Texture> pWorldNormalTexture);
-    void computeReprojection(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture,
-                             ref<Texture> pColorTexture, ref<Texture> pEmissionTexture,
-                             ref<Texture> pMotionVectorTexture,
-                             ref<Texture> pPositionNormalFwidthTexture,
-                             ref<Texture> pPrevLinearZAndNormalTexture,
-                             ref<Texture> pDebugTexture
-        );
-
-
-    void computeFilteredMoments(RenderContext* pRenderContext);
-    void computeAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, bool updateInternalBuffers);
+    void runSvgfFilter(RenderContext* pRenderContext, SVGFRenderData& renderData, bool updateInternalBuffers);
+    void computeLinearZAndNormal(RenderContext* pRenderContext, SVGFRenderData& renderData);
+    void computeReprojection(RenderContext* pRenderContext, SVGFRenderData& renderData);
+    void computeFilteredMoments(RenderContext* pRenderContext, SVGFRenderData& svgfrd);
+    void computeAtrousDecomposition(RenderContext* pRenderContext, SVGFRenderData& renderData, bool updateInternalBuffers);
     void computeGaussian(RenderContext* pRenderContext, ref<Texture> tex, ref<Texture> storageLocation, bool saveTextures);
 
-    void runSvgfFilter(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool updateInternalBuffers);
-    void computeDerivatives(RenderContext* pRenderContext, const SVGFRenderData& renderData, bool useLoss);
-    void computeLoss(RenderContext* pRenderContext, const SVGFRenderData& renderData);
+    void computeDerivatives(RenderContext* pRenderContext, SVGFRenderData& renderData, bool useLoss);
+    void computeLoss(RenderContext* pRenderContext, SVGFRenderData& renderData);
     void computeDerivGaussian(RenderContext* pRenderContext);
-    void computeDerivFinalModulate(RenderContext* pRenderContext, ref<Texture> pResultantImage, ref<Texture> pIllumination, ref<Texture> pAlbedoTexture, ref<Texture> pEmissionTexture);
-    void computeDerivAtrousDecomposition(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture, ref<Texture> pOutputTexture);
-    void computeDerivFilteredMoments(RenderContext* pRenderContext);
-    void computeDerivReprojection(RenderContext* pRenderContext, ref<Texture> pAlbedoTexture,
-                             ref<Texture> pColorTexture, ref<Texture> pEmissionTexture,
-                             ref<Texture> pMotionVectorTexture,
-                             ref<Texture> pPositionNormalFwidthTexture,
-                             ref<Texture> pPrevLinearZAndNormalTexture,
-                             ref<Texture> pDebugTexture
-        );
+    void computeDerivFinalModulate(RenderContext* pRenderContext, SVGFRenderData& renderData);
+    void computeDerivAtrousDecomposition(RenderContext* pRenderContext, SVGFRenderData& renderData);
+    void computeDerivFilteredMoments(RenderContext* pRenderContext, SVGFRenderData& renderData);
+    void computeDerivReprojection(RenderContext* pRenderContext, SVGFRenderData& renderData);
 
     void computeDerivVerification(RenderContext* pRenderContext, const SVGFRenderData& renderData);
 
@@ -152,19 +138,8 @@ private:
 
     void setPatchingState(ref<FullScreenPass> fs);
 
-    //  manually registers parameter (but it still is auto trained)
-    void registerParameterManual(SVGFParameter<float4>* param, int cnt, const std::string& name);
-
-    // registers parameter into list of parameters so we automatically train it
-    template<typename T>
-    void registerParameterUM(SVGFParameter<T>& param, const std::string& name)
-    {
-        registerParameterManual((SVGFParameter<float4>*)&param, sizeof(T) / sizeof(float), name);
-    }
-
     // we want to optimize parameters per pass to get a little bit of extra tuning
     // da is short for derivative accum
-
     struct {
         ref<Texture> pLinearZAndNormal;
         ref<FullScreenPass> sPass;
@@ -209,28 +184,7 @@ private:
         ref<FullScreenPass> dPass;
     } mFilterMomentsState;
 
-    struct {
-
-        struct PerIterationState
-        {
-            ref<Texture> pgIllumination; // saved illumination for this iteration
-
-            SVGFParameter<float3> mSigma;
-
-            SVGFParameter<float[3]> mWeightFunctionParams;
-            SVGFParameter<float3> mLuminanceParams;
-
-            SVGFParameter<float[2][2]> mVarianceKernel;
-            SVGFParameter<float[3]> mKernel;
-        };
-
-        ref<Texture> mSaveIllum;
-
-        std::vector<PerIterationState> mIterationState;
-
-        ref<FullScreenPass> sPass;
-        ref<FullScreenPass> dPass;
-    } mAtrousState;
+    ref<SVGFAtrousSubpass> mpAtrousSubpass;
 
     struct {
         ref<Buffer> pdaIllumination;

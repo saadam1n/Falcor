@@ -123,6 +123,16 @@ SVGFRenderData::SVGFRenderData(const RenderData& renderData) {
     pPrevReference = renderData.getTexture(kInternalBufferPreviousReference);
 }
 
+ref<Texture>& SVGFRenderData::fetchTexTable(const std::string& s)
+{
+    return mTextureTable[s];
+}
+
+ref<Buffer>& SVGFRenderData::fetchBufTable(const std::string& s)
+{
+    return mBufferTable[s];
+}
+
 SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, ref<SVGFUtilitySet> utilities, const std::string& folder) : mpUtilities(utilities), mpDevice(pDevice), mFolder(folder), mSampleIdx(0) {
 #define MarkDatasetTexture(x) p##x##Texture = mpUtilities->createFullscreenTexture(); mTextureNameMappings[kDataset##x] = p##x##Texture;
 
