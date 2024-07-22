@@ -122,7 +122,7 @@ struct SVGFParameter
 class SVGFUtilitySet : public Object
 {
 public:
-    SVGFUtilitySet(ref<Device> pDevice);
+    SVGFUtilitySet(ref<Device> pDevice, int minX, int minY, int maxX, int maxY);
     void allocateFbos(uint2 dim, RenderContext* pRenderContext);
 
     ref<Buffer> createAccumulationBuffer(int bytes_per_elem = sizeof(float4), bool need_reaback = false);
@@ -137,6 +137,8 @@ public:
 
     ref<Buffer> mpdaRawOutputBuffer[2];
     ref<Buffer> mpdrCompactedBuffer[2];
+
+    void setPatchingState(ref<FullScreenPass> fsPass);
 private:
     ref<Device> mpDevice;
 
@@ -147,6 +149,9 @@ private:
 
     ref<FullScreenPass> mpCompactingPass;
 
+public:
+    int2 mPatchMinP;
+    int2 mPatchMaxP;
 };
 
 struct ParameterMetaInfo

@@ -5,7 +5,7 @@ using namespace Falcor;
 
 
 
-SVGFUtilitySet::SVGFUtilitySet(ref<Device> pDevice) : mpDevice(pDevice)
+SVGFUtilitySet::SVGFUtilitySet(ref<Device> pDevice, int minX, int minY, int maxX, int maxY) : mpDevice(pDevice), mPatchMinP(minX, minY), mPatchMaxP(maxX, maxY)
 {
     // set some general utility states
     mpCompactingPass = createFullscreenPassAndDumpIR(kBufferShaderCompacting);
@@ -33,8 +33,11 @@ void SVGFUtilitySet::allocateFbos(uint2 dim, RenderContext* pRenderContext)
 }
 
 ref<Buffer> SVGFUtilitySet::createAccumulationBuffer(int bytes_per_elem, bool need_reaback) {
-    mBufferMemUsage += numPixels * bytes_per_elem;
-    return make_ref<Buffer>(mpDevice, bytes_per_elem * numPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, need_reaback ? MemoryType::ReadBack : MemoryType::DeviceLocal, nullptr);
+    int2 patchDim = mPatchMaxP - mPatchMinP;
+    int patchNumPixels = patchDim.x * patchDim.y;
+
+    mBufferMemUsage += patchNumPixels * bytes_per_elem;
+    return make_ref<Buffer>(mpDevice, bytes_per_elem * patchNumPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, need_reaback ? MemoryType::ReadBack : MemoryType::DeviceLocal, nullptr);
 }
 
 ref<Texture> SVGFUtilitySet::createFullscreenTexture(ResourceFormat fmt)
@@ -60,7 +63,7 @@ void SVGFUtilitySet::runCompactingPass(RenderContext* pRenderContext, int idx, i
 {
     FALCOR_PROFILE(pRenderContext, "Compacting " + std::to_string(idx));
 
-    //setPatchingState(compactingPass);
+    setPatchingState(mpCompactingPass);
 
     auto compactingCB = mpCompactingPass->getRootVar()["CompactingCB"];
     compactingCB["drIllumination"] = mpdaRawOutputBuffer[idx];
@@ -76,6 +79,14 @@ void SVGFUtilitySet::clearRawOutputBuffer(RenderContext* pRenderContext, int idx
 {
     FALCOR_PROFILE(pRenderContext, "Clr Raw Out " + std::to_string(idx));
     pRenderContext->clearUAV(mpdaRawOutputBuffer[idx]->getUAV().get(), uint4(0));
+}
+
+void SVGFUtilitySet::setPatchingState(ref<FullScreenPass> fsPass)
+{
+    auto patchInfo = fsPass->getRootVar()["PatchInfo"];
+
+    patchInfo["patchMinP"] = mPatchMinP;
+    patchInfo["patchMaxP"] = mPatchMaxP;
 }
 
 FilterParameterReflector::FilterParameterReflector(ref<SVGFUtilitySet> pUtilities) : mpUtilities(pUtilities) {}

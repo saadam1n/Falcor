@@ -140,11 +140,14 @@ struct FS_OUT
     float temporalLoss : SV_TARGET3;
 }
 
-FS_OUT main(FullScreenPassVsOut vsOut) 
+FS_OUT main(FullScreenPassVsOut vsOut)
 {
     const int2 ipos = int2(vsOut.posH.xy);
 
-    __bwd_diff(calculateLoss)(ipos, float4(1.0f, 0.0f.xxx));
+    if (isInPatch(ipos))
+    {
+        __bwd_diff(calculateLoss)(ipos, float4(1.0f, 0.0f.xxx));
+    }
 
     // return loss to debug
     float4 loss = calculateLoss(ipos);

@@ -140,7 +140,7 @@ void SVGFAtrousSubpass::computeBackPropagation(RenderContext* pRenderContext, SV
 {
     FALCOR_PROFILE(pRenderContext, "Bwd Atrous");
 
-    //setPatchingState(mAtrousState.dPass);
+    mpUtilities->setPatchingState(mpBackPropagatePass);
 
     auto perImageCB = mpBackPropagatePass->getRootVar()["PerImageCB"];
     auto perImageCB_D = mpBackPropagatePass->getRootVar()["PerImageCB_D"];

@@ -43,7 +43,7 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 
 SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     RenderPass(pDevice),
-    mpUtilities(make_ref<SVGFUtilitySet>(pDevice)),
+    mpUtilities(make_ref<SVGFUtilitySet>(pDevice, 200, 200, 800, 800)),
     mpParameterReflector(make_ref<FilterParameterReflector>(mpUtilities)),
     mTrainingDataset(pDevice, mpUtilities, "C:/FalcorFiles/Dataset0/")
 {
@@ -165,9 +165,6 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     }
 
     mpParallelReduction = std::make_unique<ParallelReduction>(mpDevice);
-
-    mPatch.minP = int2(200, 200);
-    mPatch.maxP = int2(800, 800);
 }
 
 void SVGFPass::clearBuffers(RenderContext* pRenderContext, const SVGFRenderData& renderData)
@@ -428,8 +425,6 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
 
     if (!mTrained)
     {
-        mPatchingEnabled = false;
-
         runNextTrainingTask(pRenderContext);
         // display current results to screen
         pRenderContext->blit(mTrainingDataset.pOutputTexture->getSRV(), svgfrd.pOutputTexture->getRTV());
@@ -441,9 +436,6 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
     else
     {
         if(!pScene) return;
-
-        // allow us to see the loss for the entire screen
-        mPatchingEnabled = false;
 
         runSvgfFilter(pRenderContext, svgfrd, true);
 
@@ -570,10 +562,6 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
                         for (int k = 0; k < sampledFrames; k++)
                         {
                             totalGradient += gradient[k * stride + currentOffset];
-                            if(pmi.mName.find("mKernel") != std::string::npos && j == 14)
-                            {
-                                std::cout << gradient[k * stride + currentOffset] << " " << k * stride + currentOffset << " " << mReductionAddress << "\n";
-                            }
                         }
 
                         totalGradient /= sampledFrames;
@@ -672,8 +660,6 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData& renderData)
 {
     if(!pScene) return;
-
-    mPatchingEnabled = false;
 
     SVGFRenderData svgfrd(renderData);
 
@@ -777,6 +763,8 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, SVGFRenderData& render
 {
     FALCOR_PROFILE(pRenderContext, "Loss");
 
+    mpUtilities->setPatchingState(mLossState.dPass);
+
     computeGaussian(pRenderContext, renderData.pReferenceTexture, mLossState.pReferenceGaussian, false);
     computeGaussian(pRenderContext, renderData.pOutputTexture, mLossState.pFilteredGaussian, true);
 
@@ -845,6 +833,8 @@ void SVGFPass::computeDerivGaussian(RenderContext* pRenderContext)
 {
     FALCOR_PROFILE(pRenderContext, "Bwd Gaussian");
 
+    mpUtilities->setPatchingState(mLossState.dGaussianPass);
+
     auto perImageCB = mLossState.dGaussianPass->getRootVar()["PerImageCB"];
     auto perImageCB_D = mLossState.dGaussianPass->getRootVar()["PerImageCB_D"];
 
@@ -872,7 +862,7 @@ void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, SVGFRend
 {
     FALCOR_PROFILE(pRenderContext, "Bwd Final Modulate");
 
-    setPatchingState(mFinalModulateState.dPass);
+    mpUtilities->setPatchingState(mFinalModulateState.dPass);
 
     pRenderContext->clearUAV(mFinalModulateState.pdaIllumination->getUAV().get(), Falcor::uint4(0));
 
@@ -888,6 +878,12 @@ void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, SVGFRend
     mFinalModulateState.dPass->execute(pRenderContext, mpDerivativeVerifyFbo);
 
     svgfrd.fetchBufTable("AtrousInIllumination") = mFinalModulateState.pdaIllumination;
+
+    
+    auto conversionCB = bufferToTexturePass->getRootVar()["ConversionCB"];
+    conversionCB["drIllumination"] = mpUtilities->mpdrCompactedBuffer[1];
+    conversionCB["index"] = 0;
+    bufferToTexturePass->execute(pRenderContext, bufferToTextureFbo);
 }
 
 void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, SVGFRenderData& svgfrd, bool updateInternalBuffers)
@@ -936,7 +932,7 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext, SVGFRe
 {
     FALCOR_PROFILE(pRenderContext, "Bwd Filter Moments");
 
-    setPatchingState(mFilterMomentsState.dPass);
+    mpUtilities->setPatchingState(mFilterMomentsState.dPass);
 
     auto perImageCB = mFilterMomentsState.dPass->getRootVar()["PerImageCB"];
 
@@ -1025,7 +1021,7 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
 {
     FALCOR_PROFILE(pRenderContext, "Bwd Reproj");
 
-    setPatchingState(mReprojectState.dPass);
+    mpUtilities->setPatchingState(mReprojectState.dPass);
 
     auto perImageCB = mReprojectState.dPass->getRootVar()["PerImageCB"];
 
@@ -1076,7 +1072,7 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
 int SVGFPass::reduceParameter(RenderContext* pRenderContext, ParameterMetaInfo& param, int offset)
 {
 #ifdef USE_BUILTIN_PARALLEL_REDUCTION
-    setPatchingState(bufferToTexturePass);
+    mpUtilities->setPatchingState(bufferToTexturePass);
 
     auto conversionCB = bufferToTexturePass->getRootVar()["ConversionCB"];
 
@@ -1124,18 +1120,6 @@ int SVGFPass::reduceParameter(RenderContext* pRenderContext, ParameterMetaInfo& 
         std::swap(pdaPingPongSumBuffer[0], pdaPingPongSumBuffer[1]);
     }
 #endif
-}
-
-
-
-
-void SVGFPass::setPatchingState(ref<FullScreenPass> fs)
-{
-    auto patchInfo = fs->getRootVar()["PatchInfo"];
-
-    patchInfo["minP"] = mPatch.minP;
-    patchInfo["maxP"] = mPatch.maxP;
-    patchInfo["shouldPatch"] = mPatchingEnabled;
 }
 
 

@@ -130,15 +130,6 @@ private:
     int mReductionAddress;
     SVGFTrainingDataset mTrainingDataset;
 
-    struct
-    {
-        int2 minP;
-        int2 maxP;
-    } mPatch;
-    bool mPatchingEnabled;
-
-    void setPatchingState(ref<FullScreenPass> fs);
-
     // we want to optimize parameters per pass to get a little bit of extra tuning
     // da is short for derivative accum
     struct {

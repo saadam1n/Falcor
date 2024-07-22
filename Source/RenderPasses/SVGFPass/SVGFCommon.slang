@@ -32,7 +32,21 @@ const int2 getTextureDims(Texture2D tex, uint mip)
     return int2(1920, 1080);
 }
 
-void d_computeWeight( 
+cbuffer PatchInfo
+{
+    int2 patchMinP;
+    int2 patchMaxP;
+};
+
+bool isInPatch(int2 ipos)
+{
+    const bool inside = all(ipos >= patchMinP) && all(ipos < patchMaxP);
+    return inside;
+}
+
+#define RETURN_IF_NOT_IN_PATCH(x) if (!isInPatch(x)) return;
+
+void d_computeWeight(
     inout DifferentialPair<float> depthCenter, inout DifferentialPair<float> depthP, inout DifferentialPair<float> phiDepth,
     inout DifferentialPair<float3> normalCenter, inout DifferentialPair<float3> normalP, inout DifferentialPair<float> phiNormal,
     inout DifferentialPair<float> luminanceIllumCenter, inout DifferentialPair<float> luminanceIllumP, inout DifferentialPair<float> phiIllum,
@@ -81,7 +95,7 @@ float3 demodulate(float3 c, float3 albedo)
     float lum = getAlbedoLum(albedo);
     if(lum > 0.01)
         return c / max(albedo, float3(0.001, 0.001, 0.001));
-    else    
+    else
         return c;
 }
 
@@ -91,7 +105,7 @@ float4 remodulate(float4 c, float4 albedo) {
     float lum = getAlbedoLum(albedo.rgb);
     if(lum > 0.01)
         return c * max(albedo, float4(0.001, 0.001, 0.001, 1.0)); // don't touch the variance
-    else    
+    else
         return c;
 }
 
@@ -137,14 +151,22 @@ uint getBufIdx3(int2 ipos, Texture2D tex) {
 }
 
 const uint getBufIdx4(int2 ipos, Texture2D tex, int idx) {
-    const uint2 dim = getTextureDims(tex, 0);
-    const uint base_addr = ((dim.x * ipos.y + ipos.x) + dim.x * dim.y * idx) * sizeof(int4);
+    // since we are doing patching
+    const uint2 dim = patchMaxP - patchMinP;// getTextureDims(tex, 0);
+    ipos -= patchMinP;
+
+    const uint base_addr = ((dim.x * ipos.y + ipos.x) + dim.x * dim.y * idx) * sizeof(float4);
     return base_addr;
 }
 
 
 // tex is a texture with equal dimensions to rwaddrbuff
 void storeDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Texture2D tex, int idx = 0, int offset = 0) {
+    if (!isInPatch(ipos))
+    {
+        return;
+    }
+
     const uint base_addr = getBufIdx4(ipos, tex, idx) + offset;
 
     const int4 a = reinterpret<int4>(val);
@@ -220,17 +242,3 @@ float4 applyLossColorTransform(float4 val)
     return val;
 }
 
-cbuffer PatchInfo
-{
-    int2 minP;
-    int2 maxP;
-    bool shouldPatch;
-};
-
-bool isInPatch(int2 ipos)
-{
-    const bool inside = all(ipos >= minP) && all(ipos < maxP);
-    return (inside || !shouldPatch);
-}
-
-#define RETURN_IF_NOT_IN_PATCH(x) if (!isInPatch(x)) return;
