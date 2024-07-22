@@ -37,9 +37,9 @@ cbuffer PerImageCB
 
     int         gStepSize;
 
-    float dvSigmaL;
-    float dvSigmaZ;
-    float dvSigmaN;
+    float dvSigmaL[5][5];
+    float dvSigmaZ[5][5];
+    float dvSigmaN[5][5];
 
     float3 dvLuminanceParams;
 
@@ -47,6 +47,11 @@ cbuffer PerImageCB
     float dvKernel[5][5];
     float dvVarianceKernel[2][2];
 
+    RWByteAddressBuffer daSigmaL;
+    RWByteAddressBuffer daSigmaZ;
+    RWByteAddressBuffer daSigmaN;
+
+    RWByteAddressBuffer daKernel;
     RWByteAddressBuffer daIllumination;
 };
 
@@ -178,10 +183,8 @@ float computeVarianceCenter(int2 screenSize, int2 ipos, float[2][2] kernel)
 
 const uniform float epsVariance = 1e-10;
 
-void d_atrous( FullScreenPassVsOut vsOut,
-    inout DifferentialPair<float[5][5]> kernelWeights, inout DifferentialPair<float [2][2]> varianceKernel,
+void d_atrous( FullScreenPassVsOut vsOut, inout DifferentialPair<float [2][2]> varianceKernel,
     inout DifferentialPair<float3> luminanceParams, inout DifferentialPair<float[3]> weightsParams,
-    inout DifferentialPair<float> sigmaL, inout DifferentialPair<float> sigmaZ, inout DifferentialPair<float> sigmaN,
     float4 dLoss)
 {
     const int2 ipos = int2(vsOut.posH.xy);
@@ -204,8 +207,8 @@ void d_atrous( FullScreenPassVsOut vsOut,
 
     const float3 nCenter = oct_to_ndir_snorm(getLinearZAndNormal(ipos).zw);
 
-    const float phiLIllumination = sigmaL.p * sqrt(max(0.0, epsVariance + var.r));
-    const float phiDepth = sigmaZ.p * max(zCenter.y, 1e-8) * gStepSize;
+    const float phiLIlluminationBase = sqrt(max(0.0, epsVariance + var.r));
+    const float phiDepthBase = max(zCenter.y, 1e-8) * gStepSize;
     // explicitly store/accumulate center pixel with weight 1 to prevent issues
     // with the edge-stopping functions
     float sumWIllumination = 1.0;
@@ -218,7 +221,10 @@ void d_atrous( FullScreenPassVsOut vsOut,
             const int2 p = ipos + int2(xx, yy) * gStepSize;
             const bool inside = all(p >= int2(0, 0)) && all(p < screenSize);
 
-            const float kernel = kernelWeights.p[yy + 2][xx + 2];
+            int yri = yy + 2;
+            int xri = xx + 2;
+
+            const float kernel = dvKernel[yri][xri];
 
             if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
             {
@@ -229,9 +235,9 @@ void d_atrous( FullScreenPassVsOut vsOut,
 
                 // compute the edge-stopping functions
                 const float w = computeWeight(
-                    zCenter.x, zP, phiDepth * length(float2(xx, yy)),
-                    nCenter, nP, sigmaN.p,
-                    lIlluminationCenter, lIlluminationP, phiLIllumination,
+                    zCenter.x, zP, dvSigmaZ[yri][xri] * phiDepthBase * length(float2(xx, yy)),
+                    nCenter, nP, dvSigmaN[yri][xri],
+                    lIlluminationCenter, lIlluminationP, dvSigmaL[yri][xri] * phiLIlluminationBase,
                     weightsParams.p);
 
                 const float wIllumination = w.x * kernel;
@@ -254,19 +260,12 @@ void d_atrous( FullScreenPassVsOut vsOut,
     DifferentialPair<float> dpzCenterX = diffPair(zCenter.x);
     float dLdZCenterX = float(0.0f);
 
-    // we vary the input for this on on each iteration of the loop, so no diffpair
-    float dLdPhiDepth = 0.0f;
-
     DifferentialPair<float3> dpnCenter = diffPair(nCenter);
-
-    // diff pair in args
-    float dLdSigmaN = 0.0f;
 
     DifferentialPair<float> dplIlluminationCenter = diffPair(lIlluminationCenter);
     float dLdlIlluminationCenter = 0.0f;
 
-    DifferentialPair<float> dpPhiLIllumination = diffPair(phiLIllumination);
-    float dLdPhiLIllumination = 0.0f;
+    float dLdPhiLIlluminationBase = 0.0f;
 
     float dLdWeightParams[3];
     for (int i = 0; i < 3; i++)
@@ -276,7 +275,12 @@ void d_atrous( FullScreenPassVsOut vsOut,
 
     float3 dLdLuminanceParams = float3(0.0f);
 
-    float dLdKernel[5][5];
+    float4 writeValKernel;
+    float4 writeValSigmaL;
+    float4 writeValSigmaZ;
+    float4 writeValSigmaN;
+
+    int sampleIdx = 0;
 
     for (int yy = -2; yy <= 2; yy++)
     {
@@ -285,7 +289,11 @@ void d_atrous( FullScreenPassVsOut vsOut,
             const int2 p = ipos + int2(xx, yy) * gStepSize;
             const bool inside = all(p >= int2(0, 0)) && all(p < screenSize);
 
-            const float kernel = kernelWeights.p[yy + 2][xx + 2];
+            int yri = yy + 2;
+            int xri = xx + 2;
+            int writeIdx = 5 * yri + xri;
+
+            const float kernel = dvKernel[yri][xri];
 
             if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
             {
@@ -295,11 +303,11 @@ void d_atrous( FullScreenPassVsOut vsOut,
                 const float3 nP = oct_to_ndir_snorm(getLinearZAndNormal(p).zw);
 
                 // compute the edge-stopping functions
-                DifferentialPair<float> dpphiDepth = diffPair(phiDepth * length(float2(xx, yy)));
+                DifferentialPair<float> dpphiDepth = diffPair(dvSigmaZ[yri][xri] * phiDepthBase * length(float2(xx, yy)));
                 const float w = computeWeight(
                     zCenter.x, zP, dpphiDepth.p,
-                    nCenter, nP, sigmaN.p,
-                    lIlluminationCenter, lIlluminationP, phiLIllumination,
+                    nCenter, nP, dvSigmaN[yri][xri],
+                    lIlluminationCenter, lIlluminationP, dvSigmaL[yri][xri] * phiLIlluminationBase,
                     weightsParams.p);
 
                 const float wIllumination = w.x * kernel;
@@ -309,15 +317,17 @@ void d_atrous( FullScreenPassVsOut vsOut,
                 float dLdWeight = dLdwIllum * kernel;
 
                 // propagate to the kernels
-                dLdKernel[yy + 2][xx + 2] = dLdwIllum * w;
+                writeValKernel[writeIdx % 4] = dLdwIllum * w;
 
                 // now do the weight propagation
                 DifferentialPair<float> dpzP = diffPair(zP);
                 DifferentialPair<float3> dpnP = diffPair(nP);
                 DifferentialPair<float> dplIlluminationP = diffPair(lIlluminationP);
 
-                __bwd_diff(computeWeight)(dpzCenterX, dpzP,
-                    dpphiDepth, dpnCenter, dpnP, sigmaN,
+                DifferentialPair<float> dpPhiLIllumination = diffPair(dvSigmaL[yri][xri] * phiLIlluminationBase);
+                DifferentialPair<float> dpSigmaN = diffPair(dvSigmaN[yri][xri]);
+                __bwd_diff(computeWeight )(dpzCenterX, dpzP,
+                  dpphiDepth, dpnCenter, dpnP, dpSigmaN,
                     dplIlluminationCenter, dplIlluminationP,
                     dpPhiLIllumination, weightsParams, dLdWeight);
 
@@ -331,11 +341,12 @@ void d_atrous( FullScreenPassVsOut vsOut,
 
                 // now that luminance is taken care of, let's work on the other paramters
                 dLdZCenterX += dpzCenterX.d;
-                dLdPhiDepth += dpphiDepth.d * length(float2(xx, yy));
-                dLdSigmaN += sigmaN.d;
-                dLdlIlluminationCenter += dplIlluminationCenter.d;
-                dLdPhiLIllumination += dpPhiLIllumination.d;
+                writeValSigmaZ[writeIdx % 4] = dpphiDepth.d * length(float2(xx, yy)) * phiDepthBase;
+                writeValSigmaN[writeIdx % 4] = dpSigmaN.d;
+                writeValSigmaL[writeIdx % 4] = dpPhiLIllumination.d * phiLIlluminationBase;
 
+                dLdlIlluminationCenter += dplIlluminationCenter.d;
+                dLdPhiLIlluminationBase += dpPhiLIllumination.d * dvSigmaL[yri][xri];
                 for (int i = 0; i < 3; i++)
                 {
                     dLdWeightParams[i] += weightsParams.d[i];
@@ -344,12 +355,22 @@ void d_atrous( FullScreenPassVsOut vsOut,
             }
             else
             {
-                dLdKernel[yy + 2][xx + 2] = 0.0f;
+                writeValKernel[writeIdx % 4] = 0.0f;
+                writeValSigmaL[writeIdx % 4] = 0.0f;
+                writeValSigmaZ[writeIdx % 4] = 0.0f;
+                writeValSigmaN[writeIdx % 4] = 0.0f;
+            }
+            // write if full
+            if (writeIdx % 4 % 4 == 3 || writeIdx % 4 == 24)
+            {
+                storeDerivBuf4(daKernel, ipos, writeValKernel, gAlbedo, writeIdx / 4);
+                storeDerivBuf4(daSigmaL, ipos, writeValSigmaL, gAlbedo, writeIdx / 4);
+                storeDerivBuf4(daSigmaZ, ipos, writeValSigmaZ, gAlbedo, writeIdx / 4);
+                storeDerivBuf4(daSigmaN, ipos, writeValSigmaN, gAlbedo, writeIdx / 4);
             }
         }
     }
 
-    kernelWeights = diffPair(kernelWeights.p, dLdKernel);
     weightsParams = diffPair(weightsParams.p, dLdWeightParams);
     luminanceParams = diffPair(luminanceParams.p, dLdLuminanceParams + dLdlIlluminationCenter * illuminationCenter.rgb);
 
@@ -358,19 +379,14 @@ void d_atrous( FullScreenPassVsOut vsOut,
 
 
     // now we are done with that loop, let's back propagate everything
-    sigmaN = diffPair(sigmaN.p, dLdSigmaN);
-    sigmaZ = diffPair(sigmaZ.p, dLdPhiDepth * max(zCenter.y, 1e-8) * gStepSize);
-    sigmaL = diffPair(sigmaL.p, dLdPhiLIllumination * sqrt(max(0.0, epsVariance + var.r)));
 
-    float dLdVariance = dLdPhiLIllumination * sigmaL.p * 0.5f / sqrt(max(1e-5f, epsVariance + var.r));
+    float dLdVariance = dLdPhiLIlluminationBase * 0.5f / sqrt(max(1e-5f, epsVariance + var.r));
     __bwd_diff(computeVarianceCenter)(screenSize, ipos, varianceKernel, dLdVariance);
 }
 
 [BackwardDerivative(d_atrous)]
-float4 atrous(FullScreenPassVsOut vsOut,
-              float[5][5] kernelWeights, float [2][2] varianceKernel,
-              float3 luminanceParams, float[3] weightsParams,
-              float sigmaL, float sigmaZ, float sigmaN) {
+float4 atrous(FullScreenPassVsOut vsOut, float [2][2] varianceKernel,
+              float3 luminanceParams, float[3] weightsParams) {
     const int2 ipos = int2(vsOut.posH.xy);
     const int2 screenSize = getTextureDims(gAlbedo, 0);
 
@@ -391,8 +407,8 @@ float4 atrous(FullScreenPassVsOut vsOut,
 
     const float3 nCenter = oct_to_ndir_snorm(getLinearZAndNormal(ipos).zw);
 
-    const float phiLIllumination = sigmaL * sqrt(max(0.0, epsVariance + var.r));
-    const float phiDepth = sigmaZ * max(zCenter.y, 1e-8) * gStepSize;
+    const float phiLIlluminationBase = sqrt(max(0.0, epsVariance + var.r));
+    const float phiDepthBase = max(zCenter.y, 1e-8) * gStepSize;
 
     // explicitly store/accumulate center pixel with weight 1 to prevent issues
     // with the edge-stopping functions
@@ -406,7 +422,10 @@ float4 atrous(FullScreenPassVsOut vsOut,
             const int2 p = ipos + int2(xx, yy) * gStepSize;
             const bool inside = all(p >= int2(0, 0)) && all(p < screenSize);
 
-            const float kernel = kernelWeights[yy + 2][xx + 2];
+            int yri = yy + 2;
+            int xri = xx + 2;
+
+            const float kernel = dvKernel[yri][xri];
 
             if (inside && (xx != 0 || yy != 0)) // skip center pixel, it is already accumulated
             {
@@ -417,9 +436,9 @@ float4 atrous(FullScreenPassVsOut vsOut,
 
                 // compute the edge-stopping functions
                 const float w = computeWeight(
-                    zCenter.x, zP, phiDepth * length(float2(xx, yy)),
-                    nCenter, nP, sigmaN,
-                    lIlluminationCenter, lIlluminationP, phiLIllumination,
+                    zCenter.x, zP, dvSigmaZ[yri][xri] * phiDepthBase * length(float2(xx, yy)),
+                    nCenter, nP, dvSigmaN[yri][xri],
+                    lIlluminationCenter, lIlluminationP, dvSigmaL[yri][xri] * phiLIlluminationBase,
                     weightsParams );
 
                 const float wIllumination = w.x * kernel;

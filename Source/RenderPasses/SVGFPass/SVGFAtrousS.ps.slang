@@ -10,7 +10,7 @@ FS_OUT main(FullScreenPassVsOut vsOut)
 {
     FS_OUT fs_out;
 
-    fs_out.filter_result = atrous(vsOut, dvKernel, dvVarianceKernel, dvLuminanceParams, dvWeightFunctionParams, dvSigmaL, dvSigmaZ, dvSigmaN);
+    fs_out.filter_result = atrous(vsOut, dvVarianceKernel, dvLuminanceParams, dvWeightFunctionParams);
 
     return fs_out;
 }

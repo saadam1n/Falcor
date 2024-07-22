@@ -135,8 +135,8 @@ public:
     void runCompactingPass(RenderContext* pRenderContext, int idx, int n);
     void clearRawOutputBuffer(RenderContext* pRenderContext, int idx);
 
-    ref<Buffer> mpdaRawOutputBuffer[3];
-    ref<Buffer> mpdrCompactedBuffer[3];
+    ref<Buffer> mpdaRawOutputBuffer[2];
+    ref<Buffer> mpdrCompactedBuffer[2];
 private:
     ref<Device> mpDevice;
 
@@ -183,7 +183,7 @@ public:
 private:
     ref<SVGFUtilitySet> mpUtilities;
 };
-#define REGISTER_PARAMETER(reflector, x) reflector->registerParameterAuto(x, #x); 
+#define REGISTER_PARAMETER(reflector, x) reflector->registerParameterAuto(x, #x);
 
 // the renderdata class contains external inputs and outputs for the SVGF algorithm
 struct SVGFRenderData

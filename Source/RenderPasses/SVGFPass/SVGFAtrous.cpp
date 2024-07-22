@@ -9,8 +9,19 @@ SVGFAtrousSubpass::SVGFAtrousSubpass(ref<Device> pDevice, ref<SVGFUtilitySet> pU
     mIterationState.resize(mFilterIterations);
     for (auto& iterationState : mIterationState)
     {
-        iterationState.mSigma.dv = dvSigma;
-        REGISTER_PARAMETER(mpParameterReflector, iterationState.mSigma);
+        for (int i = 0; i < 5; i++)
+        {
+            for (int j = 0; j < 5; j++)
+            {
+                iterationState.mSigmaL.dv[i][j] = dvSigma.x;
+                iterationState.mSigmaZ.dv[i][j] = dvSigma.y;
+                iterationState.mSigmaN.dv[i][j] = dvSigma.z;
+            }
+        }
+
+        REGISTER_PARAMETER(mpParameterReflector, iterationState.mSigmaL);
+        REGISTER_PARAMETER(mpParameterReflector, iterationState.mSigmaZ);
+        REGISTER_PARAMETER(mpParameterReflector, iterationState.mSigmaN);
 
         for (int i = 0; i < 3; i++) {
             iterationState.mWeightFunctionParams.dv[i] = dvWeightFunctionParams[i];
@@ -68,9 +79,15 @@ void SVGFAtrousSubpass::computeEvaluation(RenderContext* pRenderContext, SVGFRen
 
         auto& curIterationState = mIterationState[iteration];
 
-        perImageCB["dvSigmaL"] = curIterationState.mSigma.dv.x;
-        perImageCB["dvSigmaZ"] = curIterationState.mSigma.dv.y;
-        perImageCB["dvSigmaN"] = curIterationState.mSigma.dv.z;
+        for (int i = 0; i < 5; i++)
+        {
+            for (int j = 0; j < 5; j++)
+            {
+                perImageCB["dvSigmaL"][i][j] = curIterationState.mSigmaL.dv[i][j];
+                perImageCB["dvSigmaZ"][i][j] = curIterationState.mSigmaZ.dv[i][j];
+                perImageCB["dvSigmaN"][i][j] = curIterationState.mSigmaN.dv[i][j];
+            }
+        }
 
         perImageCB["dvLuminanceParams"] = curIterationState.mLuminanceParams.dv;
 
@@ -140,15 +157,23 @@ void SVGFAtrousSubpass::computeBackPropagation(RenderContext* pRenderContext, SV
         // clear raw output
         mpUtilities->clearRawOutputBuffer(pRenderContext, 0);
 
-        perImageCB_D["daSigma"] = curIterationState.mSigma.da;
-        perImageCB_D["daKernel"] = curIterationState.mKernel.da;
+        perImageCB["daSigmaL"] = curIterationState.mSigmaL.da;
+        perImageCB["daSigmaZ"] = curIterationState.mSigmaZ.da;
+        perImageCB["daSigmaN"] = curIterationState.mSigmaN.da;
+        perImageCB["daKernel"] = curIterationState.mKernel.da;
         perImageCB_D["daVarianceKernel"] = curIterationState.mVarianceKernel.da;
         perImageCB_D["daLuminanceParams"] = curIterationState.mLuminanceParams.da;
         perImageCB_D["daWeightFunctionParams"] = curIterationState.mWeightFunctionParams.da;
 
-        perImageCB["dvSigmaL"] = curIterationState.mSigma.dv.x;
-        perImageCB["dvSigmaZ"] = curIterationState.mSigma.dv.y;
-        perImageCB["dvSigmaN"] = curIterationState.mSigma.dv.z;
+        for (int i = 0; i < 5; i++)
+        {
+            for (int j = 0; j < 5; j++)
+            {
+                perImageCB["dvSigmaL"][i][j] = curIterationState.mSigmaL.dv[i][j];
+                perImageCB["dvSigmaZ"][i][j] = curIterationState.mSigmaZ.dv[i][j];
+                perImageCB["dvSigmaN"][i][j] = curIterationState.mSigmaN.dv[i][j];
+            }
+        }
 
         perImageCB["dvLuminanceParams"] = curIterationState.mLuminanceParams.dv;
 

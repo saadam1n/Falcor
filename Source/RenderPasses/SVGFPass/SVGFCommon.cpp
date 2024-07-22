@@ -12,8 +12,7 @@ SVGFUtilitySet::SVGFUtilitySet(ref<Device> pDevice) : mpDevice(pDevice)
 
     mpdaRawOutputBuffer[0] = createAccumulationBuffer(sizeof(float4) * 50);
     mpdaRawOutputBuffer[1] = createAccumulationBuffer(sizeof(float4) * 49);
-    mpdaRawOutputBuffer[2] = createAccumulationBuffer(sizeof(float4) * 34);
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < 2; i++)
     {
         mpdrCompactedBuffer[i] = createAccumulationBuffer();
     }

@@ -35,7 +35,9 @@ public: // public so we can do derivative stuff
     {
         ref<Texture> pgIllumination; // saved illumination for this iteration
 
-        SVGFParameter<float3> mSigma;
+        SVGFParameter<float[5][5]> mSigmaL;
+        SVGFParameter<float[5][5]> mSigmaZ;
+        SVGFParameter<float[5][5]> mSigmaN;
 
         SVGFParameter<float[3]> mWeightFunctionParams;
         SVGFParameter<float3> mLuminanceParams;

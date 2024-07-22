@@ -518,7 +518,7 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 
                 // now accumulate everything
                 {
-                    FALCOR_PROFILE(pRenderContext, "Parallel Reduction");
+                    FALCOR_PROFILE(pRenderContext, "Parameter Reduction");
                     for (int i = 0; i < mpParameterReflector->getNumParams(); i++)
                     {
                         mReductionAddress = reduceParameter(pRenderContext, mpParameterReflector->mRegistry[i], mReductionAddress);
@@ -679,7 +679,7 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
 
     mDelta = 0.05f;
 
-    float& valToChange = mpAtrousSubpass->mIterationState[mDerivativeIteration].mSigma.dv[0];
+    float& valToChange = mpAtrousSubpass->mIterationState[mDerivativeIteration].mSigmaL.dv[2][2];
     float oldval = valToChange;
 
     valToChange = oldval - mDelta;
@@ -723,7 +723,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVG
 
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mpAtrousSubpass->mIterationState[mDerivativeIteration].mSigma.da;
+    perImageCB["drBackwardsDiffBuffer"] = mpAtrousSubpass->mIterationState[mDerivativeIteration].mSigmaL.da;
     perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
     perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
     perImageCB["delta"] = mDelta;
