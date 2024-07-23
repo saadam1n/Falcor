@@ -241,8 +241,7 @@ private:
 
     struct InternalTexture
     {
-        // similair idea to a swap chain for saving textures
-        ref<Texture> mSwapTextures[2];
+        ref<Texture> mSavedTexture;
         // all saved revisions of this texture
         std::vector<Bitmap::UniqueConstPtr> mSavedRevisions;
 

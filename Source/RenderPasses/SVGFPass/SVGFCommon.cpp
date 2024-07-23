@@ -159,16 +159,15 @@ void SVGFRenderData::saveInternalTex(RenderContext* pRenderContext, const std::s
 {
     if (mInternalTextureMappings.count(s) == 0)
     {
-        mInternalTextureMappings[s].mSwapTextures[0] = mpUtilities->createFullscreenTexture();
-        mInternalTextureMappings[s].mSwapTextures[1] = mpUtilities->createFullscreenTexture();
+        mInternalTextureMappings[s].mSavedTexture = mpUtilities->createFullscreenTexture();
     }
 
-    pRenderContext->blit(tex->getSRV(), mInternalTextureMappings[s].mSwapTextures[1]->getRTV());
+    pRenderContext->blit(tex->getSRV(), mInternalTextureMappings[s].mSavedTexture->getRTV());
 }
 
 ref<Texture> SVGFRenderData::fetchInternalTex(const std::string& s)
 {
-    return mInternalTextureMappings[s].mSwapTextures[0];
+    return mInternalTextureMappings[s].mSavedTexture;
 }
 
 void SVGFRenderData::swapInternalBuffers(RenderContext* pRenderContext)
@@ -177,8 +176,6 @@ void SVGFRenderData::swapInternalBuffers(RenderContext* pRenderContext)
 
     for (auto& [s, internalTex] : mInternalTextureMappings)
     {
-        std::swap(internalTex.mSwapTextures[0], internalTex.mSwapTextures[1]);
-
         auto async_download = [=](ref<Texture> tex, std::vector<Bitmap::UniqueConstPtr>& revisions)
         {
             auto ptr = pRenderContext->asyncReadTextureSubresource(tex.get(), 0);
@@ -199,7 +196,7 @@ void SVGFRenderData::swapInternalBuffers(RenderContext* pRenderContext)
             std::memcpy(revisions[saveIndex]->getData(), ptr->getData().data(), numPixels * sizeof(float4));
         };
 
-        //mAsyncReadOperations.push_back(std::async(std::launch::async, async_download, internalTex.mSwapTextures[0], internalTex.mSavedRevisions));
+        //mAsyncReadOperations.push_back(std::async(std::launch::async, async_download, internalTex.mSavedTexture, internalTex.mSavedRevisions));
     }
 }
 
@@ -215,9 +212,7 @@ void SVGFRenderData::popInternalBuffers(RenderContext* pRenderContext)
 
     for (auto& [s, internalTex] : mInternalTextureMappings)
     {
-        std::swap(internalTex.mSwapTextures[0], internalTex.mSwapTextures[1]);
-
-        pRenderContext->updateTextureData(internalTex.mSwapTextures[0].get(), (const void*)internalTex.mSavedRevisions[readIndex]->getData());
+        pRenderContext->updateTextureData(internalTex.mSavedTexture.get(), (const void*)internalTex.mSavedRevisions[readIndex]->getData());
     }
 }
 
