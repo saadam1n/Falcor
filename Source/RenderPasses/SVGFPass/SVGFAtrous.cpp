@@ -47,8 +47,6 @@ SVGFAtrousSubpass::SVGFAtrousSubpass(ref<Device> pDevice, ref<SVGFUtilitySet> pU
         iterationState.mVarianceKernel.dv[1][0] = 1.0 / 8.0;
         iterationState.mVarianceKernel.dv[1][1] = 1.0 / 16.0;
         REGISTER_PARAMETER(mpParameterReflector, iterationState.mVarianceKernel);
-
-        iterationState.pgIllumination = mpUtilities->createFullscreenTexture();
     }
 }
 
@@ -111,7 +109,7 @@ void SVGFAtrousSubpass::computeEvaluation(RenderContext* pRenderContext, SVGFRen
 
         ref<Fbo> curTargetFbo = mpPingPongFbo[1];
         // keep a copy of our input for backwards differation
-        pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), curIterationState.pgIllumination->getRTV());
+        svgfrd.saveInternalTex(pRenderContext, "AtrousIllum" + std::to_string(iteration), mpPingPongFbo[0]->getColorTexture(0));
 
         perImageCB["gIllumination"] = (iteration == 0 ? svgfrd.fetchTexTable("AtrousInputIllumination") : mpPingPongFbo[0]->getColorTexture(0));
         perImageCB["gStepSize"] = 1 << iteration;
@@ -197,7 +195,7 @@ void SVGFAtrousSubpass::computeBackPropagation(RenderContext* pRenderContext, SV
         perImageCB_D["drIllumination"] = (iteration == mFilterIterations - 1 ? svgfrd.fetchBufTable("AtrousInIllumination") : mpUtilities->mpdrCompactedBuffer[0]);
         perImageCB["daIllumination"] = mpUtilities->mpdaRawOutputBuffer[0];
 
-        perImageCB["gIllumination"] = curIterationState.pgIllumination;
+        perImageCB["gIllumination"] = svgfrd.fetchInternalTex("AtrousIllum" + std::to_string(iteration));
         perImageCB["gStepSize"] = 1 << iteration;
 
         mpBackPropagatePass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());

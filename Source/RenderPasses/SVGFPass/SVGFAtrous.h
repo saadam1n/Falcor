@@ -33,8 +33,6 @@ private:
 public: // public so we can do derivative stuff
     struct PerIterationState
     {
-        ref<Texture> pgIllumination; // saved illumination for this iteration
-
         SVGFParameter<float[5][5]> mSigmaL;
         SVGFParameter<float[5][5]> mSigmaZ;
         SVGFParameter<float[5][5]> mSigmaN;
