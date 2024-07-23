@@ -113,7 +113,9 @@ size_t FilterParameterReflector::getNumParams()
     return mRegistry.size();
 }
 
-SVGFRenderData::SVGFRenderData(const RenderData& renderData)
+SVGFRenderData::SVGFRenderData(ref<Device> pDevice, ref<SVGFUtilitySet> utilities) : mpDevice(pDevice), mpUtilities(utilities), mInternalRegistryFrameCount(0) {}
+
+SVGFRenderData::SVGFRenderData(ref<Device> pDevice, ref<SVGFUtilitySet> utilities, const RenderData& renderData) : SVGFRenderData(pDevice, utilities)
 {
     copyTextureReferences(renderData);
 }
@@ -153,7 +155,77 @@ ref<Buffer>& SVGFRenderData::fetchBufTable(const std::string& s)
     return mBufferTable[s];
 }
 
-SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, ref<SVGFUtilitySet> utilities, const std::string& folder) : mpUtilities(utilities), mpDevice(pDevice), mFolder(folder), mSampleIdx(0) {
+void SVGFRenderData::saveInternalTex(RenderContext* pRenderContext, const std::string& s, ref<Texture> tex)
+{
+    if (mInternalTextureMappings.count(s) == 0)
+    {
+        InternalTexture internalTex;
+
+        internalTex.mSwapTextures[0] = mpUtilities->createFullscreenTexture();
+        internalTex.mSwapTextures[1] = mpUtilities->createFullscreenTexture();
+
+        mInternalTextureMappings[s] = internalTex;
+    }
+
+    pRenderContext->blit(tex, mInternalTextureMappings[s].mSwapTextures[1]->getRTV());
+}
+
+ref<Texture> SVGFRenderData::fetchInternalTex(const std::string& s)
+{
+    return mInternalTextureMappings[s].mSwapTextures[0];
+}
+
+void SVGFRenderData::swapInternalBuffers(RenderContext* pRenderContext)
+{
+    int saveIndex = mInternalRegistryFrameCount++;
+
+    for (auto& [s, internalTex] : mInternalTextureMappings)
+    {
+        std::swap(internalTex.mSwapTextures[0], internalTex.mSwapTextures[1]);
+
+        auto async_download = [=](ref<Texture> tex, std::vector<Bitmap::UniqueConstPtr>& revisions)
+        {
+            auto ptr = pRenderContext->asyncReadTextureSubresource(tex.get(), 0);
+
+            // save this current texture
+            // allocate more slots if not avaiable yet
+            if (revisions.size() < mInternalRegistryFrameCount)
+            {
+                revisions.resize(mInternalRegistryFrameCount);
+            }
+
+            // allocate bitmap if not allocated already
+            if (!revisions[saveIndex].get())
+            {
+                revisions[saveIndex] = Bitmap::create(screenWidth, screenHeight, ResourceFormat::RGBA32Float, nullptr);
+            }
+
+            std::memcpy(revisions[saveIndex]->getData(), ptr->getData().data(), numPixels * sizeof(float4));
+        };
+
+        //mAsyncReadOperations.push_back(std::async(std::launch::async, async_download, internalTex.mSwapTextures[0], internalTex.mSavedRevisions));
+    }
+}
+
+void SVGFRenderData::popInternalBuffers(RenderContext* pRenderContext)
+{
+    while (!mAsyncReadOperations.empty())
+    {
+        mAsyncReadOperations.back().get();
+        mAsyncReadOperations.pop_back();
+    }
+
+    int readIndex = --mInternalRegistryFrameCount;
+
+    for (auto& [s, internalTex] : mInternalTextureMappings)
+    {
+        std::swap(internalTex.mSwapTextures[0], internalTex.mSwapTextures[1]);
+
+        pRenderContext->updateTextureData(internalTex.mSwapTextures[0].get(), (const void*)internalTex.mSavedRevisions[readIndex]->getData());
+    }
+}
+
+SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, ref<SVGFUtilitySet> utilities, const std::string& folder) : SVGFRenderData(pDevice, utilities), mFolder(folder), mSampleIdx(0) {
 #define MarkDatasetTexture(x) p##x##Texture = mpUtilities->createFullscreenTexture(); mTextureNameMappings[kDataset##x] = p##x##Texture;
 
     MarkDatasetTexture(Reference);

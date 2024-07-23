@@ -194,8 +194,8 @@ private:
 struct SVGFRenderData
 {
 public:
-    SVGFRenderData() = default;
-    SVGFRenderData(const RenderData& renderData);
+    SVGFRenderData(ref<Device> pDevice, ref<SVGFUtilitySet> utilities);
+    SVGFRenderData(ref<Device> pDevice, ref<SVGFUtilitySet> utilities, const RenderData& renderData);
 
     void copyTextureReferences(const RenderData& renderData);
 
@@ -224,13 +224,35 @@ public:
     // access the texture table
     ref<Texture>& fetchTexTable(const std::string& s);
     ref<Buffer>& fetchBufTable(const std::string& s);
+
+    void saveInternalTex(RenderContext* pRenderContext, const std::string& s, ref<Texture> tex);
+    ref<Texture> fetchInternalTex(const std::string& s);
+    void swapInternalBuffers(RenderContext* pRenderContext);
+    void popInternalBuffers(RenderContext* pRenderContext);
+protected:
+    // utils
+    ref<SVGFUtilitySet> mpUtilities;
+    // keep track of this for whatever reason
+    ref<Device> mpDevice;
 private:
     // the advantage of using a ref here is that we do not have to blit
     std::map<std::string, ref<Texture>> mTextureTable;
     std::map<std::string, ref<Buffer>> mBufferTable;
+
+    struct InternalTexture
+    {
+        // similair idea to a swap chain for saving textures
+        ref<Texture> mSwapTextures[2];
+        // all saved revisions of this texture
+        std::vector<Bitmap::UniqueConstPtr> mSavedRevisions;
+    };
+
+    std::map<std::string, InternalTexture> mInternalTextureMappings;
+    int mInternalRegistryFrameCount;
+    std::vector<std::future<void>> mAsyncReadOperations;
 };
 
-struct SVGFTrainingDataset : public SVGFRenderData
+struct SVGFTrainingDataset : protected SVGFRenderData
 {
 public:
     SVGFTrainingDataset(ref<Device> pDevice, ref<SVGFUtilitySet> utilities, const std::string& folder);
@@ -239,10 +261,6 @@ public:
     // preload all bitmaps, if not already
     void preloadBitmaps();
 private:
-    // utils
-    ref<SVGFUtilitySet> mpUtilities;
-    // keep track of this for whatever reason
-    ref<Device> mpDevice;
     // the folder containing the dataset
     std::string mFolder;
     // whatever sample we are reading from
