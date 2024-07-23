@@ -55,19 +55,35 @@ void d_computeWeight(
     // fill this out later
 }
 
-//[BackwardDerivative(d_computeWeight)]
+[BackwardDifferentiable]
+float computeIdealNumer(float x, float m)
+{
+    return x;
+    //return lerp(x, x * x, m - 1.0f);
+}
+
 [BackwardDifferentiable]
 float computeWeight(
     float depthCenter, float depthP, float phiDepth,
     float3 normalCenter, float3 normalP, float phiNormal,
     float luminanceIllumCenter, float luminanceIllumP, float phiIllum,
-    float[3] weightParams)
+    float[3] weightParams )
 {
-    const float weightNormal  = weightParams[0] * pow(saturate(dot(normalCenter, normalP)), phiNormal);
-    const float weightZ       = (phiDepth == 0) ? 0.0f : abs(depthCenter - depthP) / phiDepth;
-    const float weightLillum  = weightParams[1] * abs(luminanceIllumCenter - luminanceIllumP) / phiIllum;
+    float diffL = abs(luminanceIllumCenter - luminanceIllumP);
+    float diffZ = abs(depthCenter - depthP);
+    float diffN = saturate(dot(normalCenter, normalP));
 
-    float weightIllum   = exp(-weightParams[2] * (max(weightLillum, 0.0) + max(weightZ, 0.0))) * weightNormal;
+    const float weightLillum = 0.1f * computeIdealNumer(diffL, weightParams[0]) / phiIllum;
+    const float weightZ = (phiDepth == 0) ? 0.0f : computeIdealNumer(diffZ, weightParams[1]) / phiDepth;
+    const float weightNormal = pow(computeIdealNumer(diffN, weightParams[2]), 128.0f * phiNormal);
+
+    float weightIllum = exp(-(max(weightLillum, 0.0) + max(weightZ, 0.0))) * weightNormal;
+
+    // bandaid solution but whatever
+    if (isnan(weightIllum))
+    {
+        weightIllum = 0.0f;
+    }
 
     return weightIllum;
 }

@@ -95,9 +95,9 @@ namespace
 
     const float3 dvLuminanceParams = float3(0.2126f, 0.7152f, 0.0722f);
 
-    const float   dvSigmaL              = 10.0f;
+    const float   dvSigmaL              = 1.0f;
     const float   dvSigmaZ              = 1.0;
-    const float   dvSigmaN              = 128.0f;
+    const float   dvSigmaN              = 1.0f;
     const float   dvAlpha               = 0.05f;
     const float   dvMomentsAlpha        = 0.2f;
 

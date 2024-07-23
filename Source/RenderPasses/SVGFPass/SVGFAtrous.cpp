@@ -124,6 +124,16 @@ void SVGFAtrousSubpass::computeEvaluation(RenderContext* pRenderContext, SVGFRen
         }
 
         std::swap(mpPingPongFbo[0], mpPingPongFbo[1]);
+
+        for (int i = 0; i < 5; i++)
+        {
+            for (int j = 0; j < 5; j++)
+            {
+                //std::cout << curIterationState.mSigmaL.dv[i][j] << "\n";
+                //std::cout << curIterationState.mSigmaZ.dv[i][j] << "\n";
+                //std::cout << curIterationState.mSigmaN.dv[i][j] << "\n";
+            }
+        }
     }
 
     if (updateInternalBuffers && mFeedbackTap < 0)
@@ -132,6 +142,8 @@ void SVGFAtrousSubpass::computeEvaluation(RenderContext* pRenderContext, SVGFRen
     }
 
     svgfrd.fetchTexTable("FinalModulateInIllumination") = mpPingPongFbo[0]->getColorTexture(0);
+
+
 }
 
 void SVGFAtrousSubpass::computeBackPropagation(RenderContext* pRenderContext, SVGFRenderData& svgfrd)

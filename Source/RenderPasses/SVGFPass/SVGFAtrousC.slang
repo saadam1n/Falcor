@@ -254,6 +254,16 @@ void d_atrous( FullScreenPassVsOut vsOut, inout DifferentialPair<float [2][2]> v
 
     float4 dLdSumIllum = dLoss / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination);
     float4 dLdSumW4 = -dLoss * sumIllumination / float4((sumWIllumination * sumWIllumination).xxx, 0.5f * sumWIllumination * sumWIllumination * sumWIllumination);
+
+    for (int i = 0; i < 4; i++)
+    {
+        if (isnan(sumIllumination[i]))
+        {
+            dLdSumIllum[i] = 0.0f;
+            dLdSumW4[i] = 0.0f;
+        }
+    }
+
     float dLdSumW = dot(dLdSumW4, 1.0f.xxxx);
 
     // go though the loop again, propagating derivatives
@@ -446,6 +456,14 @@ float4 atrous(FullScreenPassVsOut vsOut, float [2][2] varianceKernel,
                 sumWIllumination += wIllumination;
                 sumIllumination += float4(wIllumination.xxx, wIllumination * wIllumination) * illuminationP;
             }
+        }
+    }
+
+    for (int i = 0; i < 4; i++)
+    {
+        if (isnan(sumIllumination[i]))
+        {
+            sumIllumination[i] = 0.0f;
         }
     }
 

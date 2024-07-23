@@ -110,10 +110,10 @@ float2 getMoments(int2 p, int2 offset)
     return gMoments[p].xy;
 }
 
-uniform float SUM_W_ELIPSON = 1e-6f;
+uniform float SUM_W_ELIPSON = 1e-2f;
 
 void d_filter_moments(
-    FullScreenPassVsOut vsOut, inout DifferentialPair<float> historyParam, inout DifferentialPair<float3> luminanceParams, 
+    FullScreenPassVsOut vsOut, inout DifferentialPair<float> historyParam, inout DifferentialPair<float3> luminanceParams,
     inout DifferentialPair<float[NUM_WEIGHT_PARAMS]> weightsParams, inout DifferentialPair<float> sigmaL, inout DifferentialPair<float> sigmaZ,
     inout DifferentialPair<float> sigmaN, float4 dLoss)
 {
@@ -125,7 +125,7 @@ void d_filter_moments(
 
     if (h < historyParam.p) // not enough temporal history available
     {
-        float sumWIllumination = 0.0;
+        float sumWIllumination = SUM_W_ELIPSON;
         float3 sumIllumination = float3(0.0, 0.0, 0.0);
         float2 sumMoments = float2(0.0, 0.0);
 
@@ -176,8 +176,7 @@ void d_filter_moments(
         }
 
         // Clamp sum to >0 to avoid NaNs.
-        float originalSumW = sumWIllumination;
-        sumWIllumination = max(sumWIllumination, SUM_W_ELIPSON);
+        //sumWIllumination = max(sumWIllumination, SUM_W_ELIPSON);
 
         float3 normIllum = sumIllumination / sumWIllumination;
         float2 normMoments = sumMoments / sumWIllumination;
@@ -201,18 +200,9 @@ void d_filter_moments(
         float2 dLdSumMoments = dLdNormMoments / sumWIllumination;
         float3 dLdSumIllum = dLoss.rgb / sumWIllumination;
 
-        float dLdSumWIllum;
-        if (originalSumW > SUM_W_ELIPSON)
-        {
-            float2 dLdSumWIllumFromMoments = -dLdNormMoments * sumMoments / (sumWIllumination * sumWIllumination);
-            float3 dLdSumWIllumFromIllum = -dLoss.rgb * sumIllumination / (sumWIllumination * sumWIllumination);
-            dLdSumWIllum = dot(dLdSumWIllumFromMoments, 1.0f.xx) + dot(dLdSumWIllumFromIllum, 1.0f.xxx);
-        }
-        else
-        {
-            // otherwise below the clamping range, changing sum w will not affect the result
-            dLdSumWIllum = 0.0f;
-        }
+        float2 dLdSumWIllumFromMoments = -dLdNormMoments * sumMoments / (sumWIllumination * sumWIllumination);
+        float3 dLdSumWIllumFromIllum = -dLoss.rgb * sumIllumination / (sumWIllumination * sumWIllumination);
+        float dLdSumWIllum = dot(dLdSumWIllumFromMoments, 1.0f.xx) + dot(dLdSumWIllumFromIllum, 1.0f.xxx);
 
         // now reiterate through the loop, propagating derivatives
         DifferentialPair<float> dpzCenterX = diffPair(zCenter.x);
@@ -332,7 +322,7 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float historyParam, float3 lumi
 
     if (h < historyParam) // not enough temporal history available
     {
-        float sumWIllumination = 0.0;
+        float sumWIllumination = SUM_W_ELIPSON; // add small bias to prevent naning (clamping doesn't seem to work)
         float3 sumIllumination = float3(0.0, 0.0, 0.0);
         float2 sumMoments = float2(0.0, 0.0);
 
@@ -382,7 +372,7 @@ float4 filter_moments(FullScreenPassVsOut vsOut, float historyParam, float3 lumi
         }
 
         // Clamp sum to >0 to avoid NaNs.
-        sumWIllumination = max(sumWIllumination, SUM_W_ELIPSON);
+        // sumWIllumination = max(sumWIllumination, SUM_W_ELIPSON);
 
         sumIllumination /= sumWIllumination;
         sumMoments /= sumWIllumination;
