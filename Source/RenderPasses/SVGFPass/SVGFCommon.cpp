@@ -177,7 +177,6 @@ void SVGFRenderData::pushInternalBuffers(RenderContext* pRenderContext)
 
     for (auto& [s, internalTex] : mInternalTextureMappings)
     {
-        continue;
         CopyContext::ReadTextureTask::SharedPtr ptr = pRenderContext->asyncReadTextureSubresource(internalTex.mSavedTexture.get(), 0);
 
         // save this current texture
@@ -198,7 +197,8 @@ void SVGFRenderData::pushInternalBuffers(RenderContext* pRenderContext)
             src->getData((void*)dst, numPixels * sizeof(float4));
         };
 
-        mAsyncReadOperations.push_back(std::async(std::launch::async, async_download, ptr, internalTex.mSavedRevisions[saveIndex]->getData()));
+        //mAsyncReadOperations.push_back(std::async(std::launch::async, async_download, ptr, internalTex.mSavedRevisions[saveIndex]->getData()));
+        async_download(ptr, internalTex.mSavedRevisions[saveIndex]->getData());
     }
 }
 

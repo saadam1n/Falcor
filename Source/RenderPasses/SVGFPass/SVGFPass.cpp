@@ -497,7 +497,7 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 
             if(mDatasetIndex >= K_FRAME_SAMPLE_START)
             {
-                //mTrainingDataset.popInternalBuffers(pRenderContext);
+                mTrainingDataset.popInternalBuffers(pRenderContext);
 
                 computeDerivatives(pRenderContext, mTrainingDataset, true);
 
