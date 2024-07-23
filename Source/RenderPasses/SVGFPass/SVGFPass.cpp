@@ -390,6 +390,7 @@ void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, SVGFRenderData& rend
             std::swap(mpCurReprojFbo, mpPrevReprojFbo);
             pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(),
                                     renderData.pPrevLinearZAndNormalTexture->getRTV());
+
         }
 
         // Blit into the output texture.
@@ -923,9 +924,9 @@ void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext, SVGFRenderD
     mFilterMomentsState.sPass->execute(pRenderContext, mpPingPongFbo[0]);
 
     // save our buffers for the derivative apss
-    pRenderContext->blit(mpCurReprojFbo->getColorTexture(0)->getSRV(), mFilterMomentsState.pCurIllum->getRTV());
-    pRenderContext->blit(mpCurReprojFbo->getColorTexture(1)->getSRV(), mFilterMomentsState.pCurMoments->getRTV());
-    pRenderContext->blit(mpCurReprojFbo->getColorTexture(2)->getSRV(), mFilterMomentsState.pCurHistoryLength->getRTV());
+    svgfrd.saveInternalTex(pRenderContext, "FilterMomentsIllum", mpCurReprojFbo->getColorTexture(0));
+    svgfrd.saveInternalTex(pRenderContext, "FilterMomentsMoments", mpCurReprojFbo->getColorTexture(1));
+    svgfrd.saveInternalTex(pRenderContext, "FilterMomentsHistoryLength", mpCurReprojFbo->getColorTexture(2));
 
     svgfrd.fetchTexTable("AtrousInputIllumination") = mpPingPongFbo[0]->getColorTexture(0);
 }
@@ -938,10 +939,10 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext, SVGFRe
 
     auto perImageCB = mFilterMomentsState.dPass->getRootVar()["PerImageCB"];
 
-    perImageCB["gIllumination"]     = mFilterMomentsState.pCurIllum;
-    perImageCB["gMoments"]          = mFilterMomentsState.pCurMoments;
-    perImageCB["gHistoryLength"]    = mFilterMomentsState.pCurHistoryLength;
-    perImageCB["gLinearZAndNormal"] = mPackLinearZAndNormalState.pLinearZAndNormal;
+    perImageCB["gIllumination"]     = svgfrd.fetchInternalTex("FilterMomentsIllum");
+    perImageCB["gMoments"]          = svgfrd.fetchInternalTex("FilterMomentsMoments");
+    perImageCB["gHistoryLength"]    = svgfrd.fetchInternalTex("FilterMomentsHistoryLength");
+    perImageCB["gLinearZAndNormal"] = svgfrd.fetchInternalTex("LinearZAndNormalTex");
 
     mpUtilities->clearRawOutputBuffer(pRenderContext, 0);
     mpUtilities->clearRawOutputBuffer(pRenderContext, 1);
@@ -1011,9 +1012,9 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
     mReprojectState.sPass->execute(pRenderContext, mpCurReprojFbo);
 
     // save a copy of our past filtration for backwards differentiation
-    pRenderContext->blit(mpFilteredPastFbo->getColorTexture(0)->getSRV(), mReprojectState.pPrevFiltered->getRTV());
-    pRenderContext->blit(mpPrevReprojFbo->getColorTexture(1)->getSRV(), mReprojectState.pPrevMoments->getRTV());
-    pRenderContext->blit(mpPrevReprojFbo->getColorTexture(2)->getSRV(), mReprojectState.pPrevHistoryLength->getRTV());
+    svgfrd.saveInternalTex(pRenderContext, "ReprojPastFiltered", mpFilteredPastFbo->getColorTexture(0));
+    svgfrd.saveInternalTex(pRenderContext, "ReprojPrevMoments", mpPrevReprojFbo->getColorTexture(1));
+    svgfrd.saveInternalTex(pRenderContext, "ReprojPrevHistoryLength", mpPrevReprojFbo->getColorTexture(2));
 
     svgfrd.fetchTexTable("FilteredPast") = mpFilteredPastFbo->getColorTexture(0);
     svgfrd.fetchTexTable("ReprojOutputCurIllum") = mpCurReprojFbo->getColorTexture(0);
@@ -1033,11 +1034,11 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
     perImageCB["gEmission"]      = svgfrd.pEmissionTexture;
     perImageCB["gAlbedo"]        = svgfrd.pAlbedoTexture;
     perImageCB["gPositionNormalFwidth"] = svgfrd.pPosNormalFwidthTexture;
-    perImageCB["gPrevIllum"]     = mReprojectState.pPrevFiltered;
-    perImageCB["gPrevMoments"]   = mReprojectState.pPrevMoments;
-    perImageCB["gLinearZAndNormal"]       = mPackLinearZAndNormalState.pLinearZAndNormal;
-    perImageCB["gPrevLinearZAndNormal"]   = svgfrd.pPrevLinearZAndNormalTexture;
-    perImageCB["gPrevHistoryLength"] =  mReprojectState.pPrevHistoryLength;
+    perImageCB["gPrevIllum"]     = svgfrd.fetchInternalTex("ReprojPastFiltered");
+    perImageCB["gPrevMoments"]   = svgfrd.fetchInternalTex("ReprojPrevMoments");
+    perImageCB["gLinearZAndNormal"]       = svgfrd.fetchInternalTex("LinearZAndNormalTex");
+    perImageCB["gPrevLinearZAndNormal"]   = svgfrd.fetchInternalTex("LinearZAndNormalPrevTex");
+    perImageCB["gPrevHistoryLength"] = svgfrd.fetchInternalTex("ReprojPrevHistoryLength");
 
     // Setup variables for our reprojection pass
     perImageCB["dvAlpha"] = mReprojectState.mAlpha.dv;
@@ -1134,6 +1135,7 @@ void SVGFPass::computeLinearZAndNormal(RenderContext* pRenderContext, SVGFRender
 {
     FALCOR_PROFILE(pRenderContext, "Linear Z and Normal");
 
+
     auto perImageCB = mPackLinearZAndNormalState.sPass->getRootVar()["PerImageCB"];
     perImageCB["gLinearZ"] = svgfrd.pLinearZTexture;
     perImageCB["gNormal"] = svgfrd.pWorldNormalTexture;
@@ -1142,7 +1144,10 @@ void SVGFPass::computeLinearZAndNormal(RenderContext* pRenderContext, SVGFRender
 
     pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(), mPackLinearZAndNormalState.pLinearZAndNormal->getRTV());
 
-    svgfrd.fetchTexTable("gLinearZAndNormal") = mPackLinearZAndNormalState.pLinearZAndNormal;
+    svgfrd.saveInternalTex(pRenderContext, "LinearZAndNormalTex", mpLinearZAndNormalFbo->getColorTexture(0));
+    svgfrd.fetchTexTable("gLinearZAndNormal") = svgfrd.fetchInternalTex("LinearZAndNormalTex"); // point to the unchanging one
+
+    svgfrd.saveInternalTex(pRenderContext, "LinearZAndNormalPrevTex", svgfrd.pPrevLinearZAndNormalTexture);
 }
 
 void SVGFPass::renderUI(Gui::Widgets& widget)
