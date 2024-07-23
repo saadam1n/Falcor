@@ -45,6 +45,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     RenderPass(pDevice),
     mpUtilities(make_ref<SVGFUtilitySet>(pDevice, 200, 200, 800, 800)),
     mpParameterReflector(make_ref<FilterParameterReflector>(mpUtilities)),
+    mRenderData(pDevice, mpUtilities),
     mTrainingDataset(pDevice, mpUtilities, "C:/FalcorFiles/Dataset0/")
 {
     for (const auto& [key, value] : props)

@@ -230,10 +230,10 @@ public:
     void swapInternalBuffers(RenderContext* pRenderContext);
     void popInternalBuffers(RenderContext* pRenderContext);
 protected:
-    // utils
-    ref<SVGFUtilitySet> mpUtilities;
     // keep track of this for whatever reason
     ref<Device> mpDevice;
+    // utils
+    ref<SVGFUtilitySet> mpUtilities;
 private:
     // the advantage of using a ref here is that we do not have to blit
     std::map<std::string, ref<Texture>> mTextureTable;
@@ -245,6 +245,8 @@ private:
         ref<Texture> mSwapTextures[2];
         // all saved revisions of this texture
         std::vector<Bitmap::UniqueConstPtr> mSavedRevisions;
+
+        InternalTexture operator=(const InternalTexture& other) = delete;
     };
 
     std::map<std::string, InternalTexture> mInternalTextureMappings;
@@ -252,7 +254,7 @@ private:
     std::vector<std::future<void>> mAsyncReadOperations;
 };
 
-struct SVGFTrainingDataset : protected SVGFRenderData
+struct SVGFTrainingDataset : public SVGFRenderData
 {
 public:
     SVGFTrainingDataset(ref<Device> pDevice, ref<SVGFUtilitySet> utilities, const std::string& folder);

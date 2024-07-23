@@ -159,15 +159,11 @@ void SVGFRenderData::saveInternalTex(RenderContext* pRenderContext, const std::s
 {
     if (mInternalTextureMappings.count(s) == 0)
     {
-        InternalTexture internalTex;
-
-        internalTex.mSwapTextures[0] = mpUtilities->createFullscreenTexture();
-        internalTex.mSwapTextures[1] = mpUtilities->createFullscreenTexture();
-
-        mInternalTextureMappings[s] = internalTex;
+        mInternalTextureMappings[s].mSwapTextures[0] = mpUtilities->createFullscreenTexture();
+        mInternalTextureMappings[s].mSwapTextures[1] = mpUtilities->createFullscreenTexture();
     }
 
-    pRenderContext->blit(tex, mInternalTextureMappings[s].mSwapTextures[1]->getRTV());
+    pRenderContext->blit(tex->getSRV(), mInternalTextureMappings[s].mSwapTextures[1]->getRTV());
 }
 
 ref<Texture> SVGFRenderData::fetchInternalTex(const std::string& s)
@@ -191,13 +187,13 @@ void SVGFRenderData::swapInternalBuffers(RenderContext* pRenderContext)
             // allocate more slots if not avaiable yet
             if (revisions.size() < mInternalRegistryFrameCount)
             {
-                revisions.resize(mInternalRegistryFrameCount);
+                //revisions.resize(mInternalRegistryFrameCount);
             }
 
             // allocate bitmap if not allocated already
             if (!revisions[saveIndex].get())
             {
-                revisions[saveIndex] = Bitmap::create(screenWidth, screenHeight, ResourceFormat::RGBA32Float, nullptr);
+                revisions[saveIndex] = std::move(Bitmap::create(screenWidth, screenHeight, ResourceFormat::RGBA32Float, nullptr));
             }
 
             std::memcpy(revisions[saveIndex]->getData(), ptr->getData().data(), numPixels * sizeof(float4));
