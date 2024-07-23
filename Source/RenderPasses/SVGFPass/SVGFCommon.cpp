@@ -208,8 +208,7 @@ void SVGFRenderData::pushInternalBuffers(RenderContext* pRenderContext)
             src->getData((void*)dst, numPixels * sizeof(float4));
         };
 
-        //mAsyncReadOperations.push_back(std::async(std::launch::async, async_download, ptr, internalTex.mSavedRevisions[saveIndex]->getData()));
-        async_download(ptr, internalTex.mSavedRevisions[saveIndex]->getData());
+        mAsyncReadOperations.push_back(std::async(std::launch::async, async_download, ptr, internalTex.mSavedRevisions[saveIndex]->getData()));
     }
 }
 
@@ -223,7 +222,6 @@ void SVGFRenderData::popInternalBuffers(RenderContext* pRenderContext)
             mAsyncReadOperations.pop_back();
         }
     }
-
 
     int readIndex = --mInternalRegistryFrameCount;
 
