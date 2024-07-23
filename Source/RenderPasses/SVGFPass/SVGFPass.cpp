@@ -86,7 +86,6 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     mpFuncOutputUpper =  make_ref<Texture>(pDevice, Resource::Type::Texture2D, ResourceFormat::RGBA32Float, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource, nullptr);
 
     // set linear z params
-    mPackLinearZAndNormalState.pLinearZAndNormal = mpUtilities->createFullscreenTexture();
 
 
 
@@ -111,10 +110,6 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     mReprojectState.mKernel.dv[2] = 1.0;
     REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mKernel);
 
-    mReprojectState.pPrevFiltered = mpUtilities->createFullscreenTexture();
-    mReprojectState.pPrevMoments = mpUtilities->createFullscreenTexture();
-    mReprojectState.pPrevHistoryLength = mpUtilities->createFullscreenTexture();
-
 
 
     // set filter moments params
@@ -134,10 +129,6 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     mFilterMomentsState.mVarianceBoostFactor.dv = 4.0;
     REGISTER_PARAMETER(mpParameterReflector, mFilterMomentsState.mVarianceBoostFactor);
 
-    mFilterMomentsState.pCurIllum = mpUtilities->createFullscreenTexture();
-    mFilterMomentsState.pCurMoments = mpUtilities->createFullscreenTexture();
-    mFilterMomentsState.pCurHistoryLength = mpUtilities->createFullscreenTexture();
-
 
     // set atrous state
     mpAtrousSubpass = make_ref<SVGFAtrousSubpass>(mpDevice, mpUtilities, mpParameterReflector);
@@ -145,9 +136,6 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
 
     // set final modulate state vars
     mFinalModulateState.pdaIllumination = mpUtilities->createAccumulationBuffer();
-    mFinalModulateState.pFinalFiltered = mpUtilities->createFullscreenTexture();
-
-
 
     // set loss vars
     mLossState.pGaussianXInput = mpUtilities->createFullscreenTexture();
@@ -381,7 +369,7 @@ void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, SVGFRenderData& rend
         perImageCB["gEmission"] = renderData.pEmissionTexture;
         perImageCB["gIllumination"] = renderData.fetchTexTable("FinalModulateInIllumination");
         mFinalModulateState.sPass->execute(pRenderContext, mpFinalFbo);
-        pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), mFinalModulateState.pFinalFiltered->getRTV());
+        renderData.saveInternalTex(pRenderContext, "FinalModulateFinalFiltered", mpPingPongFbo[0]->getColorTexture(0));
 
         if (updateInternalBuffers)
         {
@@ -872,7 +860,7 @@ void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, SVGFRend
     auto perImageCB = mFinalModulateState.dPass->getRootVar()["PerImageCB"];
     perImageCB["gAlbedo"] = svgfrd.pAlbedoTexture;
     perImageCB["gEmission"] = svgfrd.pEmissionTexture;
-    perImageCB["gIllumination"] = mFinalModulateState.pFinalFiltered;
+    perImageCB["gIllumination"] = svgfrd.fetchInternalTex("FinalModulateFinalFiltered");
     perImageCB["daIllumination"] = mFinalModulateState.pdaIllumination;
 
     auto perImageCB_D = mFinalModulateState.dPass->getRootVar()["PerImageCB_D"];
@@ -1141,8 +1129,6 @@ void SVGFPass::computeLinearZAndNormal(RenderContext* pRenderContext, SVGFRender
     perImageCB["gNormal"] = svgfrd.pWorldNormalTexture;
 
     mPackLinearZAndNormalState.sPass->execute(pRenderContext, mpLinearZAndNormalFbo);
-
-    pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(), mPackLinearZAndNormalState.pLinearZAndNormal->getRTV());
 
     svgfrd.saveInternalTex(pRenderContext, "LinearZAndNormalTex", mpLinearZAndNormalFbo->getColorTexture(0));
     svgfrd.fetchTexTable("gLinearZAndNormal") = svgfrd.fetchInternalTex("LinearZAndNormalTex"); // point to the unchanging one
