@@ -170,33 +170,35 @@ ref<Texture> SVGFRenderData::fetchInternalTex(const std::string& s)
     return mInternalTextureMappings[s].mSavedTexture;
 }
 
-void SVGFRenderData::swapInternalBuffers(RenderContext* pRenderContext)
+void SVGFRenderData::pushInternalBuffers(RenderContext* pRenderContext)
 {
     int saveIndex = mInternalRegistryFrameCount++;
+    int requiredSize = mInternalRegistryFrameCount;
 
     for (auto& [s, internalTex] : mInternalTextureMappings)
     {
-        auto async_download = [=](ref<Texture> tex, std::vector<Bitmap::UniqueConstPtr>& revisions)
+        continue;
+        CopyContext::ReadTextureTask::SharedPtr ptr = pRenderContext->asyncReadTextureSubresource(internalTex.mSavedTexture.get(), 0);
+
+        // save this current texture
+        // allocate more slots if not avaiable yet
+        if (internalTex.mSavedRevisions.size() < requiredSize)
         {
-            auto ptr = pRenderContext->asyncReadTextureSubresource(tex.get(), 0);
+            internalTex.mSavedRevisions.resize(requiredSize);
+        }
 
-            // save this current texture
-            // allocate more slots if not avaiable yet
-            if (revisions.size() < mInternalRegistryFrameCount)
-            {
-                //revisions.resize(mInternalRegistryFrameCount);
-            }
+        // allocate bitmap if not allocated already
+        if (!internalTex.mSavedRevisions[saveIndex].get())
+        {
+            internalTex.mSavedRevisions[saveIndex] = std::move(Bitmap::create(screenWidth, screenHeight, ResourceFormat::RGBA32Float, nullptr));
+        }
 
-            // allocate bitmap if not allocated already
-            if (!revisions[saveIndex].get())
-            {
-                revisions[saveIndex] = std::move(Bitmap::create(screenWidth, screenHeight, ResourceFormat::RGBA32Float, nullptr));
-            }
-
-            std::memcpy(revisions[saveIndex]->getData(), ptr->getData().data(), numPixels * sizeof(float4));
+        auto async_download = [](CopyContext::ReadTextureTask::SharedPtr src, uint8_t* dst)
+        {
+            src->getData((void*)dst, numPixels * sizeof(float4));
         };
 
-        //mAsyncReadOperations.push_back(std::async(std::launch::async, async_download, internalTex.mSavedTexture, internalTex.mSavedRevisions));
+        mAsyncReadOperations.push_back(std::async(std::launch::async, async_download, ptr, internalTex.mSavedRevisions[saveIndex]->getData()));
     }
 }
 

@@ -227,7 +227,7 @@ public:
 
     void saveInternalTex(RenderContext* pRenderContext, const std::string& s, ref<Texture> tex);
     ref<Texture> fetchInternalTex(const std::string& s);
-    void swapInternalBuffers(RenderContext* pRenderContext);
+    void pushInternalBuffers(RenderContext* pRenderContext);
     void popInternalBuffers(RenderContext* pRenderContext);
 protected:
     // keep track of this for whatever reason

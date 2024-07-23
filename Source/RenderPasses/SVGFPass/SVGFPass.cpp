@@ -493,10 +493,12 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
             }
 
             runSvgfFilter(pRenderContext, mTrainingDataset, true);
-            mTrainingDataset.swapInternalBuffers(pRenderContext);
+            mTrainingDataset.pushInternalBuffers(pRenderContext);
 
             if(mDatasetIndex >= K_FRAME_SAMPLE_START)
             {
+                //mTrainingDataset.popInternalBuffers(pRenderContext);
+
                 computeDerivatives(pRenderContext, mTrainingDataset, true);
 
                 // now accumulate everything
