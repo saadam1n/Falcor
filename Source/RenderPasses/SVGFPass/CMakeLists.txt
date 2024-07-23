@@ -19,6 +19,8 @@ target_sources(SVGFPass PRIVATE
 
     SVGFDerivativeVerify.ps.slang
 
+    SVGFDummyFullScreenPass.ps.slang
+
     SVGFFilterMomentsC.slang
     SVGFFilterMomentsD.ps.slang
     SVGFFilterMomentsS.ps.slang

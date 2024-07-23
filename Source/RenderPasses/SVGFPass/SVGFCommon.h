@@ -24,6 +24,8 @@ namespace
 
     const char kDerivativeVerifyShader[]      = "RenderPasses/SVGFPass/SVGFDerivativeVerify.ps.slang";
 
+    const char kDummyFullScreenShader[]       = "RenderPasses/SVGFPass/SVGFDummyFullScreenPass.ps.slang";
+
     const char kFilterMomentShaderS[]         = "RenderPasses/SVGFPass/SVGFFilterMomentsS.ps.slang";
     const char kFilterMomentShaderD[]         = "RenderPasses/SVGFPass/SVGFFilterMomentsD.ps.slang";
 
@@ -130,7 +132,7 @@ public:
     ref<FullScreenPass> createFullscreenPassAndDumpIR(const std::string& path);
 
     ref<Fbo> getDummyFullscreenFbo();
-
+    void executeDummyFullscreenPass(RenderContext* pRenderContext, ref<Texture> tex);
 
     void runCompactingPass(RenderContext* pRenderContext, int idx, int n);
     void clearRawOutputBuffer(RenderContext* pRenderContext, int idx);
@@ -146,6 +148,7 @@ private:
     int mTextureMemUsage = 0;
 
     ref<Fbo> mpDummyFullscreenFbo;
+    ref<FullScreenPass> mpDummyFullscreenPass;
 
     ref<FullScreenPass> mpCompactingPass;
 

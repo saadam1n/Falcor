@@ -16,6 +16,8 @@ SVGFUtilitySet::SVGFUtilitySet(ref<Device> pDevice, int minX, int minY, int maxX
     {
         mpdrCompactedBuffer[i] = createAccumulationBuffer();
     }
+
+    mpDummyFullscreenPass = createFullscreenPassAndDumpIR(kDummyFullScreenShader);
 }
 
 void SVGFUtilitySet::allocateFbos(uint2 dim, RenderContext* pRenderContext)
@@ -57,6 +59,15 @@ ref<FullScreenPass> SVGFUtilitySet::createFullscreenPassAndDumpIR(const std::str
 ref<Fbo> SVGFUtilitySet::getDummyFullscreenFbo()
 {
     return mpDummyFullscreenFbo;
+}
+
+void SVGFUtilitySet::executeDummyFullscreenPass(RenderContext* pRenderContext, ref<Texture> tex)
+{
+    auto dummyCB = mpDummyFullscreenPass->getRootVar()["DummyBuffer"];
+
+    dummyCB["tex"] = tex;
+
+    mpDummyFullscreenPass->execute(pRenderContext, mpDummyFullscreenFbo);
 }
 
 void SVGFUtilitySet::runCompactingPass(RenderContext* pRenderContext, int idx, int n)
@@ -204,16 +215,22 @@ void SVGFRenderData::pushInternalBuffers(RenderContext* pRenderContext)
 
 void SVGFRenderData::popInternalBuffers(RenderContext* pRenderContext)
 {
-    while (!mAsyncReadOperations.empty())
     {
-        mAsyncReadOperations.back().get();
-        mAsyncReadOperations.pop_back();
+        FALCOR_PROFILE(pRenderContext, "Download internals");
+        while (!mAsyncReadOperations.empty())
+        {
+            mAsyncReadOperations.back().get();
+            mAsyncReadOperations.pop_back();
+        }
     }
+
 
     int readIndex = --mInternalRegistryFrameCount;
 
     for (auto& [s, internalTex] : mInternalTextureMappings)
     {
+        FALCOR_PROFILE(pRenderContext, "Update " + s);
+
         pRenderContext->updateTextureData(internalTex.mSavedTexture.get(), (const void*)internalTex.mSavedRevisions[readIndex]->getData());
     }
 }
