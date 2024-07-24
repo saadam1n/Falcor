@@ -409,6 +409,19 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
     std::cout.flush();
 }
 
+
+const int K_NUM_EPOCHS = 8;
+const int K_FRAME_SAMPLE_START = 10;
+
+const float K_LRATE_NUMER = 15.0f * 0.01f; // 0.0085 is a good value
+const float K_LRATE_DENOM = 15.0f * 1.0f;
+
+// parameters for the adam algorithm
+// the paper recommends 0.9 and 0.999 respectively, but we observed that leads to exploding gradients
+const float K_BETA_MOMENTUM = 0.9f;
+const float K_BETA_SSGRAD = 0.999f;
+const float K_ADAM_ELIPSON = 5e-3f;
+
 void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData)
 {
     mRenderData.copyTextureReferences(renderData);
@@ -442,26 +455,27 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
     }
 }
 
-// parameters for the adam algorithm
-// the paper recommends 0.9 and 0.999 respectively, but we observed that leads to exploding gradients
-const float K_BETA_MOMENTUM = 0.9f;
-const float K_BETA_SSGRAD = 0.999f;
 
-static float betaMomentumCorrection = K_BETA_MOMENTUM;
-static float betaSsgradCorrection = K_BETA_SSGRAD;
 
 static std::vector<float> lossHistory;
 void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 {
     FALCOR_PROFILE(pRenderContext, "Next Training Task");
 
-    const int K_NUM_EPOCHS = 16;
-    const int K_FRAME_SAMPLE_START = 10;
+
+
+
 
     mTrainingDataset.preloadBitmaps();
 
     if(mEpoch < K_NUM_EPOCHS)
     {
+        if(mEpoch == 0)
+        {
+            mBetaMomentumCorrection = K_BETA_MOMENTUM;
+            mBetaSsgradCorrection = K_BETA_SSGRAD;
+        }
+
         if (mDatasetIndex == 0) {
             mBuffersNeedClear = true;
             mReductionAddress = 0;
@@ -474,23 +488,7 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
                 std::cout << "\tOn Frame " << mDatasetIndex << "\n";
             }
             // first clear all our buffers
-            {
-                FALCOR_PROFILE(pRenderContext, "Clr Param Buffers");
-                for (int i = 0; i < mpParameterReflector->getNumParams(); i++)
-                {
-                    //mpParameterReflector->mRegistry[i].mAddress->clearBuffer(pRenderContext);
-                    pRenderContext->clearUAV(mpParameterReflector->mRegistry[i].mAccum->getUAV().get(), float4(0));
-
-                    if(mEpoch == 0)
-                    {
-                        for(int j = 0; j < mpParameterReflector->mRegistry[i].mNumElements; j++)
-                        {
-                            mpParameterReflector->mRegistry[i].momentum[j] = 0.0f;
-                            mpParameterReflector->mRegistry[i].ssgrad[j] = 0.0f;
-                        }
-                    }
-                }
-            }
+            clearTrainingBuffers(pRenderContext);
 
             runSvgfFilter(pRenderContext, mTrainingDataset, true);
             //mTrainingDataset.pushInternalBuffers(pRenderContext);
@@ -502,15 +500,7 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
                 computeDerivatives(pRenderContext, mTrainingDataset, true);
 
                 // now accumulate everything
-                {
-                    FALCOR_PROFILE(pRenderContext, "Parameter Reduction");
-                    for (int i = 0; i < mpParameterReflector->getNumParams(); i++)
-                    {
-                        mReductionAddress = reduceParameter(pRenderContext, mpParameterReflector->mRegistry[i], mReductionAddress);
-                    }
-                }
-
-                mpParallelReduction->execute<float4>(pRenderContext, mTrainingDataset.pLossTexture, ParallelReduction::Type::Sum, nullptr, mReadbackBuffer[2], mDatasetIndex * sizeof(float4));
+                reduceAllData(pRenderContext);
 
                 // keep a copy of our output
                 //mTrainingDataset.pOutputTexture->captureToFile(0, 0, "C:/FalcorFiles/TrainingDump/" + std::to_string(epoch) + ".exr", Falcor::Bitmap::FileFormat::ExrFile, Falcor::Bitmap::ExportFlags::None, false);
@@ -521,122 +511,14 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
         else
         {
             int batchSize = mDatasetIndex;
-
-            const float K_LRATE_NUMER = 15.0f * 0.01f; // 0.0085 is a good value
-            const float K_LRATE_DENOM = 15.0f * 1.0f;
-
-            // skip the first few frames which probably don't have stablized derivatives
             int sampledFrames = batchSize - K_FRAME_SAMPLE_START;
 
-            float learningRate = K_LRATE_NUMER / (K_LRATE_DENOM + mEpoch);
-
-            int stride = 0;
-            for (int i = 0; i < mpParameterReflector->getNumParams(); i++)
-            {
-                stride += 4 * ((mpParameterReflector->mRegistry[i].mNumElements + 3) / 4);
-            }
-
-            int currentOffset = 0;
-
-            // adjust values
-            float maxAdjValue = 0.0f;
-            std::string maxAdjParamName = "none";
-            std::vector<std::string> mismatchedParameters;
-            {
-                float* gradient = (float*)mReadbackBuffer[0]->map();
-
-                for (int i = 0; i < mpParameterReflector->getNumParams(); i++)
-                {
-                    auto& pmi = mpParameterReflector->mRegistry[i];
-
-                    for (int j = 0; j < pmi.mNumElements; j++)
-                    {
-                        float totalGradient = 0.0f;
-                        for (int k = 0; k < sampledFrames; k++)
-                        {
-                            totalGradient += gradient[k * stride + currentOffset];
-                        }
-
-                        totalGradient /= sampledFrames;
-
-                        float nextMomentum = K_BETA_MOMENTUM * pmi.momentum[j] + (1.0f - K_BETA_MOMENTUM) * totalGradient;
-                        float nextSsgrad = K_BETA_SSGRAD * pmi.ssgrad[j] + (1.0f - K_BETA_SSGRAD) * totalGradient * totalGradient;
-
-                        pmi.momentum[j] = nextMomentum;
-                        pmi.ssgrad[j] = nextSsgrad;
-
-                        float unbiasedMomentum = nextMomentum / (1.0f - betaMomentumCorrection);
-                        float unbiasedSsgrad = nextSsgrad / (1.0f - betaSsgradCorrection);
+            updateParameters(pRenderContext, sampledFrames);
+            printLoss(pRenderContext, batchSize, sampledFrames);
 
 
-                        float adjustment = learningRate * unbiasedMomentum / (sqrt(unbiasedSsgrad) + 5e-3f);
-                        pmi.mAddress[j] -= adjustment;
-
-                        std::cout << "\tAdjusting " << pmi.mName << "\tby " << -adjustment << "\twhen negative gradient is " << -totalGradient << "\n";
-
-                        if(sign(adjustment) != sign(totalGradient))
-                        {
-                            std::cout << "\tSign mismatch with " << totalGradient << "\n";
-                            mismatchedParameters.push_back(pmi.mName);
-                        }
-
-                        std::cout << "\n";
-
-                        // ensure greater than zero
-                        if (pmi.mAddress[j] < 0.0f)
-                        {
-                            pmi.mAddress[j] = 0.0f;
-                        }
-
-                        if(abs(adjustment) > abs(maxAdjValue))
-                        {
-                            maxAdjValue = adjustment;
-                            maxAdjParamName = pmi.mName;
-                        }
-
-                        currentOffset++;
-                    }
-
-                    // round up divide
-                    currentOffset = 4 * ((currentOffset + 3) / 4);
-                }
-
-                mReadbackBuffer[0]->unmap();
-            }
-            std::cout << "Max adjustment was " << maxAdjValue << "\tfor " << maxAdjParamName  << "\n";
-
-            std::cout << mismatchedParameters.size() << " mismatched parameters:\n";
-            for(const auto& s : mismatchedParameters)
-            {
-                std::cout << "\t" << s << "\n";
-            }
-
-            // now wait for it to execute and download it
-            float4 loss = float4(0.0f);
-            {
-                float4* perFrameLoss = (float4*)mReadbackBuffer[2]->map();
-
-                for(int i = K_FRAME_SAMPLE_START; i < batchSize; i++)
-                {
-                    loss += perFrameLoss[i];
-                }
-
-                mReadbackBuffer[2]->unmap();
-            }
-            loss /= float4(sampledFrames);
-            std::cout << "Average loss in epoch\t" << mEpoch << "\tacross " << sampledFrames << "\t frames was " << loss.r << "\n";
-
-            lossHistory.push_back(loss.r);
-            std::cout << "Loss history:\n";
-            for(float l : lossHistory)
-            {
-                std::cout << "\t" << l << std::endl;
-            }
-
-            std::cout << "\n\n\n\n\n\n";
-
-            betaMomentumCorrection *= K_BETA_MOMENTUM;
-            betaSsgradCorrection *= K_BETA_SSGRAD;
+            mBetaMomentumCorrection *= K_BETA_MOMENTUM;
+            mBetaSsgradCorrection *= K_BETA_SSGRAD;
 
             mReductionAddress = 0;
             mDatasetIndex = 0;
@@ -647,6 +529,148 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
     {
         mTrained = true;
     }
+}
+
+void SVGFPass::clearTrainingBuffers(RenderContext* pRenderContext)
+{
+    FALCOR_PROFILE(pRenderContext, "Clr Param Buffers");
+    for (auto& param : mpParameterReflector->mRegistry)
+    {
+        pRenderContext->clearUAV(param.mAccum->getUAV().get(), float4(0));
+
+        if(mEpoch == 0)
+        {
+            for(int j = 0; j < param.mNumElements; j++)
+            {
+                param.momentum[j] = 0.0f;
+                param.ssgrad[j] = 0.0f;
+            }
+        }
+    }
+}
+
+void SVGFPass::reduceAllData(RenderContext* pRenderContext)
+{
+    FALCOR_PROFILE(pRenderContext, "Data Reduction");
+    for (auto& param : mpParameterReflector->mRegistry)
+    {
+        mReductionAddress = reduceParameter(pRenderContext, param, mReductionAddress);
+    }
+
+    mpParallelReduction->execute<float4>(pRenderContext, mTrainingDataset.pLossTexture, ParallelReduction::Type::Sum, nullptr, mReadbackBuffer[2], mDatasetIndex * sizeof(float4));
+}
+
+float SVGFPass::getAverageGradient(float* ptr, int baseOffset, int sampledFrames)
+{
+    float totalGradient = 0.0f;
+    for (int k = 0; k < sampledFrames; k++)
+    {
+        totalGradient += ptr[baseOffset + k * mpParameterReflector->getPackedStride()];
+    }
+    totalGradient /= sampledFrames;
+
+    return totalGradient;
+}
+
+float SVGFPass::calculateBaseAdjustment(float gradient, float& momentum, float& ssgrad)
+{
+    float nextMomentum = K_BETA_MOMENTUM * momentum + (1.0f - K_BETA_MOMENTUM) * gradient;
+    float nextSsgrad = K_BETA_SSGRAD * ssgrad + (1.0f - K_BETA_SSGRAD) * gradient * gradient;
+
+    momentum = nextMomentum;
+    ssgrad = nextSsgrad;
+
+    float unbiasedMomentum = nextMomentum / (1.0f - mBetaMomentumCorrection);
+    float unbiasedSsgrad = nextSsgrad / (1.0f - mBetaSsgradCorrection);
+
+    return unbiasedMomentum / (sqrt(unbiasedSsgrad) + K_ADAM_ELIPSON);
+}
+
+void SVGFPass::updateParameters(RenderContext* pRenderContext, int sampledFrames)
+{
+    // skip the first few frames which probably don't have stablized derivatives
+
+    float learningRate = K_LRATE_NUMER / (K_LRATE_DENOM + mEpoch);
+
+    int currentOffset = 0;
+
+    // adjust values
+    float maxAdjValue = 0.0f;
+    std::string maxAdjParamName = "none";
+    std::vector<std::string> mismatchedParameters;
+
+    float* gradient = (float*)mReadbackBuffer[0]->map();
+    for (int i = 0; i < mpParameterReflector->getNumParams(); i++)
+    {
+        auto& pmi = mpParameterReflector->mRegistry[i];
+
+        for (int j = 0; j < pmi.mNumElements; j++)
+        {
+            float averageGradient = getAverageGradient(gradient, currentOffset, sampledFrames);
+
+            float adjustment = learningRate * calculateBaseAdjustment(averageGradient, pmi.momentum[j], pmi.ssgrad[j]);
+            pmi.mAddress[j] -= adjustment;
+            pmi.mAddress[j] = std::max(pmi.mAddress[j], 0.0f); // gradient clipping
+            currentOffset++;
+
+
+            std::cout << "\tAdjusting " << pmi.mName << "\tby " << -adjustment << "\twhen negative gradient is " << -averageGradient << "\n";
+            if(sign(adjustment) != sign(averageGradient))
+            {
+                std::cout << "\tSign mismatch with " << averageGradient << "\n";
+                mismatchedParameters.push_back(pmi.mName);
+            }
+            std::cout << "\n";
+
+            if(abs(adjustment) > abs(maxAdjValue))
+            {
+                maxAdjValue = adjustment;
+                maxAdjParamName = pmi.mName;
+            }
+
+        }
+
+        // round up divide
+        currentOffset = 4 * ((currentOffset + 3) / 4);
+    }
+
+    mReadbackBuffer[0]->unmap();
+
+
+    std::cout << "Max adjustment was " << maxAdjValue << "\tfor " << maxAdjParamName  << "\n";
+
+    std::cout << mismatchedParameters.size() << " mismatched parameters:\n";
+    for(const auto& s : mismatchedParameters)
+    {
+        std::cout << "\t" << s << "\n";
+    }
+}
+
+void SVGFPass::printLoss(RenderContext* pRenderContext, int batchSize, int sampledFrames)
+{
+    // now wait for it to execute and download it
+    float4 loss = float4(0.0f);
+    {
+        float4* perFrameLoss = (float4*)mReadbackBuffer[2]->map();
+
+        for(int i = K_FRAME_SAMPLE_START; i < batchSize; i++)
+        {
+            loss += perFrameLoss[i];
+        }
+
+        mReadbackBuffer[2]->unmap();
+    }
+    loss /= float4(sampledFrames);
+    std::cout << "Average loss in epoch\t" << mEpoch << "\tacross " << sampledFrames << "\t frames was " << loss.r << "\n";
+
+    lossHistory.push_back(loss.r);
+    std::cout << "Loss history:\n";
+    for(float l : lossHistory)
+    {
+        std::cout << "\t" << l << std::endl;
+    }
+
+    std::cout << "\n\n\n\n\n\n";
 }
 
 
@@ -1114,7 +1138,6 @@ int SVGFPass::reduceParameter(RenderContext* pRenderContext, ParameterMetaInfo& 
     }
 #endif
 }
-
 
 // Extracts linear z and its derivative from the linear Z texture and packs
 // the normal from the world normal texture and packes them into the FBO.

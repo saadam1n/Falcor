@@ -124,6 +124,18 @@ size_t FilterParameterReflector::getNumParams()
     return mRegistry.size();
 }
 
+// todo: cache this calculated value
+int FilterParameterReflector::getPackedStride()
+{
+    int stride = 0;
+    for (auto& param : mRegistry)
+    {
+        stride += 4 * ((param.mNumElements + 3) / 4);
+    }
+
+    return stride;
+}
+
 SVGFRenderData::SVGFRenderData(ref<Device> pDevice, ref<SVGFUtilitySet> utilities) : mpDevice(pDevice), mpUtilities(utilities), mInternalRegistryFrameCount(0) {}
 
 SVGFRenderData::SVGFRenderData(ref<Device> pDevice, ref<SVGFUtilitySet> utilities, const RenderData& renderData) : SVGFRenderData(pDevice, utilities)

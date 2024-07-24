@@ -186,6 +186,7 @@ public:
     }
 
     size_t getNumParams();
+    int getPackedStride();
 
     std::vector<ParameterMetaInfo> mRegistry;
 private:

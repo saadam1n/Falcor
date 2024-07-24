@@ -67,9 +67,16 @@ private:
     bool mTrained = false;
     int mEpoch = 0;
     void runNextTrainingTask(RenderContext* pRenderContext);
+    void clearTrainingBuffers(RenderContext* pRenderContext);
+    void reduceAllData(RenderContext* pRenderContext);
+    float getAverageGradient(float* ptr, int baseOffset, int sampledFrames);
+    float calculateBaseAdjustment(float gradient, float& momentum, float& ssgrad);
+    void updateParameters(RenderContext* pRenderContext, int sampledFrames);
+    void printLoss(RenderContext* pRenderContext, int batchSize, int sampledFrames);
 
     void runDerivativeTest(RenderContext* pRenderContext, const RenderData& renderData);
     void runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData);
+
 
     void allocateFbos(uint2 dim, RenderContext* pRenderContext);
     void clearBuffers(RenderContext* pRenderContext, const SVGFRenderData& renderData);
@@ -130,6 +137,8 @@ private:
 
     int mDatasetIndex = 0;
     int mReductionAddress;
+    float mBetaMomentumCorrection;
+    float mBetaSsgradCorrection;
     SVGFTrainingDataset mTrainingDataset;
 
     // we want to optimize parameters per pass to get a little bit of extra tuning
