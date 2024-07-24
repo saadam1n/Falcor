@@ -482,44 +482,57 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
             std::cout << "Running epoch\t" << mEpoch << "\n";
         }
 
-        if (mTrainingDataset.loadNext(pRenderContext)) {
+        if (!mBackPropagatingState && mTrainingDataset.loadNext(pRenderContext)) {
             if(mDatasetIndex % 10 == 0)
             {
-                std::cout << "\tOn Frame " << mDatasetIndex << "\n";
+                std::cout << "\tRendering Frame " << mDatasetIndex << "\n";
             }
             // first clear all our buffers
             clearTrainingBuffers(pRenderContext);
 
             runSvgfFilter(pRenderContext, mTrainingDataset, true);
-            //mTrainingDataset.pushInternalBuffers(pRenderContext);
 
-            if(mDatasetIndex >= K_FRAME_SAMPLE_START)
-            {
-                //mTrainingDataset.popInternalBuffers(pRenderContext);
+            // lazy solution but it does the trick
+            // first save the current output and previous output
+            mTrainingDataset.saveInternalTex(pRenderContext, "LossOutput", mTrainingDataset.pOutputTexture);
+            mTrainingDataset.saveInternalTex(pRenderContext, "LossPrevOutput", mTrainingDataset.pPrevFiltered);
 
-                computeDerivatives(pRenderContext, mTrainingDataset, true);
-
-                // now accumulate everything
-                reduceAllData(pRenderContext);
-
-                // keep a copy of our output
-                //mTrainingDataset.pOutputTexture->captureToFile(0, 0, "C:/FalcorFiles/TrainingDump/" + std::to_string(epoch) + ".exr", Falcor::Bitmap::FileFormat::ExrFile, Falcor::Bitmap::ExportFlags::None, false);
-            }
+            mTrainingDataset.pushInternalBuffers(pRenderContext);
 
             mDatasetIndex++;
+            mFirstBackPropIteration = true;
+        }
+        else if(mDatasetIndex >= K_FRAME_SAMPLE_START)
+        {
+            if(mDatasetIndex % 10 == 0)
+            {
+                std::cout << "\tBackpropagating Frame " << mDatasetIndex << "\n";
+            }
+
+            mBackPropagatingState = true;
+            if(mFirstBackPropIteration)
+            {
+                mBatchSize = mDatasetIndex;
+                mFirstBackPropIteration = false;
+            }
+
+            mTrainingDataset.popInternalBuffers(pRenderContext);
+            computeDerivatives(pRenderContext, mTrainingDataset, true);
+            reduceAllData(pRenderContext);
+
+            mDatasetIndex--;
         }
         else
         {
-            int batchSize = mDatasetIndex;
-            int sampledFrames = batchSize - K_FRAME_SAMPLE_START;
+            int sampledFrames = mBatchSize - K_FRAME_SAMPLE_START;
 
             updateParameters(pRenderContext, sampledFrames);
-            printLoss(pRenderContext, batchSize, sampledFrames);
-
+            printLoss(pRenderContext, sampledFrames);
 
             mBetaMomentumCorrection *= K_BETA_MOMENTUM;
             mBetaSsgradCorrection *= K_BETA_SSGRAD;
 
+            mBackPropagatingState = false;
             mReductionAddress = 0;
             mDatasetIndex = 0;
             mEpoch++;
@@ -646,14 +659,14 @@ void SVGFPass::updateParameters(RenderContext* pRenderContext, int sampledFrames
     }
 }
 
-void SVGFPass::printLoss(RenderContext* pRenderContext, int batchSize, int sampledFrames)
+void SVGFPass::printLoss(RenderContext* pRenderContext, int sampledFrames)
 {
     // now wait for it to execute and download it
     float4 loss = float4(0.0f);
     {
         float4* perFrameLoss = (float4*)mReadbackBuffer[2]->map();
 
-        for(int i = K_FRAME_SAMPLE_START; i < batchSize; i++)
+        for(int i = K_FRAME_SAMPLE_START; i < mBatchSize; i++)
         {
             loss += perFrameLoss[i];
         }
@@ -783,7 +796,7 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, SVGFRenderData& render
     mpUtilities->setPatchingState(mLossState.dPass);
 
     computeGaussian(pRenderContext, renderData.pReferenceTexture, mLossState.pReferenceGaussian, false);
-    computeGaussian(pRenderContext, renderData.pOutputTexture, mLossState.pFilteredGaussian, true);
+    computeGaussian(pRenderContext, renderData.fetchInternalTex("LossOutput"), mLossState.pFilteredGaussian, true);
 
     mpUtilities->clearRawOutputBuffer(pRenderContext, 0);
     mpUtilities->clearRawOutputBuffer(pRenderContext, 1);
@@ -793,10 +806,10 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, SVGFRenderData& render
     perImageCB["filteredGaussian"] = mLossState.pFilteredGaussian;
     perImageCB["referenceGaussian"] = mLossState.pReferenceGaussian;
 
-    perImageCB["filteredImage"] = renderData.pOutputTexture;
+    perImageCB["filteredImage"] = renderData.fetchInternalTex("LossOutput");
     perImageCB["referenceImage"] = renderData.pReferenceTexture;
 
-    perImageCB["prevFiltered"] = renderData.pPrevFiltered;
+    perImageCB["prevFiltered"] = renderData.fetchInternalTex("LossPrevOutput");
     perImageCB["prevReference"] = renderData.pPrevReference;
 
     perImageCB["pdaFilteredGaussian"] = mpUtilities->mpdaRawOutputBuffer[0];
@@ -858,14 +871,14 @@ void SVGFPass::computeDerivGaussian(RenderContext* pRenderContext)
     mpUtilities->clearRawOutputBuffer(pRenderContext, 0);
     perImageCB_D["drIllumination"] = mpUtilities->mpdrCompactedBuffer[0];
 
-    perImageCB["image"] = mLossState.pGaussianYInput;
+    //perImageCB["image"] = mLossState.pGaussianYInput;
     perImageCB["yaxis"] = true;
     perImageCB["pdaIllumination"] = mpUtilities->mpdaRawOutputBuffer[0];
     mLossState.dGaussianPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
 
     mpUtilities->runCompactingPass(pRenderContext, 0, 11);
 
-    perImageCB["image"] = mLossState.pGaussianXInput;
+    //perImageCB["image"] = mLossState.pGaussianXInput;
     perImageCB["yaxis"] = false;
     perImageCB["pdaIllumination"] = mpUtilities->mpdaRawOutputBuffer[1];
     mLossState.dGaussianPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());

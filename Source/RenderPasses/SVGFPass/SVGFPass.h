@@ -72,7 +72,7 @@ private:
     float getAverageGradient(float* ptr, int baseOffset, int sampledFrames);
     float calculateBaseAdjustment(float gradient, float& momentum, float& ssgrad);
     void updateParameters(RenderContext* pRenderContext, int sampledFrames);
-    void printLoss(RenderContext* pRenderContext, int batchSize, int sampledFrames);
+    void printLoss(RenderContext* pRenderContext, int sampledFrames);
 
     void runDerivativeTest(RenderContext* pRenderContext, const RenderData& renderData);
     void runTrainingAndTesting(RenderContext* pRenderContext, const RenderData& renderData);
@@ -136,6 +136,9 @@ private:
     std::unique_ptr<ParallelReduction> mpParallelReduction; 
 
     int mDatasetIndex = 0;
+    int mBatchSize = 0;
+    bool mBackPropagatingState = false;
+    bool mFirstBackPropIteration;
     int mReductionAddress;
     float mBetaMomentumCorrection;
     float mBetaSsgradCorrection;
