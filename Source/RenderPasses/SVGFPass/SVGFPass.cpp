@@ -455,7 +455,7 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 {
     FALCOR_PROFILE(pRenderContext, "Next Training Task");
 
-    const int K_NUM_EPOCHS = 8;
+    const int K_NUM_EPOCHS = 16;
     const int K_FRAME_SAMPLE_START = 10;
 
     mTrainingDataset.preloadBitmaps();
@@ -522,7 +522,7 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
         {
             int batchSize = mDatasetIndex;
 
-            const float K_LRATE_NUMER = 15.0f * 0.0085f;
+            const float K_LRATE_NUMER = 15.0f * 0.01f; // 0.0085 is a good value
             const float K_LRATE_DENOM = 15.0f * 1.0f;
 
             // skip the first few frames which probably don't have stablized derivatives

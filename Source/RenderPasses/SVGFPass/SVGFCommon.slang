@@ -58,8 +58,7 @@ void d_computeWeight(
 [BackwardDifferentiable]
 float computeIdealNumer(float x, float m)
 {
-    return x;
-    //return lerp(x, x * x, m - 1.0f);
+    return lerp(x, x * x, m - 1.0f);
 }
 
 [BackwardDifferentiable]
