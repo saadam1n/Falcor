@@ -863,7 +863,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVG
 void SVGFPass::saveLossBuffers(RenderContext* pRenderContext, SVGFRenderData& renderData)
 {
     renderData.saveInternalTex(pRenderContext, "LossOutput", mTrainingDataset.pOutputTexture, true);
-    renderData.saveInternalTex(pRenderContext, "LossReference", mTrainingDataset.pReferenceTexture, true); // lazy way to do it tbh
+    //renderData.saveInternalTex(pRenderContext, "LossReference", mTrainingDataset.pReferenceTexture, true); // lazy way to do it tbh
 
 
     renderData.saveInternalTex(pRenderContext, "LossPrevOutput", mTrainingDataset.pPrevFiltered, true);
@@ -930,7 +930,7 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, SVGFRenderData& render
     }
 
 
-    computeGaussian(pRenderContext, renderData.fetchInternalTex("LossReference"), mLossState.pReferenceGaussian, false);
+    computeGaussian(pRenderContext, renderData.pReferenceTexture, mLossState.pReferenceGaussian, false);
     computeGaussian(pRenderContext, renderData.fetchInternalTex("LossOutput"), mLossState.pFilteredGaussian, true);
 
     mpUtilities->clearRawOutputBuffer(pRenderContext, 0);
@@ -942,7 +942,7 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, SVGFRenderData& render
     perImageCB["referenceGaussian"] = mLossState.pReferenceGaussian;
 
     perImageCB["filteredImage"] = renderData.fetchInternalTex("LossOutput");
-    perImageCB["referenceImage"] =  renderData.fetchInternalTex("LossReference");
+    perImageCB["referenceImage"] =  renderData.pReferenceTexture;
 
     perImageCB["prevFiltered"] = renderData.fetchInternalTex("LossPrevOutput");
     perImageCB["prevReference"] = renderData.fetchInternalTex("LossPrevReference"); 
