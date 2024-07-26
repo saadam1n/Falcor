@@ -481,15 +481,20 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
                 std::cout << "\tRendering Frame " << mDatasetIndex << "\n";
             }
 
+            mTrainingDataset.setTimeframeState(false);
             runSvgfFilter(pRenderContext, mTrainingDataset, true);
 
             // add plus one so we save the previous frames resources
             if(mDatasetIndex + 1 >= K_FRAME_SAMPLE_START)
             {
+#if 0
                 saveLossBuffers(pRenderContext, mTrainingDataset);
                 updateLossBuffers(pRenderContext, mTrainingDataset);
+#else
+                computeLoss(pRenderContext, mTrainingDataset, true);
+                mpParallelReduction->execute<float4>(pRenderContext, mTrainingDataset.pLossTexture, ParallelReduction::Type::Sum, nullptr, mReadbackBuffer[2], (96 + mDatasetIndex) * sizeof(float4));
+#endif
 
-                //mpParallelReduction->execute<float4>(pRenderContext, mTrainingDataset.pLossTexture, ParallelReduction::Type::Sum, nullptr, mReadbackBuffer[2], (96 + mDatasetIndex) * sizeof(float4));
 
                 mTrainingDataset.pushInternalBuffers(pRenderContext);
 
@@ -518,8 +523,9 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
             clearTrainingBuffers(pRenderContext);
 
             mTrainingDataset.loadPrev(pRenderContext);
-
             mTrainingDataset.popInternalBuffers(pRenderContext);
+
+            mTrainingDataset.setTimeframeState(true);
             runSvgfFilter(pRenderContext, mTrainingDataset, true);
             computeDerivatives(pRenderContext, mTrainingDataset, true);
             reduceAllData(pRenderContext);
@@ -777,7 +783,7 @@ void SVGFPass::printLoss(RenderContext* pRenderContext, int sampledFrames)
         loss += perFrameLoss[i];
         originalLoss += perFrameLoss[i + 96];
 
-        //std::cout << perFrameLoss[i].r / sampledFrames << "\t" << perFrameLoss[i + 96].r / sampledFrames << std::endl;
+        std::cout << perFrameLoss[i].r / sampledFrames << "\t" << perFrameLoss[i + 96].r / sampledFrames << std::endl;
     }
     mReadbackBuffer[2]->unmap();
 
@@ -929,9 +935,11 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, SVGFRenderData& render
         saveLossBuffers(pRenderContext, renderData);
     }
 
+    mpUtilities->executeDummyFullscreenPass(pRenderContext, renderData.pOutputTexture);
+    mpUtilities->executeDummyFullscreenPass(pRenderContext, renderData.fetchInternalTex("LossOutput"));
 
     computeGaussian(pRenderContext, renderData.pReferenceTexture, mLossState.pReferenceGaussian, false);
-    computeGaussian(pRenderContext, renderData.fetchInternalTex("LossOutput"), mLossState.pFilteredGaussian, true);
+    computeGaussian(pRenderContext, renderData.pOutputTexture, mLossState.pFilteredGaussian, true);
 
     mpUtilities->clearRawOutputBuffer(pRenderContext, 0);
     mpUtilities->clearRawOutputBuffer(pRenderContext, 1);
@@ -941,7 +949,7 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, SVGFRenderData& render
     perImageCB["filteredGaussian"] = mLossState.pFilteredGaussian;
     perImageCB["referenceGaussian"] = mLossState.pReferenceGaussian;
 
-    perImageCB["filteredImage"] = renderData.fetchInternalTex("LossOutput");
+    perImageCB["filteredImage"] = renderData.pOutputTexture;
     perImageCB["referenceImage"] =  renderData.pReferenceTexture;
 
     perImageCB["prevFiltered"] = renderData.fetchInternalTex("LossPrevOutput");
@@ -1140,6 +1148,10 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext, SVGFRe
 void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
 {
     FALCOR_PROFILE(pRenderContext, "Reproj");
+
+    svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPastFiltered", mpFilteredPastFbo->getColorTexture(0));
+    svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevMoments", mpPrevReprojFbo->getColorTexture(1));
+    svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevHistoryLength", mpPrevReprojFbo->getColorTexture(2));
 
     auto perImageCB = mReprojectState.sPass->getRootVar()["PerImageCB"];
 

@@ -233,6 +233,9 @@ public:
     ref<Texture> fetchInternalTex(const std::string& s);
     void pushInternalBuffers(RenderContext* pRenderContext);
     void popInternalBuffers(RenderContext* pRenderContext);
+
+    void changeTextureTimeframe(RenderContext* pRenderContext, const std::string& s, ref<Texture> tex);
+    void setTimeframeState(bool enabled);
 protected:
     // keep track of this for whatever reason
     ref<Device> mpDevice;
@@ -254,6 +257,7 @@ private:
     };
 
     std::map<std::string, InternalTexture> mInternalTextureMappings;
+    bool mTimeframeState = false;
     int mInternalRegistryFrameCount;
     std::vector<std::future<void>> mAsyncReadOperations;
     void waitForAllReads(RenderContext* pRenderContext);

@@ -251,6 +251,19 @@ void SVGFRenderData::popInternalBuffers(RenderContext* pRenderContext)
     }
 }
 
+void SVGFRenderData::changeTextureTimeframe(RenderContext* pRenderContext, const std::string& s, ref<Texture> tex)
+{
+    if (mTimeframeState)
+    {
+        pRenderContext->blit(mInternalTextureMappings[s].mSavedTexture->getSRV(), tex->getRTV());
+    }
+}
+
+void SVGFRenderData::setTimeframeState(bool enabled)
+{
+    mTimeframeState = enabled;
+}
+
 void SVGFRenderData::waitForAllReads(RenderContext* pRenderContext)
 {
     FALCOR_PROFILE(pRenderContext, "Download internals");
