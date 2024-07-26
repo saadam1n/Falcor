@@ -256,6 +256,7 @@ private:
     std::map<std::string, InternalTexture> mInternalTextureMappings;
     int mInternalRegistryFrameCount;
     std::vector<std::future<void>> mAsyncReadOperations;
+    void waitForAllReads(RenderContext* pRenderContext);
 };
 
 struct SVGFTrainingDataset : public SVGFRenderData

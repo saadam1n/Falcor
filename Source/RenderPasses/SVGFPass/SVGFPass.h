@@ -89,7 +89,7 @@ private:
     void computeGaussian(RenderContext* pRenderContext, ref<Texture> tex, ref<Texture> storageLocation, bool saveTextures);
 
     void computeDerivatives(RenderContext* pRenderContext, SVGFRenderData& renderData, bool useLoss);
-    void computeLoss(RenderContext* pRenderContext, SVGFRenderData& renderData);
+    void computeLoss(RenderContext* pRenderContext, SVGFRenderData& renderData, bool saveInternalState);
     void computeDerivGaussian(RenderContext* pRenderContext);
     void computeDerivFinalModulate(RenderContext* pRenderContext, SVGFRenderData& renderData);
     void computeDerivAtrousDecomposition(RenderContext* pRenderContext, SVGFRenderData& renderData);
@@ -98,6 +98,8 @@ private:
 
     void computeDerivVerification(RenderContext* pRenderContext, const SVGFRenderData& renderData);
 
+
+    void saveLossBuffers(RenderContext* pRenderContext, SVGFRenderData& renderData);
 
     bool mBuffersNeedClear = false;
 

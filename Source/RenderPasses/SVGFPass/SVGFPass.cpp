@@ -326,11 +326,6 @@ void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, SVGFRenderData& rend
 {
     FALCOR_PROFILE(pRenderContext, "SVGF Filter");
 
-    FALCOR_ASSERT(
-        mpFilteredIlluminationFbo && mpFilteredIlluminationFbo->getWidth() == pAlbedoTexture->getWidth() &&
-        mpFilteredIlluminationFbo->getHeight() == pAlbedoTexture->getHeight()
-    );
-
     if (mBuffersNeedClear)
     {
         clearBuffers(pRenderContext, renderData);
@@ -445,7 +440,7 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
 
         // compute loss so we can see it on the screen
         pRenderContext->blit(mTrainingDataset.pReferenceTexture->getSRV(), mRenderData.pReferenceTexture->getRTV());
-        computeLoss(pRenderContext, mRenderData);
+        computeLoss(pRenderContext, mRenderData, false);
 
         float4 loss;
         mpParallelReduction->execute(pRenderContext, mRenderData.pLossTexture, ParallelReduction::Type::Sum, &loss);
@@ -481,7 +476,7 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
         }
 
         if (!mBackPropagatingState && mTrainingDataset.loadNext(pRenderContext)) {
-            if(mDatasetIndex % 10 == 0 || true)
+            if(mDatasetIndex % 10 == 0)
             {
                 std::cout << "\tRendering Frame " << mDatasetIndex << "\n";
             }
@@ -491,16 +486,16 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
             // add plus one so we save the previous frames resources
             if(mDatasetIndex + 1 >= K_FRAME_SAMPLE_START)
             {
-                mTrainingDataset.saveInternalTex(pRenderContext, "LossOutput", mTrainingDataset.pOutputTexture, true);
-                mTrainingDataset.saveInternalTex(pRenderContext, "LossPrevOutput", mTrainingDataset.pPrevFiltered, true);
-                mTrainingDataset.saveInternalTex(pRenderContext, "LossPrevReference", mTrainingDataset.pPrevFiltered, true); // lazy way to do it tbh
+                computeLoss(pRenderContext, mTrainingDataset, true);
+
+                mpParallelReduction->execute<float4>(pRenderContext, mTrainingDataset.pLossTexture, ParallelReduction::Type::Sum, nullptr, mReadbackBuffer[2], (96 + mDatasetIndex) * sizeof(float4));
+
                 mTrainingDataset.pushInternalBuffers(pRenderContext);
 
-                // save previous filtered
-                pRenderContext->blit(mTrainingDataset.pOutputTexture->getSRV(), mTrainingDataset.pPrevFiltered->getRTV());
             }
 
             mDatasetIndex++;
+            mFirstBackPropIteration = true;
         }
         else if(mDatasetIndex > K_FRAME_SAMPLE_START) // we have to use strictly greater for reasons
         {
@@ -583,11 +578,14 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
             runSvgfFilter(pRenderContext, mTrainingDataset, true);
             //mTrainingDataset.pushInternalBuffers(pRenderContext);
 
-            if(mDatasetIndex >= K_FRAME_SAMPLE_START)
+            if(true || mDatasetIndex >= K_FRAME_SAMPLE_START)
             {
                 //mTrainingDataset.popInternalBuffers(pRenderContext);
-                mTrainingDataset.saveInternalTex(pRenderContext, "LossOutput", mTrainingDataset.pOutputTexture, false);
+                mTrainingDataset.saveInternalTex(pRenderContext, "LossOutput", mTrainingDataset.pOutputTexture, true);
+                mTrainingDataset.saveInternalTex(pRenderContext, "LossReference", mTrainingDataset.pReferenceTexture, true); // lazy way to do it tbh
+
                 mTrainingDataset.saveInternalTex(pRenderContext, "LossPrevOutput", mTrainingDataset.pPrevFiltered, true);
+                mTrainingDataset.saveInternalTex(pRenderContext, "LossPrevReference", mTrainingDataset.pPrevReference, true); // lazy way to do it tbh
                 computeDerivatives(pRenderContext, mTrainingDataset, true);
 
                 // now accumulate everything
@@ -768,18 +766,25 @@ void SVGFPass::printLoss(RenderContext* pRenderContext, int sampledFrames)
 {
     // now wait for it to execute and download it
     float4 loss = float4(0.0f);
+    float4 originalLoss = float4(0.0f);
+
+
+
+    float4* perFrameLoss = (float4*)mReadbackBuffer[2]->map();
+    for(int i = K_FRAME_SAMPLE_START; i < mBatchSize; i++)
     {
-        float4* perFrameLoss = (float4*)mReadbackBuffer[2]->map();
-
-        for(int i = K_FRAME_SAMPLE_START; i < mBatchSize; i++)
-        {
-            loss += perFrameLoss[i];
-        }
-
-        mReadbackBuffer[2]->unmap();
+        loss += perFrameLoss[i];
+        originalLoss += perFrameLoss[i + 96];
+        std::cout << perFrameLoss[i].r / sampledFrames << "\t" << perFrameLoss[i + 96].r / sampledFrames << std::endl;
     }
+    mReadbackBuffer[2]->unmap();
+
+
+
     loss /= float4(sampledFrames);
+    originalLoss /= float4(sampledFrames);
     std::cout << "Average loss in epoch\t" << mEpoch << "\tacross " << sampledFrames << "\t frames was " << loss.r << "\n";
+    std::cout << "Original loss in epoch\t" << mEpoch << "\tacross " << sampledFrames << "\t frames was " << originalLoss.r << "\n";
 
     lossHistory.push_back(loss.r);
     std::cout << "Loss history:\n";
@@ -853,6 +858,16 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVG
     pRenderContext->blit(mpDerivativeVerifyFbo->getColorTexture(0)->getSRV(), renderData.pDerivVerifyTexture->getRTV());
 }
 
+void SVGFPass::saveLossBuffers(RenderContext* pRenderContext, SVGFRenderData& renderData)
+{
+    renderData.saveInternalTex(pRenderContext, "LossOutput", mTrainingDataset.pOutputTexture, true);
+    renderData.saveInternalTex(pRenderContext, "LossReference", mTrainingDataset.pReferenceTexture, true); // lazy way to do it tbh
+
+
+    renderData.saveInternalTex(pRenderContext, "LossPrevOutput", mTrainingDataset.pPrevFiltered, true);
+    renderData.saveInternalTex(pRenderContext, "LossPrevReference", mTrainingDataset.pPrevReference, true); // lazy way to do it tbh
+}
+
 
 // I'll move parts of this off to other function as need be
 void SVGFPass::computeDerivatives(RenderContext* pRenderContext, SVGFRenderData& renderData, bool useLoss)
@@ -865,7 +880,7 @@ void SVGFPass::computeDerivatives(RenderContext* pRenderContext, SVGFRenderData&
     if (mFilterEnabled) {
         if (useLoss)
         {
-            computeLoss(pRenderContext, renderData);
+            computeLoss(pRenderContext, renderData, false);
         }
         else
         {
@@ -894,13 +909,19 @@ void SVGFPass::computeDerivatives(RenderContext* pRenderContext, SVGFRenderData&
     }
 }
 
-void SVGFPass::computeLoss(RenderContext* pRenderContext, SVGFRenderData& renderData)
+void SVGFPass::computeLoss(RenderContext* pRenderContext, SVGFRenderData& renderData, bool saveInternalState)
 {
     FALCOR_PROFILE(pRenderContext, "Loss");
 
     mpUtilities->setPatchingState(mLossState.dPass);
 
-    computeGaussian(pRenderContext, renderData.pReferenceTexture, mLossState.pReferenceGaussian, false);
+    if(saveInternalState)
+    {
+        saveLossBuffers(pRenderContext, renderData);
+    }
+
+
+    computeGaussian(pRenderContext, renderData.fetchInternalTex("LossReference"), mLossState.pReferenceGaussian, false);
     computeGaussian(pRenderContext, renderData.fetchInternalTex("LossOutput"), mLossState.pFilteredGaussian, true);
 
     mpUtilities->clearRawOutputBuffer(pRenderContext, 0);
@@ -912,7 +933,7 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, SVGFRenderData& render
     perImageCB["referenceGaussian"] = mLossState.pReferenceGaussian;
 
     perImageCB["filteredImage"] = renderData.fetchInternalTex("LossOutput");
-    perImageCB["referenceImage"] = renderData.pReferenceTexture;
+    perImageCB["referenceImage"] =  renderData.fetchInternalTex("LossReference");
 
     perImageCB["prevFiltered"] = renderData.fetchInternalTex("LossPrevOutput");
     perImageCB["prevReference"] = renderData.fetchInternalTex("LossPrevReference"); 

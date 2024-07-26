@@ -196,6 +196,8 @@ ref<Texture> SVGFRenderData::fetchInternalTex(const std::string& s)
 
 void SVGFRenderData::pushInternalBuffers(RenderContext* pRenderContext)
 {
+    waitForAllReads(pRenderContext);
+
     int saveIndex = mInternalRegistryFrameCount++;
     int requiredSize = mInternalRegistryFrameCount;
 
@@ -226,20 +228,13 @@ void SVGFRenderData::pushInternalBuffers(RenderContext* pRenderContext)
             src->getData((void*)dst, numPixels * sizeof(float4));
         };
 
-        mAsyncReadOperations.push_back(std::async(std::launch::async, async_download, ptr, internalTex.mSavedRevisions[saveIndex]->getData()));
+        mAsyncReadOperations.push_back(std::async(std::launch::deferred, async_download, ptr, internalTex.mSavedRevisions[saveIndex]->getData()));
     }
 }
 
 void SVGFRenderData::popInternalBuffers(RenderContext* pRenderContext)
 {
-    {
-        FALCOR_PROFILE(pRenderContext, "Download internals");
-        while (!mAsyncReadOperations.empty())
-        {
-            mAsyncReadOperations.back().get();
-            mAsyncReadOperations.pop_back();
-        }
-    }
+    waitForAllReads(pRenderContext);
 
     int readIndex = --mInternalRegistryFrameCount;
 
@@ -253,6 +248,16 @@ void SVGFRenderData::popInternalBuffers(RenderContext* pRenderContext)
         FALCOR_PROFILE(pRenderContext, "Update " + s);
 
         pRenderContext->updateTextureData(internalTex.mSavedTexture.get(), (const void*)internalTex.mSavedRevisions[readIndex]->getData());
+    }
+}
+
+void SVGFRenderData::waitForAllReads(RenderContext* pRenderContext)
+{
+    FALCOR_PROFILE(pRenderContext, "Download internals");
+    while (!mAsyncReadOperations.empty())
+    {
+        mAsyncReadOperations.back().get();
+        mAsyncReadOperations.pop_back();
     }
 }
 
