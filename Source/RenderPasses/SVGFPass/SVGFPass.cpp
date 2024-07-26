@@ -486,9 +486,10 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
             // add plus one so we save the previous frames resources
             if(mDatasetIndex + 1 >= K_FRAME_SAMPLE_START)
             {
-                computeLoss(pRenderContext, mTrainingDataset, true);
+                saveLossBuffers(pRenderContext, mTrainingDataset);
+                updateLossBuffers(pRenderContext, mTrainingDataset);
 
-                mpParallelReduction->execute<float4>(pRenderContext, mTrainingDataset.pLossTexture, ParallelReduction::Type::Sum, nullptr, mReadbackBuffer[2], (96 + mDatasetIndex) * sizeof(float4));
+                //mpParallelReduction->execute<float4>(pRenderContext, mTrainingDataset.pLossTexture, ParallelReduction::Type::Sum, nullptr, mReadbackBuffer[2], (96 + mDatasetIndex) * sizeof(float4));
 
                 mTrainingDataset.pushInternalBuffers(pRenderContext);
 
@@ -775,7 +776,8 @@ void SVGFPass::printLoss(RenderContext* pRenderContext, int sampledFrames)
     {
         loss += perFrameLoss[i];
         originalLoss += perFrameLoss[i + 96];
-        std::cout << perFrameLoss[i].r / sampledFrames << "\t" << perFrameLoss[i + 96].r / sampledFrames << std::endl;
+
+        //std::cout << perFrameLoss[i].r / sampledFrames << "\t" << perFrameLoss[i + 96].r / sampledFrames << std::endl;
     }
     mReadbackBuffer[2]->unmap();
 
@@ -868,6 +870,13 @@ void SVGFPass::saveLossBuffers(RenderContext* pRenderContext, SVGFRenderData& re
     renderData.saveInternalTex(pRenderContext, "LossPrevReference", mTrainingDataset.pPrevReference, true); // lazy way to do it tbh
 }
 
+void SVGFPass::updateLossBuffers(RenderContext* pRenderContext, SVGFRenderData& renderData)
+{
+    // update the previous textures
+    pRenderContext->blit(renderData.pOutputTexture->getSRV(), renderData.pPrevFiltered->getRTV());
+    pRenderContext->blit(renderData.pReferenceTexture->getSRV(), renderData.pPrevReference->getRTV());
+}
+
 
 // I'll move parts of this off to other function as need be
 void SVGFPass::computeDerivatives(RenderContext* pRenderContext, SVGFRenderData& renderData, bool useLoss)
@@ -949,9 +958,7 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, SVGFRenderData& render
     pRenderContext->blit(mpUtilities->getDummyFullscreenFbo()->getColorTexture(3)->getSRV(), renderData.pTemporalLossTexture->getRTV());
     mpUtilities->runCompactingPass(pRenderContext, 0, 9);
 
-    // update the previous textures
-    pRenderContext->blit(renderData.pOutputTexture->getSRV(), renderData.pPrevFiltered->getRTV());
-    pRenderContext->blit(renderData.pReferenceTexture->getSRV(), renderData.pPrevReference->getRTV());
+    updateLossBuffers(pRenderContext, renderData);
 
     computeDerivGaussian(pRenderContext);
 }

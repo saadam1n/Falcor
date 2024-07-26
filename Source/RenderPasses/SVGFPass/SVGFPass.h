@@ -100,6 +100,7 @@ private:
 
 
     void saveLossBuffers(RenderContext* pRenderContext, SVGFRenderData& renderData);
+    void updateLossBuffers(RenderContext* pRenderContext, SVGFRenderData& renderData);
 
     bool mBuffersNeedClear = false;
 
