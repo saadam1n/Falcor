@@ -369,7 +369,7 @@ void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, SVGFRenderData& rend
         perImageCB["gEmission"] = renderData.pEmissionTexture;
         perImageCB["gIllumination"] = renderData.fetchTexTable("FinalModulateInIllumination");
         mFinalModulateState.sPass->execute(pRenderContext, mpFinalFbo);
-        renderData.saveInternalTex(pRenderContext, "FinalModulateFinalFiltered", mpPingPongFbo[0]->getColorTexture(0));
+        renderData.saveInternalTex(pRenderContext, "FinalModulateFinalFiltered", mpPingPongFbo[0]->getColorTexture(0), false);
 
         if (updateInternalBuffers)
         {
@@ -491,16 +491,23 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
             clearTrainingBuffers(pRenderContext);
 
             runSvgfFilter(pRenderContext, mTrainingDataset, true);
+            //mTrainingDataset.pushInternalBuffers(pRenderContext);
 
-            // lazy solution but it does the trick
-            // first save the current output and previous output
-            mTrainingDataset.saveInternalTex(pRenderContext, "LossOutput", mTrainingDataset.pOutputTexture);
-            mTrainingDataset.saveInternalTex(pRenderContext, "LossPrevOutput", mTrainingDataset.pPrevFiltered);
+            if(mDatasetIndex >= K_FRAME_SAMPLE_START)
+            {
+                //mTrainingDataset.popInternalBuffers(pRenderContext);
+                mTrainingDataset.saveInternalTex(pRenderContext, "LossOutput", mTrainingDataset.pOutputTexture, false);
+                mTrainingDataset.saveInternalTex(pRenderContext, "LossPrevOutput", mTrainingDataset.pPrevFiltered, true);
+                computeDerivatives(pRenderContext, mTrainingDataset, true);
 
-            mTrainingDataset.pushInternalBuffers(pRenderContext);
+                // now accumulate everything
+                reduceAllData(pRenderContext);
+
+                // keep a copy of our output
+                //mTrainingDataset.pOutputTexture->captureToFile(0, 0, "C:/FalcorFiles/TrainingDump/" + std::to_string(epoch) + ".exr", Falcor::Bitmap::FileFormat::ExrFile, Falcor::Bitmap::ExportFlags::None, false);
+            }
 
             mDatasetIndex++;
-            mFirstBackPropIteration = true;
         }
         else if(mDatasetIndex >= K_FRAME_SAMPLE_START)
         {
@@ -509,6 +516,7 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
                 std::cout << "\tBackpropagating Frame " << mDatasetIndex << "\n";
             }
 
+
             mBackPropagatingState = true;
             if(mFirstBackPropIteration)
             {
@@ -516,9 +524,14 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
                 mFirstBackPropIteration = false;
             }
 
+            /*
+            mTrainingDataset.loadPrev(pRenderContext);
+
             mTrainingDataset.popInternalBuffers(pRenderContext);
+            runSvgfFilter(pRenderContext, mTrainingDataset, true);
             computeDerivatives(pRenderContext, mTrainingDataset, true);
             reduceAllData(pRenderContext);
+            */
 
             mDatasetIndex--;
         }
@@ -536,6 +549,7 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
             mReductionAddress = 0;
             mDatasetIndex = 0;
             mEpoch++;
+            mTrainingDataset.reset();
         }
     }
     else
@@ -951,9 +965,9 @@ void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext, SVGFRenderD
     mFilterMomentsState.sPass->execute(pRenderContext, mpPingPongFbo[0]);
 
     // save our buffers for the derivative apss
-    svgfrd.saveInternalTex(pRenderContext, "FilterMomentsIllum", mpCurReprojFbo->getColorTexture(0));
-    svgfrd.saveInternalTex(pRenderContext, "FilterMomentsMoments", mpCurReprojFbo->getColorTexture(1));
-    svgfrd.saveInternalTex(pRenderContext, "FilterMomentsHistoryLength", mpCurReprojFbo->getColorTexture(2));
+    svgfrd.saveInternalTex(pRenderContext, "FilterMomentsIllum", mpCurReprojFbo->getColorTexture(0), false);
+    svgfrd.saveInternalTex(pRenderContext, "FilterMomentsMoments", mpCurReprojFbo->getColorTexture(1), false);
+    svgfrd.saveInternalTex(pRenderContext, "FilterMomentsHistoryLength", mpCurReprojFbo->getColorTexture(2), false);
 
     svgfrd.fetchTexTable("AtrousInputIllumination") = mpPingPongFbo[0]->getColorTexture(0);
 }
@@ -1039,9 +1053,9 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
     mReprojectState.sPass->execute(pRenderContext, mpCurReprojFbo);
 
     // save a copy of our past filtration for backwards differentiation
-    svgfrd.saveInternalTex(pRenderContext, "ReprojPastFiltered", mpFilteredPastFbo->getColorTexture(0));
-    svgfrd.saveInternalTex(pRenderContext, "ReprojPrevMoments", mpPrevReprojFbo->getColorTexture(1));
-    svgfrd.saveInternalTex(pRenderContext, "ReprojPrevHistoryLength", mpPrevReprojFbo->getColorTexture(2));
+    svgfrd.saveInternalTex(pRenderContext, "ReprojPastFiltered", mpFilteredPastFbo->getColorTexture(0), true);
+    svgfrd.saveInternalTex(pRenderContext, "ReprojPrevMoments", mpPrevReprojFbo->getColorTexture(1), true);
+    svgfrd.saveInternalTex(pRenderContext, "ReprojPrevHistoryLength", mpPrevReprojFbo->getColorTexture(2), true);
 
     svgfrd.fetchTexTable("FilteredPast") = mpFilteredPastFbo->getColorTexture(0);
     svgfrd.fetchTexTable("ReprojOutputCurIllum") = mpCurReprojFbo->getColorTexture(0);
@@ -1168,10 +1182,10 @@ void SVGFPass::computeLinearZAndNormal(RenderContext* pRenderContext, SVGFRender
 
     mPackLinearZAndNormalState.sPass->execute(pRenderContext, mpLinearZAndNormalFbo);
 
-    svgfrd.saveInternalTex(pRenderContext, "LinearZAndNormalTex", mpLinearZAndNormalFbo->getColorTexture(0));
+    svgfrd.saveInternalTex(pRenderContext, "LinearZAndNormalTex", mpLinearZAndNormalFbo->getColorTexture(0), false);
     svgfrd.fetchTexTable("gLinearZAndNormal") = svgfrd.fetchInternalTex("LinearZAndNormalTex"); // point to the unchanging one
 
-    svgfrd.saveInternalTex(pRenderContext, "LinearZAndNormalPrevTex", svgfrd.pPrevLinearZAndNormalTexture);
+    svgfrd.saveInternalTex(pRenderContext, "LinearZAndNormalPrevTex", svgfrd.pPrevLinearZAndNormalTexture, true);
 }
 
 void SVGFPass::renderUI(Gui::Widgets& widget)

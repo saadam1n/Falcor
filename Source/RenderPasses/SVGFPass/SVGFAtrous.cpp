@@ -109,7 +109,7 @@ void SVGFAtrousSubpass::computeEvaluation(RenderContext* pRenderContext, SVGFRen
 
         ref<Fbo> curTargetFbo = mpPingPongFbo[1];
         // keep a copy of our input for backwards differation
-        svgfrd.saveInternalTex(pRenderContext, "AtrousIllum" + std::to_string(iteration), mpPingPongFbo[0]->getColorTexture(0));
+        svgfrd.saveInternalTex(pRenderContext, "AtrousIllum" + std::to_string(iteration), mpPingPongFbo[0]->getColorTexture(0), false);
 
         perImageCB["gIllumination"] = (iteration == 0 ? svgfrd.fetchTexTable("AtrousInputIllumination") : mpPingPongFbo[0]->getColorTexture(0));
         perImageCB["gStepSize"] = 1 << iteration;

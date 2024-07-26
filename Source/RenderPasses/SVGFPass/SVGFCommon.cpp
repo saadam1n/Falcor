@@ -178,11 +178,12 @@ ref<Buffer>& SVGFRenderData::fetchBufTable(const std::string& s)
     return mBufferTable[s];
 }
 
-void SVGFRenderData::saveInternalTex(RenderContext* pRenderContext, const std::string& s, ref<Texture> tex)
+void SVGFRenderData::saveInternalTex(RenderContext* pRenderContext, const std::string& s, ref<Texture> tex, bool shouldSaveRevisions)
 {
     if (mInternalTextureMappings.count(s) == 0)
     {
         mInternalTextureMappings[s].mSavedTexture = mpUtilities->createFullscreenTexture();
+        mInternalTextureMappings[s].mShouldSaveRevisions = shouldSaveRevisions;
     }
 
     pRenderContext->blit(tex->getSRV(), mInternalTextureMappings[s].mSavedTexture->getRTV());
@@ -200,6 +201,11 @@ void SVGFRenderData::pushInternalBuffers(RenderContext* pRenderContext)
 
     for (auto& [s, internalTex] : mInternalTextureMappings)
     {
+        if (!internalTex.mShouldSaveRevisions)
+        {
+            continue;
+        }
+
         CopyContext::ReadTextureTask::SharedPtr ptr = pRenderContext->asyncReadTextureSubresource(internalTex.mSavedTexture.get(), 0);
 
         // save this current texture
@@ -239,13 +245,18 @@ void SVGFRenderData::popInternalBuffers(RenderContext* pRenderContext)
 
     for (auto& [s, internalTex] : mInternalTextureMappings)
     {
+        if (!internalTex.mShouldSaveRevisions)
+        {
+            continue;
+        }
+
         FALCOR_PROFILE(pRenderContext, "Update " + s);
 
         pRenderContext->updateTextureData(internalTex.mSavedTexture.get(), (const void*)internalTex.mSavedRevisions[readIndex]->getData());
     }
 }
 
-SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, ref<SVGFUtilitySet> utilities, const std::string& folder) : SVGFRenderData(pDevice, utilities), mFolder(folder), mSampleIdx(0) {
+SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, ref<SVGFUtilitySet> utilities, const std::string& folder) : SVGFRenderData(pDevice, utilities), mFolder(folder), mDatasetIndex(0) {
 #define MarkDatasetTexture(x) p##x##Texture = mpUtilities->createFullscreenTexture(); mTextureNameMappings[kDataset##x] = p##x##Texture;
 
     MarkDatasetTexture(Reference);
@@ -274,23 +285,25 @@ SVGFTrainingDataset::SVGFTrainingDataset(ref<Device> pDevice, ref<SVGFUtilitySet
 
 bool SVGFTrainingDataset::loadNext(RenderContext* pRenderContext)
 {
-    // check if we have more samples to read
-    if (!atValidIndex())
-    {
-        mSampleIdx = 0;
-        return false;
-    }
+    bool ret = loadCurrent(pRenderContext);
 
-    // continue with loading of samples
-    for(auto [buffer, tex] : mTextureNameMappings)
-    {
-        loadSampleBuffer(pRenderContext, tex, buffer);
-    }
+    mDatasetIndex++;
 
-    mSampleIdx++;
+    return ret;
+}
 
-    // indicate to callee that we this sample was successfully read
-    return true;
+bool SVGFTrainingDataset::loadPrev(RenderContext* pRenderContext)
+{
+    mDatasetIndex--;
+
+    bool ret = loadCurrent(pRenderContext);
+
+    return ret;
+}
+
+void SVGFTrainingDataset::reset()
+{
+    mDatasetIndex = 0;
 }
 
 void SVGFTrainingDataset::preloadBitmaps()
@@ -311,10 +324,10 @@ void SVGFTrainingDataset::preloadBitmaps()
                 mPreloadingBitmaps[path] = std::async(std::launch::async, &readBitmapFromFile, path);
             }
 
-            mSampleIdx++;
+            mDatasetIndex++;
         }
 
-        mSampleIdx = 0;
+        mDatasetIndex = 0;
     }
 }
 
@@ -323,9 +336,27 @@ bool SVGFTrainingDataset::atValidIndex() const
     return std::filesystem::exists(getSampleBufferPath(kDatasetColor));
 }
 
+bool SVGFTrainingDataset::loadCurrent(RenderContext* pRenderContext)
+{
+    // check if we have more samples to read
+    if (!atValidIndex())
+    {
+        return false;
+    }
+
+    // continue with loading of samples
+    for(auto [buffer, tex] : mTextureNameMappings)
+    {
+        loadSampleBuffer(pRenderContext, tex, buffer);
+    }
+
+    // indicate to callee that we this sample was successfully read
+    return true;
+}
+
 std::string SVGFTrainingDataset::getSampleBufferPath(const std::string& buffer) const
 {
-    return mFolder + std::to_string(mSampleIdx) + "-" + buffer + ".exr";
+    return mFolder + std::to_string(mDatasetIndex) + "-" + buffer + ".exr";
 }
 
 Bitmap::UniqueConstPtr SVGFTrainingDataset::readBitmapFromFile(const std::string& path)

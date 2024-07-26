@@ -229,7 +229,7 @@ public:
     ref<Texture>& fetchTexTable(const std::string& s);
     ref<Buffer>& fetchBufTable(const std::string& s);
 
-    void saveInternalTex(RenderContext* pRenderContext, const std::string& s, ref<Texture> tex);
+    void saveInternalTex(RenderContext* pRenderContext, const std::string& s, ref<Texture> tex, bool shouldSaveRevisions);
     ref<Texture> fetchInternalTex(const std::string& s);
     void pushInternalBuffers(RenderContext* pRenderContext);
     void popInternalBuffers(RenderContext* pRenderContext);
@@ -246,6 +246,7 @@ private:
     struct InternalTexture
     {
         ref<Texture> mSavedTexture;
+        bool mShouldSaveRevisions;
         // all saved revisions of this texture
         std::vector<Bitmap::UniqueConstPtr> mSavedRevisions;
 
@@ -262,6 +263,8 @@ struct SVGFTrainingDataset : public SVGFRenderData
 public:
     SVGFTrainingDataset(ref<Device> pDevice, ref<SVGFUtilitySet> utilities, const std::string& folder);
     bool loadNext(RenderContext* pRenderContext);
+    bool loadPrev(RenderContext* pRenderContext);
+    void reset();
 
     // preload all bitmaps, if not already
     void preloadBitmaps();
@@ -269,7 +272,7 @@ private:
     // the folder containing the dataset
     std::string mFolder;
     // whatever sample we are reading from
-    int mSampleIdx;
+    int mDatasetIndex;
     // cache of preloaded bitmaps
     std::map<std::string, Bitmap::UniqueConstPtr> mCachedBitmaps;
     // cache of texture name to pointer mappings
@@ -281,6 +284,7 @@ private:
     bool mPreloaded = false;
 
     bool atValidIndex() const;
+    bool loadCurrent(RenderContext* pRenderContext);
     std::string getSampleBufferPath(const std::string& buffer) const;
     static Bitmap::UniqueConstPtr readBitmapFromFile(const std::string& path);
     void loadSampleBuffer(RenderContext* pRenderContext, ref<Texture> tex, const std::string& buffer);
