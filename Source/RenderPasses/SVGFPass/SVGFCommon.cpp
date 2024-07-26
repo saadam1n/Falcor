@@ -287,7 +287,11 @@ bool SVGFTrainingDataset::loadNext(RenderContext* pRenderContext)
 {
     bool ret = loadCurrent(pRenderContext);
 
-    mDatasetIndex++;
+    // if this failed, don't try double incrementing
+    if (ret)
+    {
+        mDatasetIndex++;
+    }
 
     return ret;
 }
@@ -297,6 +301,15 @@ bool SVGFTrainingDataset::loadPrev(RenderContext* pRenderContext)
     mDatasetIndex--;
 
     bool ret = loadCurrent(pRenderContext);
+
+    std::cout << "Dataset load " << mDatasetIndex << " " << ret << std::endl;
+
+
+    if (!ret)
+    {
+        mDatasetIndex = 0;
+    }
+
 
     return ret;
 }

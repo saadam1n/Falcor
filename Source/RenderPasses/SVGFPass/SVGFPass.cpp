@@ -431,6 +431,7 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
         runNextTrainingTask(pRenderContext);
         // display current results to screen
         pRenderContext->blit(mTrainingDataset.pOutputTexture->getSRV(), mRenderData.pOutputTexture->getRTV());
+        pRenderContext->blit(mTrainingDataset.pReferenceTexture->getSRV(), mRenderData.pReferenceTexture->getRTV());
         pRenderContext->blit(mTrainingDataset.pLossTexture->getSRV(), mRenderData.pLossTexture->getRTV());
         pRenderContext->blit(mTrainingDataset.pCenterLossTexture->getSRV(), mRenderData.pCenterLossTexture->getRTV());
         pRenderContext->blit(mTrainingDataset.pGradientLossTexture->getSRV(), mRenderData.pGradientLossTexture->getRTV());
@@ -460,7 +461,96 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
 static std::vector<float> lossHistory;
 void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 {
+#if 1
     FALCOR_PROFILE(pRenderContext, "Next Training Task");
+
+    mTrainingDataset.preloadBitmaps();
+
+    if(mEpoch < K_NUM_EPOCHS)
+    {
+        if(mEpoch == 0)
+        {
+            mBetaMomentumCorrection = K_BETA_MOMENTUM;
+            mBetaSsgradCorrection = K_BETA_SSGRAD;
+        }
+
+        if (mDatasetIndex == 0) {
+            mBuffersNeedClear = true;
+            mReductionAddress = 0;
+            std::cout << "Running epoch\t" << mEpoch << "\n";
+        }
+
+        if (!mBackPropagatingState && mTrainingDataset.loadNext(pRenderContext)) {
+            if(mDatasetIndex % 10 == 0 || true)
+            {
+                std::cout << "\tRendering Frame " << mDatasetIndex << "\n";
+            }
+
+            runSvgfFilter(pRenderContext, mTrainingDataset, true);
+
+            // add plus one so we save the previous frames resources
+            if(mDatasetIndex + 1 >= K_FRAME_SAMPLE_START)
+            {
+                mTrainingDataset.saveInternalTex(pRenderContext, "LossOutput", mTrainingDataset.pOutputTexture, true);
+                mTrainingDataset.saveInternalTex(pRenderContext, "LossPrevOutput", mTrainingDataset.pPrevFiltered, true);
+                mTrainingDataset.saveInternalTex(pRenderContext, "LossPrevReference", mTrainingDataset.pPrevFiltered, true); // lazy way to do it tbh
+                mTrainingDataset.pushInternalBuffers(pRenderContext);
+
+                // save previous filtered
+                pRenderContext->blit(mTrainingDataset.pOutputTexture->getSRV(), mTrainingDataset.pPrevFiltered->getRTV());
+            }
+
+            mDatasetIndex++;
+        }
+        else if(mDatasetIndex > K_FRAME_SAMPLE_START) // we have to use strictly greater for reasons
+        {
+            mBackPropagatingState = true;
+            if(mFirstBackPropIteration)
+            {
+                mBatchSize = mDatasetIndex;
+                mFirstBackPropIteration = false;
+            }
+
+            mDatasetIndex--; // find what index this is associated with 
+
+            if(mDatasetIndex % 10 == 0)
+            {
+                std::cout << "\tBackpropagating Frame " << mDatasetIndex << "\n";
+            }
+
+            // first clear all our buffers
+            clearTrainingBuffers(pRenderContext);
+
+            mTrainingDataset.loadPrev(pRenderContext);
+
+            mTrainingDataset.popInternalBuffers(pRenderContext);
+            runSvgfFilter(pRenderContext, mTrainingDataset, true);
+            computeDerivatives(pRenderContext, mTrainingDataset, true);
+            reduceAllData(pRenderContext);
+        }
+        else
+        {
+            int sampledFrames = mBatchSize - K_FRAME_SAMPLE_START;
+
+            updateParameters(pRenderContext, sampledFrames);
+            printLoss(pRenderContext, sampledFrames);
+
+            mBetaMomentumCorrection *= K_BETA_MOMENTUM;
+            mBetaSsgradCorrection *= K_BETA_SSGRAD;
+
+            mBackPropagatingState = false;
+            mReductionAddress = 0;
+            mDatasetIndex = 0;
+            mEpoch++;
+            mTrainingDataset.reset();
+        }
+    }
+    else
+    {
+        mTrained = true;
+    }
+#else
+        FALCOR_PROFILE(pRenderContext, "Next Training Task");
 
 
 
@@ -556,6 +646,7 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
     {
         mTrained = true;
     }
+#endif
 }
 
 void SVGFPass::clearTrainingBuffers(RenderContext* pRenderContext)
@@ -824,7 +915,7 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, SVGFRenderData& render
     perImageCB["referenceImage"] = renderData.pReferenceTexture;
 
     perImageCB["prevFiltered"] = renderData.fetchInternalTex("LossPrevOutput");
-    perImageCB["prevReference"] = renderData.pPrevReference;
+    perImageCB["prevReference"] = renderData.fetchInternalTex("LossPrevReference"); 
 
     perImageCB["pdaFilteredGaussian"] = mpUtilities->mpdaRawOutputBuffer[0];
     perImageCB["pdaFilteredImage"] = mpUtilities->mpdaRawOutputBuffer[1];
