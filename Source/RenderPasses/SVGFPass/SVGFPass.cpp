@@ -409,7 +409,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 }
 
 
-const int K_NUM_EPOCHS = 8;
+const int K_NUM_EPOCHS = 16;
 const int K_FRAME_SAMPLE_START = 10;
 
 const float K_LRATE_NUMER = 15.0f * 0.01f; // 0.0085 is a good value
@@ -444,7 +444,7 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
 
         // compute loss so we can see it on the screen
         pRenderContext->blit(mTrainingDataset.pReferenceTexture->getSRV(), mRenderData.pReferenceTexture->getRTV());
-        computeLoss(pRenderContext, mRenderData, false);
+        computeLoss(pRenderContext, mRenderData, true); // keep it true (we aren't pushing the buffers so it wont matter)
 
         float4 loss;
         mpParallelReduction->execute(pRenderContext, mRenderData.pLossTexture, ParallelReduction::Type::Sum, &loss);
@@ -882,12 +882,12 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVG
 
 void SVGFPass::saveLossBuffers(RenderContext* pRenderContext, SVGFRenderData& renderData)
 {
-    renderData.saveInternalTex(pRenderContext, "LossOutput", mTrainingDataset.pOutputTexture, true);
+    //renderData.saveInternalTex(pRenderContext, "LossOutput", renderData.pOutputTexture, true);
     //renderData.saveInternalTex(pRenderContext, "LossReference", mTrainingDataset.pReferenceTexture, true); // lazy way to do it tbh
 
 
-    renderData.saveInternalTex(pRenderContext, "LossPrevOutput", mTrainingDataset.pPrevFiltered, true);
-    renderData.saveInternalTex(pRenderContext, "LossPrevReference", mTrainingDataset.pPrevReference, true); // lazy way to do it tbh
+    renderData.saveInternalTex(pRenderContext, "LossPrevOutput", renderData.pPrevFiltered, true);
+    renderData.saveInternalTex(pRenderContext, "LossPrevReference", renderData.pPrevReference, true); // lazy way to do it tbh
 }
 
 void SVGFPass::updateLossBuffers(RenderContext* pRenderContext, SVGFRenderData& renderData)
@@ -1167,9 +1167,6 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevMoments", mpPrevReprojFbo->getColorTexture(1));
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevHistoryLength", mpPrevReprojFbo->getColorTexture(2));
 
-    mpUtilities->clearRawOutputBuffer(pRenderContext, 0);
-    mpUtilities->clearRawOutputBuffer(pRenderContext, 1);
-
     auto perImageCB = mReprojectState.sPass->getRootVar()["PerImageCB"];
 
     // Setup textures for our reprojection shader pass
@@ -1198,11 +1195,6 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
         perImageCB["dvReprojParams"][i] = mReprojectState.mParams.dv[i];
     }
 
-    perImageCB["daIllumination"] = mpUtilities->mpdaRawOutputBuffer[0];
-    perImageCB["daMoments"] = mpUtilities->mpdaRawOutputBuffer[1];
-    perImageCB["daHistoryLength"] = mReprojectState.pdaHistoryLength;
-
-
     mReprojectState.sPass->execute(pRenderContext, mpCurReprojFbo);
 
     // save a copy of our past filtration for backwards differentiation
@@ -1213,14 +1205,7 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
     svgfrd.fetchTexTable("FilteredPast") = mpFilteredPastFbo->getColorTexture(0);
     svgfrd.fetchTexTable("ReprojOutputCurIllum") = mpCurReprojFbo->getColorTexture(0);
 
-    // now, save the illum, moments, and history length buffers somewhere
-
-    mpUtilities->runCompactingPass(pRenderContext, 0, 9 + 4);
-    mpUtilities->runCompactingPass(pRenderContext, 1, 9 + 4);
-
-    pRenderContext->copyBufferRegion(mReprojectState.pdaIllumination.get(), 0, mpUtilities->mpdrCompactedBuffer[0].get(), 0, mpUtilities->mpdrCompactedBuffer[0]->getSize());
-    pRenderContext->copyBufferRegion(mReprojectState.pdaMoments.get(), 0, mpUtilities->mpdrCompactedBuffer[1].get(), 0, mpUtilities->mpdrCompactedBuffer[1]->getSize());
-
+    // prevent segfauilt
     svgfrd.fetchBufTable("ReprojOutIllum") = mReprojectState.pdaIllumination;
     svgfrd.fetchBufTable("ReprojOutMoments") = mReprojectState.pdaMoments;
     svgfrd.fetchBufTable("ReprojOutHistoryLength") = mReprojectState.pdaHistoryLength;
@@ -1231,6 +1216,9 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
     FALCOR_PROFILE(pRenderContext, "Bwd Reproj");
 
     mpUtilities->setPatchingState(mReprojectState.dPass);
+
+    mpUtilities->clearRawOutputBuffer(pRenderContext, 0);
+    mpUtilities->clearRawOutputBuffer(pRenderContext, 1);
 
     auto perImageCB = mReprojectState.dPass->getRootVar()["PerImageCB"];
 
@@ -1260,10 +1248,13 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
         perImageCB["dvReprojParams"][i] = mReprojectState.mParams.dv[i];
     }
 
+    mpUtilities->combineBuffers(pRenderContext, mpUtilities->mpdrCompactedBuffer[1], mReprojectState.pdaMoments);
+
+
     auto perImageCB_D = mReprojectState.dPass->getRootVar()["PerImageCB_D"];
 
     perImageCB_D["drIllumination"] = mpUtilities->mpdrCompactedBuffer[0];
-    perImageCB_D["drMoments"] = mpUtilities->mpdrCompactedBuffer[1];
+    perImageCB_D["drMoments"] = mpUtilities->mpdrCombinedBuffer;
     perImageCB_D["drHistoryLen"] = mFilterMomentsState.pdaHistoryLen;
 
     perImageCB_D["daLuminanceParams"] = mReprojectState.mLuminanceParams.da;
@@ -1272,7 +1263,23 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
     perImageCB_D["daAlpha"] = mReprojectState.mAlpha.da;
     perImageCB_D["daMomentsAlpha"] = mReprojectState.mMomentsAlpha.da;
 
+
+    perImageCB["daIllumination"] = mpUtilities->mpdaRawOutputBuffer[0];
+    perImageCB["daMoments"] = mpUtilities->mpdaRawOutputBuffer[1];
+    perImageCB["daHistoryLength"] = mReprojectState.pdaHistoryLength;
+
     mReprojectState.dPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
+
+    // now, save the illum, moments, and history length buffers somewhere
+    mpUtilities->runCompactingPass(pRenderContext, 0, 9 + 4);
+    mpUtilities->runCompactingPass(pRenderContext, 1, 9 + 4);
+
+    pRenderContext->copyBufferRegion(mReprojectState.pdaIllumination.get(), 0, mpUtilities->mpdrCompactedBuffer[0].get(), 0, mpUtilities->mpdrCompactedBuffer[0]->getSize());
+    pRenderContext->copyBufferRegion(mReprojectState.pdaMoments.get(), 0, mpUtilities->mpdrCompactedBuffer[1].get(), 0, mpUtilities->mpdrCompactedBuffer[1]->getSize());
+
+    svgfrd.fetchBufTable("ReprojOutIllum") = mReprojectState.pdaIllumination;
+    svgfrd.fetchBufTable("ReprojOutMoments") = mReprojectState.pdaMoments;
+    svgfrd.fetchBufTable("ReprojOutHistoryLength") = mReprojectState.pdaHistoryLength;
 }
 
 
