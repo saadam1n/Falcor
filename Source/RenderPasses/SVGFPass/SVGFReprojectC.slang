@@ -59,40 +59,87 @@ cbuffer PerImageCB
 
 static const float QUANTIZATION = 1.0;
 
-// Read gColor
-void d_getColor(int2 ipos, float3 val)
-{
-    // Constant we do not care about
-}
-
-// Read gAlbedo
-void d_getAlbedo(int2 ipos, float3 val)
-{
-    // Constant we do not care about
-}
-
-// Read gEmission
-void d_getEmission(int2 ipos, float3 val)
-{
-    // Constant we do not care about
-}
-
-[BackwardDerivative(d_getColor)]
-float3 getColor(int2 ipos)
-{
-    return gColor[ipos].rgb;
-}
-
-[BackwardDerivative(d_getAlbedo)]
+no_diff
 float3 getAlbedo(int2 ipos)
 {
     return gAlbedo[ipos].rgb;
 }
 
-[BackwardDerivative(d_getEmission)]
+float3 getColor(int2 ipos)
+{
+    return gColor[ipos].rgb;
+}
+
 float3 getEmission(int2 ipos)
 {
     return gEmission[ipos].rgb;
+}
+
+no_diff
+float3 getNonemissiveColor(int2 ipos) // crude workaround for slang bug
+{
+    return getColor(ipos) - getEmission(ipos);
+}
+
+no_diff
+float4 getLinearZAndNormal(int2 ipos)
+{
+    return gLinearZAndNormal[ipos];
+}
+
+no_diff
+float4 getPrevLinearZAndNormal(int2 ipos)
+{
+    return gPrevLinearZAndNormal[ipos];
+}
+
+no_diff
+float2 getMotion(int2 ipos)
+{
+    return gMotion[ipos].rg;
+}
+
+no_diff
+float getPositionNormalFwidth(int2 ipos)
+{
+    return gPositionNormalFwidth[ipos].r;
+}
+
+// ===============================
+// Stuff we want to actually accum
+// ===============================
+
+void d_getPrevIllum(int2 ipos, float4 grad)
+{
+    // todo
+}
+
+[BackwardDerivative(d_getPrevIllum)]
+float4 getPrevIllum(int2 ipos)
+{
+    return gPrevIllum[ipos];
+}
+
+void d_getPrevMoments(int2 ipos, float2 grad)
+{
+    // todo
+}
+
+[BackwardDerivative(d_getPrevMoments)]
+float2 getPrevMoments(int2 ipos)
+{
+    return gPrevMoments[ipos].rg;
+}
+
+void d_getPrevHistoryLength(int2 ipos, float grad)
+{
+    // todo
+}
+
+[BackwardDerivative(d_getPrevHistoryLength)]
+float getPrevHistoryLength(int2 ipos)
+{
+    return gPrevHistoryLength[ipos].r;
 }
 
 bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal, float3 normalPrev, float fwidthNormal, float[4] reprojectionParamters)
@@ -112,26 +159,37 @@ bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal
     return true;
 }
 
+struct PrevFrameData : IDifferentiable
+{
+    float4 prevIllum;
+    float2 prevMoments;
+    float historyLength;
+    bool success;
+};
+
 // get the temporal data (this function does not accumulate)
-bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out float historyLength, float[4] reprojectionParamters, float[3] kernelWeights)
+[BackwardDifferentiable]
+PrevFrameData loadPrevData(no_diff float2 posH, float[4] reprojectionParamters, float[3] kernelWeights)
 {
     const int2 ipos = posH;
     const float2 imageDim = float2(getTextureDims(gColor, 0));
 
-    const float2 motion = gMotion[ipos].xy;
-    const float normalFwidth = gPositionNormalFwidth[ipos].y;
+    const float2 motion = getMotion(ipos);
+    const float normalFwidth = getPositionNormalFwidth(ipos);
 
     // +0.5 to account for texel center offset
     const int2 iposPrev = int2(float2(ipos) + motion.xy * imageDim + float2(0.5, 0.5));
 
-    float2 depth = gLinearZAndNormal[ipos].xy;
-    float3 normal = oct_to_ndir_snorm(gLinearZAndNormal[ipos].zw);
+    float2 depth = getLinearZAndNormal(ipos).xy;
+    float3 normal = oct_to_ndir_snorm(getLinearZAndNormal(ipos).zw);
 
-    prevIllum = float4(0, 0, 0, 0);
-    prevMoments = float2(0, 0);
+    PrevFrameData pfd;
+
+    pfd.prevIllum = float4(0, 0, 0, 0);
+    pfd.prevMoments = float2(0, 0);
 
     bool v[4];
-    const float2 posPrev = floor(posH.xy) + motion.xy * imageDim;
+    const no_diff float2 posPrev = diffFloor(posH.xy) + motion.xy * imageDim;
     const int2 offset[4] = { int2(0, 0), int2(1, 0), int2(0, 1), int2(1, 1) };
 
     // check for all 4 taps of the bilinear filter for validity
@@ -139,8 +197,8 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out
     for (int sampleIdx = 0; sampleIdx < 4; sampleIdx++)
     {
         int2 loc = int2(posPrev) + offset[sampleIdx];
-        float2 depthPrev = gPrevLinearZAndNormal[loc].xy;
-        float3 normalPrev = oct_to_ndir_snorm(gPrevLinearZAndNormal[loc].zw);
+        float2 depthPrev = getPrevLinearZAndNormal(loc).xy;
+        float3 normalPrev = oct_to_ndir_snorm(getPrevLinearZAndNormal(loc).zw);
 
         v[sampleIdx] = isReprjValid(iposPrev, depth.x, depthPrev.x, depth.y, normal, normalPrev, normalFwidth, reprojectionParamters);
 
@@ -162,16 +220,16 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out
             const int2 loc = int2(posPrev) + offset[sampleIdx];
             if (v[sampleIdx])
             {
-                prevIllum += w[sampleIdx] * gPrevIllum[loc];
-                prevMoments += w[sampleIdx] * gPrevMoments[loc].xy;
+                pfd.prevIllum += w[sampleIdx] * getPrevIllum(loc);
+                pfd.prevMoments += w[sampleIdx] * getPrevMoments(loc);
                 sumw += w[sampleIdx];
             }
         }
 
         // redistribute weights in case not all taps were used
         valid = (sumw >= 0.01);
-        prevIllum = valid ? prevIllum / sumw : float4(0, 0, 0, 0);
-        prevMoments = valid ? prevMoments / sumw : float2(0, 0);
+        pfd.prevIllum = valid ? pfd.prevIllum / sumw : float4(0, 0, 0, 0);
+        pfd.prevMoments = valid ? pfd.prevMoments / sumw : float2(0, 0);
     }
 
     if (!valid) // perform cross-bilateral filter in the hope to find some suitable samples somewhere
@@ -180,20 +238,19 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out
         float totalWeight = 0.0;
 
         // this code performs a binary descision for each tap of the cross-bilateral filter
-        const int radius = 1;
-        for (int yy = -radius; yy <= radius; yy++)
+        for (int yy = -1; yy <= 1; yy++)
         {
-            for (int xx = -radius; xx <= radius; xx++)
+            for (int xx = -1; xx <= 1; xx++)
             {
                 const int2 p = iposPrev + int2(xx, yy);
-                const float2 depthFilter = gPrevLinearZAndNormal[p].xy;
-                const float3 normalFilter = oct_to_ndir_snorm(gPrevLinearZAndNormal[p].zw);
+                const float2 depthFilter = getPrevLinearZAndNormal(p).xy;
+                const float3 normalFilter = oct_to_ndir_snorm(getPrevLinearZAndNormal(p).zw);
                 float curWeight = kernelWeights[abs(yy) + abs(xx)];
 
                 if (isReprjValid(iposPrev, depth.x, depthFilter.x, depth.y, normal, normalFilter, normalFwidth, reprojectionParamters))
                 {
-                    prevIllum += curWeight * gPrevIllum[p];
-                    prevMoments += curWeight * gPrevMoments[p].xy;
+                    pfd.prevIllum += curWeight * getPrevIllum(p);
+                    pfd.prevMoments += curWeight * getPrevMoments(p);
                     nValid += 1.0;
                     totalWeight += curWeight;
                 }
@@ -205,24 +262,26 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments, out
 
             totalWeight = max(totalWeight, 1e-6);
 
-            prevIllum /= totalWeight;
-            prevMoments /= totalWeight;
+            pfd.prevIllum /= totalWeight;
+            pfd.prevMoments /= totalWeight;
         }
     }
 
     if (valid)
     {
         // crude, fixme
-        historyLength = gPrevHistoryLength[iposPrev].x;
+        pfd.historyLength = getPrevHistoryLength(iposPrev);
     }
     else
     {
-        prevIllum = float4(0, 0, 0, 0);
-        prevMoments = float2(0, 0);
-        historyLength = 0;
+        pfd.prevIllum = float4(0, 0, 0, 0);
+        pfd.prevMoments = float2(0, 0);
+        pfd.historyLength = 0;
     }
 
-    return valid;
+    pfd.success = valid;
+
+    return pfd;
 }
 
 // not used currently
@@ -232,7 +291,7 @@ float computeVarianceScale(float numSamples, float loopLength, float alpha)
     return (1.0 - pow(aa, min(loopLength, numSamples))) / (1.0 - aa);
 }
 
-struct REPROJ_OUT : IDifferentiable 
+struct REPROJ_OUT : IDifferentiable
 {
     float4 OutIllumination;
     float2 OutMoments;
@@ -253,7 +312,7 @@ REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4]
     const float4 posH = vsOut.posH;
     const int2 ipos = posH.xy;
 
-    float3 illumination = demodulate(getColor(ipos) - getEmission(ipos), getAlbedo(ipos));
+    float3 illumination = demodulate(getNonemissiveColor(ipos), getAlbedo(ipos));
 
     // Workaround path tracer bugs. TODO: remove this when we can.
     if (isNaN(illumination.x) || isNaN(illumination.y) || isNaN(illumination.z))
@@ -261,10 +320,13 @@ REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4]
         illumination = float3(0, 0, 0);
     }
 
-    float historyLength;
-    float4 prevIllumination;
-    float2 prevMoments;
-    bool success = loadPrevData(posH.xy, prevIllumination, prevMoments, historyLength, reprojectionParamters, kernelWeights); // get temporal data with weights
+    var pfd = loadPrevData(posH.xy, reprojectionParamters, kernelWeights); // get temporal data with weights
+
+    float4 prevIllumination = pfd.prevIllum;
+    float2 prevMoments = pfd.prevMoments;
+    float historyLength = pfd.historyLength;
+    bool success = pfd.success;
+
     historyLength = min(reprojectionParamters[0], success ? historyLength + 1.0f : 1.0f);
 
     // it appears that the temporal accumulation does not have a constant alpha, instead it is adaptive
@@ -307,7 +369,7 @@ PS_OUT main(FullScreenPassVsOut vsOut) {
     DifferentialPair<float[4]> dpReprojParams = diffPair(dvReprojParams, {0, 0, 0, 0});
     DifferentialPair<float> dpAlpha = diffPair(dvAlpha, 0.0);
     DifferentialPair<float> dpMomentsAlpha = diffPair(dvMomentsAlpha, 0.0);
-    
+
     float  finiteDiff = 1e-5;
     let nodiffres = reproject(vsOut, dpLuminanceParams.p - float3(finiteDiff, 0, 0), dpReprojParams.p, dpReprojKernel.p, dpAlpha.p, dpMomentsAlpha.p);
     let nodiffresStep = reproject(vsOut, dpLuminanceParams.p + float3(finiteDiff, 0, 0), dpReprojParams.p, dpReprojKernel.p, dpAlpha.p, dpMomentsAlpha.p);

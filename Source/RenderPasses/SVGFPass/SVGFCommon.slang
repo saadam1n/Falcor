@@ -257,3 +257,8 @@ float4 applyLossColorTransform(float4 val)
     return val;
 }
 
+no_diff
+float2 diffFloor(float2 x)
+{
+    return floor(x);
+}
