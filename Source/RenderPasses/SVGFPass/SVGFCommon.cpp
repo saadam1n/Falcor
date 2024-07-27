@@ -345,7 +345,7 @@ bool SVGFTrainingDataset::loadPrev(RenderContext* pRenderContext)
 
     bool ret = loadCurrent(pRenderContext);
 
-    std::cout << "Dataset load " << mDatasetIndex << " " << ret << std::endl;
+    //std::cout << "Dataset load " << mDatasetIndex << " " << ret << std::endl;
 
 
     if (!ret)
