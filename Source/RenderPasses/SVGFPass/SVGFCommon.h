@@ -130,15 +130,19 @@ public:
     ref<Buffer> createAccumulationBuffer(int bytes_per_elem = sizeof(float4), bool need_reaback = false);
     ref<Texture> createFullscreenTexture(ResourceFormat fmt = ResourceFormat::RGBA32Float);
     ref<FullScreenPass> createFullscreenPassAndDumpIR(const std::string& path);
+    size_t getBufferSize(size_t elemSize);
 
     ref<Fbo> getDummyFullscreenFbo();
     void executeDummyFullscreenPass(RenderContext* pRenderContext, ref<Texture> tex);
 
     void runCompactingPass(RenderContext* pRenderContext, int idx, int n);
     void clearRawOutputBuffer(RenderContext* pRenderContext, int idx);
+    void combineBuffers(RenderContext* pRenderContext, ref<Buffer> lhs, ref<Buffer> rhs); 
 
     ref<Buffer> mpdaRawOutputBuffer[2];
     ref<Buffer> mpdrCompactedBuffer[2];
+    ref<Buffer> mpdaUncombinedBuffer;
+    ref<Buffer> mpdrCombinedBuffer;
 
     void setPatchingState(ref<FullScreenPass> fsPass);
 private:

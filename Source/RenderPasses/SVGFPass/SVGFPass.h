@@ -154,6 +154,10 @@ private:
     } mPackLinearZAndNormalState;
 
     struct {
+        ref<Buffer> pdaIllumination;
+        ref<Buffer> pdaMoments;
+        ref<Buffer> pdaHistoryLength;
+
         SVGFParameter<float> mAlpha;
         SVGFParameter<float> mMomentsAlpha;
 

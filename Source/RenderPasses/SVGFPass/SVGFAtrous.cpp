@@ -204,7 +204,25 @@ void SVGFAtrousSubpass::computeBackPropagation(RenderContext* pRenderContext, SV
             }
         }
 
-        perImageCB_D["drIllumination"] = (iteration == mFilterIterations - 1 ? svgfrd.fetchBufTable("AtrousInIllumination") : mpUtilities->mpdrCompactedBuffer[0]);
+        ref<Buffer> drBuffer;
+
+        if (iteration == mFilterIterations - 1)
+        {
+            drBuffer = svgfrd.fetchBufTable("AtrousInIllumination");
+        }
+        else
+        {
+            drBuffer =  mpUtilities->mpdrCompactedBuffer[0];
+        }
+
+        if (iteration == mFeedbackTap)
+        {
+            mpUtilities->combineBuffers(pRenderContext, drBuffer, svgfrd.fetchBufTable("ReprojOutIllum"));
+            drBuffer = mpUtilities->mpdrCombinedBuffer;
+        }
+
+
+        perImageCB_D["drIllumination"] = drBuffer;
         perImageCB["daIllumination"] = mpUtilities->mpdaRawOutputBuffer[0];
 
         perImageCB["gIllumination"] = svgfrd.fetchInternalTex("AtrousIllum" + std::to_string(iteration));

@@ -55,6 +55,10 @@ cbuffer PerImageCB
     float3 dvLuminanceParams;
     float dvReprojKernel[3];
     float dvReprojParams[4];
+
+    RWByteAddressBuffer daIllumination;
+    RWByteAddressBuffer daMoments;
+    RWByteAddressBuffer daHistoryLength;
 };
 
 static const float QUANTIZATION = 1.0;
@@ -109,31 +113,71 @@ float getPositionNormalFwidth(int2 ipos)
 // Stuff we want to actually accum
 // ===============================
 
-void d_getPrevIllum(int2 ipos, float4 grad)
+// Bilinear code
+
+int getBilinearIndex(int2 offset)
 {
-    // todo
+    int storageIdx = offset.y * 2 + offset.x;
+    return storageIdx;
 }
 
-[BackwardDerivative(d_getPrevIllum)]
-float4 getPrevIllum(int2 ipos)
+void d_getPrevIllumBilinear(int2 p, int2 offset, float4 grad)
 {
-    return gPrevIllum[ipos];
+    //storeDerivBuf4(daIllumination, p, grad, gAlbedo, getBilinearIndex(offset));
 }
 
-void d_getPrevMoments(int2 ipos, float2 grad)
+[BackwardDerivative(d_getPrevIllumBilinear)]
+float4 getPrevIllumBilinear(int2 p, int2 offset)
 {
-    // todo
+    return gPrevIllum[p];
 }
 
-[BackwardDerivative(d_getPrevMoments)]
-float2 getPrevMoments(int2 ipos)
+void d_getPrevMomentsBilinear(int2 p, int2 offset, float2 grad)
 {
-    return gPrevMoments[ipos].rg;
+    //storeDerivBuf4(daMoments, p, float4(grad, 0.0f.xx), gAlbedo, getBilinearIndex(offset));
 }
+
+[BackwardDerivative(d_getPrevMomentsBilinear)]
+float2 getPrevMomentsBilinear(int2 p, int2 offset)
+{
+    return gPrevMoments[p].rg;
+}
+
+// Bilteral code
+
+int getBilateralIndex(int2 offset)
+{
+    int storageIdx = (offset.y + 1) * 3 + (offset.x + 1);
+    return storageIdx + 4;
+}
+
+void d_getPrevIllumBilateral(int2 p, int2 offset, float4 grad)
+{
+    //storeDerivBuf4(daIllumination, p, grad, gAlbedo, getBilateralIndex(offset));
+}
+
+[BackwardDerivative(d_getPrevIllumBilateral)]
+float4 getPrevIllumBilateral(int2 p, int2 offset)
+{
+    return gPrevIllum[p];
+}
+
+void d_getPrevMomentsBilateral(int2 p, int2 offset, float2 grad)
+{
+    //storeDerivBuf4(daMoments, p, float4(grad, 0.0f.xx), gAlbedo, getBilateralIndex(offset));
+}
+
+[BackwardDerivative(d_getPrevMomentsBilateral)]
+float2 getPrevMomentsBilateral(int2 p, int2 offset)
+{
+    return gPrevMoments[p].rg;
+}
+
+// History length
 
 void d_getPrevHistoryLength(int2 ipos, float grad)
 {
-    // todo
+    //storeDerivBuf4(daHistoryLength, ipos, float4(grad, 0.0f.xxx), gAlbedo);
 }
 
 [BackwardDerivative(d_getPrevHistoryLength)]
@@ -142,6 +186,7 @@ float getPrevHistoryLength(int2 ipos)
     return gPrevHistoryLength[ipos].r;
 }
 
+// todo: get a differentiable version of this
 bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal, float3 normalPrev, float fwidthNormal, float[4] reprojectionParamters)
 {
     const int2 imageDim = getTextureDims(gColor, 0);
@@ -167,33 +212,70 @@ struct PrevFrameData : IDifferentiable
     bool success;
 };
 
-// get the temporal data (this function does not accumulate)
-[BackwardDifferentiable]
-PrevFrameData loadPrevData(no_diff float2 posH, float[4] reprojectionParamters, float[3] kernelWeights)
+void d_bilinearLoad(float2 posPrev, int2 iposPrev, float2 depth, float3 normal, float normalFwidth, inout DifferentialPair<float[4]> dpArgReprojectionParamters, PrevFrameData.Differential grad)
 {
-    const int2 ipos = posH;
-    const float2 imageDim = float2(getTextureDims(gColor, 0));
+    const int2 offset[4] = { int2(0, 0), int2(1, 0), int2(0, 1), int2(1, 1) };
 
-    const float2 motion = getMotion(ipos);
-    const float normalFwidth = getPositionNormalFwidth(ipos);
+    float sumw = 0;
+    float x = frac(posPrev.x);
+    float y = frac(posPrev.y);
 
-    // +0.5 to account for texel center offset
-    const int2 iposPrev = int2(float2(ipos) + motion.xy * imageDim + float2(0.5, 0.5));
+    // bilinear weights
+    const float w[4] = { (1 - x) * (1 - y), x * (1 - y), (1 - x) * y, x * y };
 
-    float2 depth = getLinearZAndNormal(ipos).xy;
-    float3 normal = oct_to_ndir_snorm(getLinearZAndNormal(ipos).zw);
+    // check for all 4 taps of the bilinear filter for validity
+    bool v[4];
+    bool success = false;
+    for (int sampleIdx = 0; sampleIdx < 4; sampleIdx++)
+    {
+        int2 loc = int2(posPrev) + offset[sampleIdx];
+        float2 depthPrev = getPrevLinearZAndNormal(loc).xy;
+        float3 normalPrev = oct_to_ndir_snorm(getPrevLinearZAndNormal(loc).zw);
+
+        v[sampleIdx] = isReprjValid(iposPrev, depth.x, depthPrev.x, depth.y, normal, normalPrev, normalFwidth, dpArgReprojectionParamters.p);
+
+        success = success || v[sampleIdx];
+        if (v[sampleIdx])
+        {
+            sumw += w[sampleIdx];
+        }
+    }
+
+    if (success)
+    {
+        // not needed since we don't have a differentaible isReprojValid func
+        // float4 dLdSumWFromIllum = -grad.prevIllum / (sumw * sumw);
+        // float2 dLdSumWFromMoments = -grad.prevMoments / (sumw * sumw);
+        // float dLdSumW = dot(dLdSumWFromIllum, 1.0f.xxxx) + dot(dLdSumWFromMoments, 1.0f.xx);
+
+        float4 dLdPrevIllum = -grad.prevIllum / sumw;
+        float2 dLdPrevMoments = -grad.prevMoments / sumw;
+
+        for (int sampleIdx = 0; sampleIdx < 4; sampleIdx++)
+        {
+            int2 loc = int2(posPrev) + offset[sampleIdx];
+            if (v[sampleIdx])
+            {
+                __bwd_diff(getPrevIllumBilinear)(loc, offset[sampleIdx], dLdPrevIllum);
+                __bwd_diff(getPrevMomentsBilinear)(loc, offset[sampleIdx], dLdPrevMoments);
+            }
+        }
+    }
+}
+
+[BackwardDerivative(d_bilinearLoad)]
+PrevFrameData bilinearLoad(no_diff float2 posPrev, int2 iposPrev, no_diff float2 depth, no_diff float3 normal, no_diff float normalFwidth, float[4] reprojectionParamters)
+{
+    const int2 offset[4] = { int2(0, 0), int2(1, 0), int2(0, 1), int2(1, 1) };
 
     PrevFrameData pfd;
 
     pfd.prevIllum = float4(0, 0, 0, 0);
     pfd.prevMoments = float2(0, 0);
-
-    bool v[4];
-    const no_diff float2 posPrev = diffFloor(posH.xy) + motion.xy * imageDim;
-    const int2 offset[4] = { int2(0, 0), int2(1, 0), int2(0, 1), int2(1, 1) };
+    pfd.success = false;
 
     // check for all 4 taps of the bilinear filter for validity
-    bool valid = false;
+    bool v[4];
     for (int sampleIdx = 0; sampleIdx < 4; sampleIdx++)
     {
         int2 loc = int2(posPrev) + offset[sampleIdx];
@@ -202,10 +284,10 @@ PrevFrameData loadPrevData(no_diff float2 posH, float[4] reprojectionParamters, 
 
         v[sampleIdx] = isReprjValid(iposPrev, depth.x, depthPrev.x, depth.y, normal, normalPrev, normalFwidth, reprojectionParamters);
 
-        valid = valid || v[sampleIdx];
+        pfd.success = pfd.success || v[sampleIdx];
     }
 
-    if (valid)
+    if (pfd.success)
     {
         float sumw = 0;
         float x = frac(posPrev.x);
@@ -220,54 +302,88 @@ PrevFrameData loadPrevData(no_diff float2 posH, float[4] reprojectionParamters, 
             const int2 loc = int2(posPrev) + offset[sampleIdx];
             if (v[sampleIdx])
             {
-                pfd.prevIllum += w[sampleIdx] * getPrevIllum(loc);
-                pfd.prevMoments += w[sampleIdx] * getPrevMoments(loc);
+                pfd.prevIllum += w[sampleIdx] * getPrevIllumBilinear(loc, offset[sampleIdx]);
+                pfd.prevMoments += w[sampleIdx] * getPrevMomentsBilinear(loc, offset[sampleIdx]);
                 sumw += w[sampleIdx];
             }
         }
 
         // redistribute weights in case not all taps were used
-        valid = (sumw >= 0.01);
-        pfd.prevIllum = valid ? pfd.prevIllum / sumw : float4(0, 0, 0, 0);
-        pfd.prevMoments = valid ? pfd.prevMoments / sumw : float2(0, 0);
+        pfd.success = (sumw >= 0.01);
+        pfd.prevIllum = pfd.prevIllum / sumw;
+        pfd.prevMoments = pfd.prevMoments / sumw;
     }
 
-    if (!valid) // perform cross-bilateral filter in the hope to find some suitable samples somewhere
+    return pfd;
+}
+
+[BackwardDifferentiable]
+PrevFrameData bilateralLoad(int2 iposPrev, float[3] kernelWeights, no_diff float2 depth, no_diff float3 normal, no_diff float normalFwidth, float[4] reprojectionParamters)
+{
+    float nValid = 0.0;
+    float totalWeight = 0.0;
+
+    PrevFrameData pfd;
+    pfd.prevIllum = float4(0.0f);
+    pfd.prevMoments = float2(0.0f);
+
+    // this code performs a binary descision for each tap of the cross-bilateral filter
+    for (int yy = -1; yy <= 1; yy++)
     {
-        float nValid = 0.0;
-        float totalWeight = 0.0;
-
-        // this code performs a binary descision for each tap of the cross-bilateral filter
-        for (int yy = -1; yy <= 1; yy++)
+        for (int xx = -1; xx <= 1; xx++)
         {
-            for (int xx = -1; xx <= 1; xx++)
-            {
-                const int2 p = iposPrev + int2(xx, yy);
-                const float2 depthFilter = getPrevLinearZAndNormal(p).xy;
-                const float3 normalFilter = oct_to_ndir_snorm(getPrevLinearZAndNormal(p).zw);
-                float curWeight = kernelWeights[abs(yy) + abs(xx)];
+            const int2 p = iposPrev + int2(xx, yy);
+            const float2 depthFilter = getPrevLinearZAndNormal(p).xy;
+            const float3 normalFilter = oct_to_ndir_snorm(getPrevLinearZAndNormal(p).zw);
+            float curWeight = kernelWeights[abs(yy) + abs(xx)];
 
-                if (isReprjValid(iposPrev, depth.x, depthFilter.x, depth.y, normal, normalFilter, normalFwidth, reprojectionParamters))
-                {
-                    pfd.prevIllum += curWeight * getPrevIllum(p);
-                    pfd.prevMoments += curWeight * getPrevMoments(p);
-                    nValid += 1.0;
-                    totalWeight += curWeight;
-                }
+            if (isReprjValid(iposPrev, depth.x, depthFilter.x, depth.y, normal, normalFilter, normalFwidth, reprojectionParamters))
+            {
+                pfd.prevIllum += curWeight * getPrevIllumBilateral(p, int2(xx, yy));
+                pfd.prevMoments += curWeight * getPrevMomentsBilateral(p, int2(xx, yy));
+                nValid += 1.0;
+                totalWeight += curWeight;
             }
         }
-        if (nValid > 0)
-        {
-            valid = true;
+    }
+    if (nValid > 0)
+    {
+        pfd.success = true;
 
-            totalWeight = max(totalWeight, 1e-6);
+        totalWeight = max(totalWeight, 1e-6);
 
-            pfd.prevIllum /= totalWeight;
-            pfd.prevMoments /= totalWeight;
-        }
+        pfd.prevIllum /= totalWeight;
+        pfd.prevMoments /= totalWeight;
     }
 
-    if (valid)
+    return pfd;
+}
+
+// get the temporal data (this function does not accumulate)
+[BackwardDifferentiable]
+PrevFrameData loadPrevData(no_diff float2 posH, float[4] reprojectionParamters, float[3] kernelWeights)
+{
+    const int2 ipos = posH;
+    const float2 imageDim = float2(getTextureDims(gColor, 0));
+
+    const float2 motion = getMotion(ipos);
+    const float normalFwidth = getPositionNormalFwidth(ipos);
+
+    // +0.5 to account for texel center offset
+    const int2 iposPrev = int2(float2(ipos) + motion.xy * imageDim + float2(0.5, 0.5));
+    const no_diff float2 posPrev = diffFloor(posH.xy) + motion.xy * imageDim;
+
+    float2 depth = getLinearZAndNormal(ipos).xy;
+    float3 normal = oct_to_ndir_snorm(getLinearZAndNormal(ipos).zw);
+
+    PrevFrameData pfd = bilinearLoad(posPrev, iposPrev, depth, normal, normalFwidth, reprojectionParamters);
+
+    if (!pfd.success)
+    {
+        pfd = bilateralLoad(iposPrev, kernelWeights, depth, normal, normalFwidth, reprojectionParamters);
+    }
+
+    if (pfd.success)
     {
         // crude, fixme
         pfd.historyLength = getPrevHistoryLength(iposPrev);
@@ -278,8 +394,6 @@ PrevFrameData loadPrevData(no_diff float2 posH, float[4] reprojectionParamters, 
         pfd.prevMoments = float2(0, 0);
         pfd.historyLength = 0;
     }
-
-    pfd.success = valid;
 
     return pfd;
 }
@@ -334,8 +448,8 @@ REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4]
     // this adjusts the alpha for the case where insufficient history is available.
     // It boosts the temporal accumulation to give the samples equal weights in
     // the beginning.
-    const float alpha        = success ? max(alpha,        reprojectionParamters[1] / historyLength) : 1.0;
-    const float alphaMoments = success ? max(momentsAlpha, reprojectionParamters[1] / historyLength) : 1.0;
+    const float alphaAdjusted        = success ? max(alpha,        reprojectionParamters[1] / historyLength) : 1.0;
+    const float alphaMomentsAdjusted = success ? max(momentsAlpha, reprojectionParamters[1] / historyLength) : 1.0;
 
     // compute first two moments of luminance
     float2 moments;
@@ -345,7 +459,7 @@ REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4]
     float2 pm = moments;
 
     // temporal integration of the moments
-    moments = lerp(prevMoments, moments, alphaMoments);
+    moments = lerp(prevMoments, moments, alphaMomentsAdjusted);
 
     float variance = max(0.f, moments.g - moments.r * moments.r);
 
@@ -353,7 +467,7 @@ REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4]
 
     REPROJ_OUT psOut;
     // temporal integration of illumination
-    psOut.OutIllumination = lerp(prevIllumination, float4(illumination, 0), alpha);
+    psOut.OutIllumination = lerp(prevIllumination, float4(illumination, 0), alphaAdjusted);
     // variance is propagated through the alpha channel
     psOut.OutIllumination.a = variance;
     psOut.OutMoments = moments;

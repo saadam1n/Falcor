@@ -90,6 +90,10 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
 
 
     // set reproj params
+    mReprojectState.pdaIllumination = mpUtilities->createAccumulationBuffer();
+    mReprojectState.pdaMoments = mpUtilities->createAccumulationBuffer();
+    mReprojectState.pdaHistoryLength = mpUtilities->createAccumulationBuffer();
+
     mReprojectState.mLuminanceParams.dv = dvLuminanceParams;
     REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mLuminanceParams);
 
@@ -506,6 +510,10 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
         else if(mDatasetIndex > K_FRAME_SAMPLE_START) // we have to use strictly greater for reasons
         {
             mBackPropagatingState = true;
+
+            // first clear all our buffers
+            clearTrainingBuffers(pRenderContext);
+
             if(mFirstBackPropIteration)
             {
                 mBatchSize = mDatasetIndex;
@@ -519,8 +527,7 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
                 std::cout << "\tBackpropagating Frame " << mDatasetIndex << "\n";
             }
 
-            // first clear all our buffers
-            clearTrainingBuffers(pRenderContext);
+
 
             mTrainingDataset.loadPrev(pRenderContext);
             mTrainingDataset.popInternalBuffers(pRenderContext);
@@ -669,6 +676,13 @@ void SVGFPass::clearTrainingBuffers(RenderContext* pRenderContext)
                 param.ssgrad[j] = 0.0f;
             }
         }
+    }
+
+    if (mFirstBackPropIteration)
+    {
+        pRenderContext->clearUAV(mReprojectState.pdaIllumination->getUAV().get(), float4(0.0f));
+        pRenderContext->clearUAV(mReprojectState.pdaMoments->getUAV().get(), float4(0.0f));
+        pRenderContext->clearUAV(mReprojectState.pdaHistoryLength->getUAV().get(), float4(0.0f));
     }
 }
 
@@ -1153,6 +1167,9 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevMoments", mpPrevReprojFbo->getColorTexture(1));
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevHistoryLength", mpPrevReprojFbo->getColorTexture(2));
 
+    mpUtilities->clearRawOutputBuffer(pRenderContext, 0);
+    mpUtilities->clearRawOutputBuffer(pRenderContext, 1);
+
     auto perImageCB = mReprojectState.sPass->getRootVar()["PerImageCB"];
 
     // Setup textures for our reprojection shader pass
@@ -1181,6 +1198,11 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
         perImageCB["dvReprojParams"][i] = mReprojectState.mParams.dv[i];
     }
 
+    perImageCB["daIllumination"] = mpUtilities->mpdaRawOutputBuffer[0];
+    perImageCB["daMoments"] = mpUtilities->mpdaRawOutputBuffer[1];
+    perImageCB["daHistoryLength"] = mReprojectState.pdaHistoryLength;
+
+
     mReprojectState.sPass->execute(pRenderContext, mpCurReprojFbo);
 
     // save a copy of our past filtration for backwards differentiation
@@ -1190,6 +1212,18 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
 
     svgfrd.fetchTexTable("FilteredPast") = mpFilteredPastFbo->getColorTexture(0);
     svgfrd.fetchTexTable("ReprojOutputCurIllum") = mpCurReprojFbo->getColorTexture(0);
+
+    // now, save the illum, moments, and history length buffers somewhere
+
+    mpUtilities->runCompactingPass(pRenderContext, 0, 9 + 4);
+    mpUtilities->runCompactingPass(pRenderContext, 1, 9 + 4);
+
+    pRenderContext->copyBufferRegion(mReprojectState.pdaIllumination.get(), 0, mpUtilities->mpdrCompactedBuffer[0].get(), 0, mpUtilities->mpdrCompactedBuffer[0]->getSize());
+    pRenderContext->copyBufferRegion(mReprojectState.pdaMoments.get(), 0, mpUtilities->mpdrCompactedBuffer[1].get(), 0, mpUtilities->mpdrCompactedBuffer[1]->getSize());
+
+    svgfrd.fetchBufTable("ReprojOutIllum") = mReprojectState.pdaIllumination;
+    svgfrd.fetchBufTable("ReprojOutMoments") = mReprojectState.pdaMoments;
+    svgfrd.fetchBufTable("ReprojOutHistoryLength") = mReprojectState.pdaHistoryLength;
 }
 
 void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRenderData& svgfrd)

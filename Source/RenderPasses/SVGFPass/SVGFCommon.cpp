@@ -17,6 +17,9 @@ SVGFUtilitySet::SVGFUtilitySet(ref<Device> pDevice, int minX, int minY, int maxX
         mpdrCompactedBuffer[i] = createAccumulationBuffer();
     }
 
+    mpdrCombinedBuffer = createAccumulationBuffer(sizeof(float4));
+    mpdaUncombinedBuffer = createAccumulationBuffer(2 * sizeof(float4));
+
     mpDummyFullscreenPass = createFullscreenPassAndDumpIR(kDummyFullScreenShader);
 }
 
@@ -56,6 +59,14 @@ ref<FullScreenPass> SVGFUtilitySet::createFullscreenPassAndDumpIR(const std::str
     return FullScreenPass::create(mpDevice, desc);
 }
 
+size_t SVGFUtilitySet::getBufferSize(size_t elemSize)
+{
+    int2 patchDim = mPatchMaxP - mPatchMinP;
+    int patchNumPixels = patchDim.x * patchDim.y;
+
+    return patchNumPixels * elemSize;
+}
+
 ref<Fbo> SVGFUtilitySet::getDummyFullscreenFbo()
 {
     return mpDummyFullscreenFbo;
@@ -90,6 +101,20 @@ void SVGFUtilitySet::clearRawOutputBuffer(RenderContext* pRenderContext, int idx
 {
     FALCOR_PROFILE(pRenderContext, "Clr Raw Out " + std::to_string(idx));
     pRenderContext->clearUAV(mpdaRawOutputBuffer[idx]->getUAV().get(), uint4(0));
+}
+
+void SVGFUtilitySet::combineBuffers(RenderContext* pRenderContext, ref<Buffer> lhs, ref<Buffer> rhs)
+{
+    std::swap(mpdaRawOutputBuffer[0], mpdaUncombinedBuffer);
+    std::swap(mpdrCompactedBuffer[0], mpdrCombinedBuffer);
+
+    pRenderContext->copyBufferRegion(mpdaUncombinedBuffer.get(), 0             , lhs.get(), 0, lhs->getSize());
+    pRenderContext->copyBufferRegion(mpdaUncombinedBuffer.get(), lhs->getSize(), rhs.get(), 0, rhs->getSize());
+
+    runCompactingPass(pRenderContext, 0, 2);
+
+    std::swap(mpdaRawOutputBuffer[0], mpdaUncombinedBuffer);
+    std::swap(mpdrCompactedBuffer[0], mpdrCombinedBuffer);
 }
 
 void SVGFUtilitySet::setPatchingState(ref<FullScreenPass> fsPass)
