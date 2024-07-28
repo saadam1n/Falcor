@@ -105,11 +105,13 @@ void SVGFUtilitySet::clearRawOutputBuffer(RenderContext* pRenderContext, int idx
 
 void SVGFUtilitySet::combineBuffers(RenderContext* pRenderContext, ref<Buffer> lhs, ref<Buffer> rhs)
 {
-    std::swap(mpdaRawOutputBuffer[0], mpdaUncombinedBuffer);
-    std::swap(mpdrCompactedBuffer[0], mpdrCombinedBuffer);
+    FALCOR_PROFILE(pRenderContext, "Combine Pass");
 
     pRenderContext->copyBufferRegion(mpdaUncombinedBuffer.get(), 0             , lhs.get(), 0, lhs->getSize());
     pRenderContext->copyBufferRegion(mpdaUncombinedBuffer.get(), lhs->getSize(), rhs.get(), 0, rhs->getSize());
+
+    std::swap(mpdaRawOutputBuffer[0], mpdaUncombinedBuffer);
+    std::swap(mpdrCompactedBuffer[0], mpdrCombinedBuffer);
 
     runCompactingPass(pRenderContext, 0, 2);
 

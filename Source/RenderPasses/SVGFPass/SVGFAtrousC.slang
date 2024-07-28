@@ -371,7 +371,7 @@ void d_atrous( FullScreenPassVsOut vsOut, inout DifferentialPair<float [2][2]> v
                 writeValSigmaN[writeIdx % 4] = 0.0f;
             }
             // write if full
-            if (writeIdx % 4 % 4 == 3 || writeIdx % 4 == 24)
+            if (writeIdx % 4 == 3 || writeIdx == 24)
             {
                 storeDerivBuf4(daKernel, ipos, writeValKernel, gAlbedo, writeIdx / 4);
                 storeDerivBuf4(daSigmaL, ipos, writeValSigmaL, gAlbedo, writeIdx / 4);

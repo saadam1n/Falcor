@@ -425,8 +425,234 @@ struct PS_OUT {
     float4 OutDebug         : SV_TARGET3;
 };
 
-// perhaps instead of having a simple lerp function for TAA, we can have more complex curve
-[BackwardDifferentiable]
+#define USE_RELU
+#define K_MLP_LINEARIZATION 1e2f
+
+void d_ff_mlp( float4 curIllum, inout DifferentialPair<float4> prevIllum,
+    inout DifferentialPair<float[2]> inputLayerWeights0, inout DifferentialPair<float[2]> inputLayerWeights1,
+    inout DifferentialPair<float[4]> hiddenLayerWeights0, inout DifferentialPair<float[4]> hiddenLayerWeights1,
+    inout DifferentialPair<float[4]> outputLayerWeights, float4 dLoss )
+{
+    curIllum /= K_MLP_LINEARIZATION;
+    float4 nprevIllum = prevIllum.p / K_MLP_LINEARIZATION;
+
+    float4 inputLayerOutputs[2];
+
+    for (int i = 0; i < 2; i++)
+    {
+        inputLayerOutputs[i] = tanh(inputLayerWeights0.p[i] * curIllum + inputLayerWeights1.p[i] * nprevIllum);
+    }
+
+    float4 hiddenLayerOutputs[4];
+    for (int i = 0; i < 4; i++)
+    {
+        hiddenLayerOutputs[i] = tanh(hiddenLayerWeights0.p[i] * inputLayerOutputs[0] + hiddenLayerWeights1.p[i] * inputLayerOutputs[1]);
+    }
+
+    float4 illum = float4(0.0f);
+    for (int i = 0; i < 4; i++)
+    {
+        illum += outputLayerWeights.p[i] * hiddenLayerOutputs[i];
+    }
+
+    float4 dLdIllum;
+#ifdef USE_RELU
+    dLdIllum = dLoss * K_MLP_LINEARIZATION;
+    for (int i = 0; i < 4; i++)
+    {
+        if (illum[i] < 0.0f)
+        {
+            dLdIllum[i] = 0.0f;
+        }
+    }
+#else
+    var dpIllum = diffPair(illum);
+    __bwd_diff(softplus)(dpIllum, dLoss);
+    dLdIllum = dpIllum.d * K_MLP_LINEARIZATION;
+#endif
+
+    float dLdOutputLayerWeights[4];
+    float4 dLdHiddenLayerOutputs[4];
+    for (int i = 0; i < 4; i++)
+    {
+        dLdHiddenLayerOutputs[i] = dLdIllum * outputLayerWeights.p[i];
+        dLdOutputLayerWeights[i] = dot(dLdIllum * hiddenLayerOutputs[i], 1.0f.xxxx);
+    }
+    outputLayerWeights = diffPair(outputLayerWeights.p, dLdOutputLayerWeights);
+
+    float dLdHiddenLayerWeights0[4];
+    float dLdHiddenLayerWeights1[4];
+    float4 dLdInputLayerOutputs[2];
+    dLdInputLayerOutputs[0] = float4(0.0f);
+    dLdInputLayerOutputs[1] = float4(0.0f);
+    for (int i = 0; i < 4; i++)
+    {
+        float4 dLdHiddenLayerInternal = dLdHiddenLayerOutputs[i] * (1.0f - hiddenLayerOutputs[i] * hiddenLayerOutputs[i]); // hopefully compiler is smart enough to recompute this?
+        dLdInputLayerOutputs[0] += dLdHiddenLayerInternal * hiddenLayerWeights0.p[i];
+        dLdInputLayerOutputs[1] += dLdHiddenLayerInternal * hiddenLayerWeights1.p[i];
+
+        dLdHiddenLayerWeights0[i] = dot(dLdHiddenLayerInternal * inputLayerOutputs[0], 1.0f.xxxx);
+        dLdHiddenLayerWeights1[i] = dot(dLdHiddenLayerInternal * inputLayerOutputs[1], 1.0f.xxxx);
+    }
+    hiddenLayerWeights0 = diffPair(hiddenLayerWeights0.p, dLdHiddenLayerWeights0);
+    hiddenLayerWeights1 = diffPair(hiddenLayerWeights1.p, dLdHiddenLayerWeights1);
+
+    float dLdInputLayerWeights0[2];
+    float dLdInputLayerWeights1[2];
+    float4 dLdPreviousIllum = float4(0.0f);
+    for (int i = 0; i < 2; i++)
+    {
+        float4 dLdInputLayerInternal = dLdInputLayerOutputs[i] * (1.0f - inputLayerOutputs[i] * inputLayerOutputs[i]);
+        dLdPreviousIllum += dLdInputLayerInternal * inputLayerWeights1.p[i];
+
+        dLdInputLayerWeights0[i] = dot(dLdInputLayerInternal * curIllum, 1.0f.xxxx);
+        dLdInputLayerWeights1[i] = dot(dLdInputLayerInternal * prevIllum.p, 1.0f.xxxx);
+    }
+
+    inputLayerWeights0 = diffPair(inputLayerWeights0.p, dLdInputLayerWeights0);
+    inputLayerWeights1 = diffPair(inputLayerWeights1.p, dLdInputLayerWeights1);
+    prevIllum = diffPair(prevIllum.p, dLdPreviousIllum);
+}
+
+[BackwardDerivative(d_ff_mlp)]
+float4 ff_mlp( no_diff float4 curIllum, float4 prevIllum, float[2] inputLayerWeights0, float[2] inputLayerWeights1, float[4] hiddenLayerWeights0, float[4] hiddenLayerWeights1, float[4] outputLayerWeights)
+{
+    curIllum /= K_MLP_LINEARIZATION;
+    prevIllum /= K_MLP_LINEARIZATION;
+
+    float4 inputLayerOutputs[2];
+
+    for (int i = 0; i < 2; i++)
+    {
+        inputLayerOutputs[i] = tanh(inputLayerWeights0[i] * curIllum + inputLayerWeights1[i] * prevIllum);
+    }
+
+    float4 hiddenLayerOutputs[4];
+    for (int i = 0; i < 4; i++)
+    {
+        hiddenLayerOutputs[i] = tanh(hiddenLayerWeights0[i] * inputLayerOutputs[0] + hiddenLayerWeights1[i] * inputLayerOutputs[1]);
+    }
+
+    float4 illum = float4(0.0f);
+    for (int i = 0; i < 4; i++)
+    {
+        illum += outputLayerWeights[i] * hiddenLayerOutputs[i];
+    }
+#ifdef USE_RELU
+    illum = max(illum, 0.0f); // ReLU
+#else
+    illum = softplus(illum);
+#endif
+
+    illum *= K_MLP_LINEARIZATION;
+
+    return illum;
+}
+
+// todo: back prop history length
+void d_reproject( FullScreenPassVsOut vsOut, inout DifferentialPair<float3> luminanceParams, inout DifferentialPair<float[4]> reprojectionParamters,
+    inout DifferentialPair<float[3]> kernelWeights, inout DifferentialPair<float> alpha, inout DifferentialPair<float> momentsAlpha,
+    inout DifferentialPair<float[2]> inputLayerWeights0, inout DifferentialPair<float[2]> inputLayerWeights1,
+    inout DifferentialPair<float[4]> hiddenLayerWeights0, inout DifferentialPair<float[4]> hiddenLayerWeights1,
+    inout DifferentialPair<float[4]> outputLayerWeights, REPROJ_OUT.Differential dLoss
+)
+{
+    const float4 posH = vsOut.posH;
+    const int2 ipos = posH.xy;
+
+    float3 illumination = demodulate(getNonemissiveColor(ipos), getAlbedo(ipos));
+
+    // Workaround path tracer bugs. TODO: remove this when we can.
+    if (isNaN(illumination.x) || isNaN(illumination.y) || isNaN(illumination.z))
+    {
+        illumination = float3(0, 0, 0);
+    }
+
+    var pfd = loadPrevData(posH.xy, reprojectionParamters.p, kernelWeights.p); // get temporal data with weights
+
+    float4 prevIllumination = pfd.prevIllum;
+    float2 prevMoments = pfd.prevMoments;
+    float historyLength = pfd.historyLength;
+    bool success = pfd.success;
+
+    historyLength = min(reprojectionParamters.p[0], success ? historyLength + 1.0f : 1.0f);
+
+    // it appears that the temporal accumulation does not have a constant alpha, instead it is adaptive
+
+    // this adjusts the alpha for the case where insufficient history is available.
+    // It boosts the temporal accumulation to give the samples equal weights in
+    // the beginning.
+    const float alphaAdjusted = success ? max(alpha.p, reprojectionParamters.p[1] / historyLength) : 1.0;
+    const float alphaMomentsAdjusted = success ? max(momentsAlpha.p, reprojectionParamters.p[1] / historyLength) : 1.0;
+
+    // compute first two moments of luminance
+    float2 moments;
+    moments.r = dot(illumination, luminanceParams.p.rgb);
+    moments.g = moments.r * moments.r;
+
+    float2 pm = moments;
+
+    // temporal integration of the moments
+    moments = lerp(prevMoments, moments, alphaMomentsAdjusted);
+
+    float variance = max(0.f, moments.g - moments.r * moments.r);
+
+    float4 illum = float4(illumination, 0); // lerp(prevIllumination, float4(illumination, 0), alphaAdjusted)
+    DifferentialPair<float4> dLdPrevIllum = diffPair(prevIllumination);
+    float4 dLdIllumination = float4(dLoss.OutIllumination.rgb, 0.0f);
+    if (success)
+    {
+        __bwd_diff(ff_mlp )(illum, dLdPrevIllum, inputLayerWeights0, inputLayerWeights1, hiddenLayerWeights0, hiddenLayerWeights1, outputLayerWeights, dLdIllumination);
+    }
+
+
+
+    float dLdVariance = dLoss.OutIllumination.a;
+    if (variance == 0.0f)
+    {
+        dLdVariance = 0.0f;
+    }
+
+    float2 dLdMoments = dLoss.OutMoments;
+    dLdMoments.g += dLdVariance;
+    dLdMoments.r += dLdVariance * -2.0f * moments.r;
+    float2 dLdOriginalMoments = dLdMoments * alphaMomentsAdjusted;
+    float2 dLdPrevMoments = dLdMoments * -alphaMomentsAdjusted;
+
+    dLdOriginalMoments.r += dLdOriginalMoments.g * 2.0f * pm.r;
+
+    luminanceParams = diffPair(luminanceParams.p, dLdOriginalMoments.r * illumination);
+
+    float dLdMomentsAlphaAdjusted = dot(dLdMoments * (pm - prevMoments), 1.0f.xx);
+
+    float dLdMomentsALpha = 0.0f;
+    if (success && alphaMomentsAdjusted > reprojectionParamters.p[1] / historyLength)
+    {
+        dLdMomentsALpha = dLdMomentsAlphaAdjusted;
+    }
+    momentsAlpha = diffPair(momentsAlpha.p, dLdMomentsALpha);
+
+    float dLdAlphaAdjusted = dot(dLdIllumination * (illum - prevIllumination), 1.0f.xxxx);
+    float dLdAlpha = 0.0f;
+    if (success && alphaAdjusted > reprojectionParamters.p[1] / historyLength)
+    {
+        dLdAlpha = dLdAlphaAdjusted;
+    }
+    alpha = diffPair(alpha.p, dLdAlpha);
+
+    // to do: history length and a bunch of other stuff
+    PrevFrameData.Differential dpfd;
+
+    dpfd.prevIllum = dLdPrevIllum.d;
+    dpfd.prevMoments = dLdPrevMoments;
+    dpfd.historyLength = 0.0f;
+
+    __bwd_diff(loadPrevData)(posH.xy, reprojectionParamters, kernelWeights, dpfd);
+
+
+}
+
+[BackwardDerivative(d_reproject)]
 REPROJ_OUT reproject( FullScreenPassVsOut vsOut, float3 luminanceParams, float[4] reprojectionParamters, float[3] kernelWeights, float alpha, float momentsAlpha,
     float[2] inputLayerWeights0, float[2] inputLayerWeights1, float[4] hiddenLayerWeights0, float[4] hiddenLayerWeights1, float[4] outputLayerWeights)
 {
@@ -470,28 +696,10 @@ REPROJ_OUT reproject( FullScreenPassVsOut vsOut, float3 luminanceParams, float[4
 
     float variance = max(0.f, moments.g - moments.r * moments.r);
 
-    float4 illum = float4(illumination, 0); // lerp(prevIllumination, float4(illumination, 0), alphaAdjusted)
+    float4 illum = lerp(prevIllumination, float4(illumination, 0), alphaAdjusted);
     if (success)
     {
-        float4 inputLayerOutputs[2];
-
-        for (int i = 0; i < 2; i++)
-        {
-            inputLayerOutputs[i] = sigmoid(inputLayerWeights0[i] * float4(illumination, 0.0f) + inputLayerWeights1[i] * prevIllumination);
-        }
-
-        float4 hiddenLayerOutputs[4];
-        for (int i = 0; i < 4; i++)
-        {
-            hiddenLayerOutputs[i] = sigmoid(hiddenLayerWeights0[i] * inputLayerOutputs[0] + hiddenLayerWeights1[i] * inputLayerOutputs[1]);
-        }
-
-        illum = float4(0.0f);
-        for (int i = 0; i < 4; i++)
-        {
-            illum += outputLayerWeights[i] * hiddenLayerOutputs[i];
-        }
-        illum = softplus(illum);
+        illum = ff_mlp( float4(illumination, 0), prevIllumination, inputLayerWeights0, inputLayerWeights1, hiddenLayerWeights0, hiddenLayerWeights1, outputLayerWeights );
     }
 
 

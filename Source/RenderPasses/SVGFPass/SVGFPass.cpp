@@ -27,6 +27,7 @@
  **************************************************************************/
 #include "SVGFPass.h"
 #include <fstream>
+#include <random>
 
 /*
 TODO:
@@ -114,8 +115,51 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     mReprojectState.mKernel.dv[2] = 1.0;
     REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mKernel);
 
+    const float K_TANH_LINEARIZATION = 1.0f;
+
+    mReprojectState.mInputLayerWeights0.dv[0] = 1.0f / K_TANH_LINEARIZATION; // linear copy of current illum
+    mReprojectState.mInputLayerWeights0.dv[1] = 0.0f;
+
+    mReprojectState.mInputLayerWeights1.dv[0] = 0.0f;
+    mReprojectState.mInputLayerWeights1.dv[1] = 1.0f / K_TANH_LINEARIZATION; // linear copy of previous illum
+
+    mReprojectState.mHiddenLayerWeights0.dv[0] = 1.0f; // linear copy
+    mReprojectState.mHiddenLayerWeights0.dv[1] = 0.0f;
+    mReprojectState.mHiddenLayerWeights0.dv[2] = 0.0f;
+    mReprojectState.mHiddenLayerWeights0.dv[3] = 0.0f;
+
+    mReprojectState.mHiddenLayerWeights1.dv[0] = 0.0f;
+    mReprojectState.mHiddenLayerWeights1.dv[1] = 1.0f; // linear copy
+    mReprojectState.mHiddenLayerWeights1.dv[2] = 0.0f;
+    mReprojectState.mHiddenLayerWeights1.dv[3] = 0.0f;
+
+    mReprojectState.mOutputLayerWeights.dv[0] = K_TANH_LINEARIZATION * dvAlpha; // linear copy
+    mReprojectState.mOutputLayerWeights.dv[1] = K_TANH_LINEARIZATION * (1.0f - dvAlpha); // linear copy
+    mReprojectState.mOutputLayerWeights.dv[2] = 0.0f;
+    mReprojectState.mOutputLayerWeights.dv[3] = 0.0f;
+
+    const float K_MLP_RANDOMIZATION = 0.01f / K_TANH_LINEARIZATION;
+    std::mt19937 mlp_rng(1234);
+    std::uniform_real_distribution<> mlp_offset(-K_MLP_RANDOMIZATION, K_MLP_RANDOMIZATION);
+
     for(int i = 0; i < 4; i++)
     {
+        //break;
+        if(i < 2)
+        {
+            mReprojectState.mInputLayerWeights0.dv[i] += mlp_offset(mlp_rng);
+            mReprojectState.mInputLayerWeights1.dv[i] += mlp_offset(mlp_rng);
+        }
+
+        mReprojectState.mHiddenLayerWeights0.dv[i] += mlp_offset(mlp_rng);
+        mReprojectState.mHiddenLayerWeights1.dv[i] += mlp_offset(mlp_rng);
+        mReprojectState.mOutputLayerWeights.dv[i] += mlp_offset(mlp_rng);
+    }
+
+    for(int i = 0; i < 4; i++)
+    {
+        break;
+
         if(i < 2)
         {
             mReprojectState.mInputLayerWeights0.dv[i] = 1.0f;
@@ -428,11 +472,11 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 }
 
 
-const int K_NUM_EPOCHS = 16;
-const int K_FRAME_SAMPLE_START = 10;
+const int K_NUM_EPOCHS = 32;
+const int K_FRAME_SAMPLE_START = 48;
 
-const float K_LRATE_NUMER = 15.0f * 0.01f; // 0.0085 is a good value
-const float K_LRATE_DENOM = 15.0f * 1.0f;
+const float K_LRATE_NUMER = 25.0f * 0.001f; // 0.0085 is a good value
+const float K_LRATE_DENOM = 25.0f * 1.0f;
 
 // parameters for the adam algorithm
 // the paper recommends 0.9 and 0.999 respectively, but we observed that leads to exploding gradients
@@ -760,13 +804,20 @@ void SVGFPass::updateParameters(RenderContext* pRenderContext, int sampledFrames
     {
         auto& pmi = mpParameterReflector->mRegistry[i];
 
+        bool isMlpParameter = (pmi.mName.find("LayerWeights") != std::string::npos);
+
         for (int j = 0; j < pmi.mNumElements; j++)
         {
             float averageGradient = getAverageGradient(gradient, currentOffset, sampledFrames);
 
             float adjustment = learningRate * calculateBaseAdjustment(averageGradient, pmi.momentum[j], pmi.ssgrad[j]);
+
+            if(isMlpParameter) adjustment *= 0.2f;
+
             pmi.mAddress[j] -= adjustment;
-            pmi.mAddress[j] = std::max(pmi.mAddress[j], 0.0f); // gradient clipping
+
+            if(!isMlpParameter) pmi.mAddress[j] = std::max(pmi.mAddress[j], 0.0f); // gradient clipping
+
             currentOffset++;
 
 
@@ -1218,13 +1269,13 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
     {
         if(i < 2)
         {
-            perImageCB["dvInputLayerWeights0"] = mReprojectState.mInputLayerWeights0.dv[i];
-            perImageCB["dvInputLayerWeights1"] = mReprojectState.mInputLayerWeights1.dv[i];
+            perImageCB["dvInputLayerWeights0"][i] = mReprojectState.mInputLayerWeights0.dv[i];
+            perImageCB["dvInputLayerWeights1"][i] = mReprojectState.mInputLayerWeights1.dv[i];
         }
 
-        perImageCB["dvHiddenLayerWeights0"] = mReprojectState.mHiddenLayerWeights0.dv[i];
-        perImageCB["dvHiddenLayerWeights0"] = mReprojectState.mHiddenLayerWeights1.dv[i];
-        perImageCB["dvOutputLayerWeights"] = mReprojectState.mOutputLayerWeights.dv[i];
+        perImageCB["dvHiddenLayerWeights0"][i] = mReprojectState.mHiddenLayerWeights0.dv[i];
+        perImageCB["dvHiddenLayerWeights1"][i] = mReprojectState.mHiddenLayerWeights1.dv[i];
+        perImageCB["dvOutputLayerWeights"][i] = mReprojectState.mOutputLayerWeights.dv[i];
     }
 
     mReprojectState.sPass->execute(pRenderContext, mpCurReprojFbo);
@@ -1284,13 +1335,13 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
     {
         if(i < 2)
         {
-            perImageCB["dvInputLayerWeights0"] = mReprojectState.mInputLayerWeights0.dv[i];
-            perImageCB["dvInputLayerWeights1"] = mReprojectState.mInputLayerWeights1.dv[i];
+            perImageCB["dvInputLayerWeights0"][i] = mReprojectState.mInputLayerWeights0.dv[i];
+            perImageCB["dvInputLayerWeights1"][i] = mReprojectState.mInputLayerWeights1.dv[i];
         }
 
-        perImageCB["dvHiddenLayerWeights0"] = mReprojectState.mHiddenLayerWeights0.dv[i];
-        perImageCB["dvHiddenLayerWeights0"] = mReprojectState.mHiddenLayerWeights1.dv[i];
-        perImageCB["dvOutputLayerWeights"] = mReprojectState.mOutputLayerWeights.dv[i];
+        perImageCB["dvHiddenLayerWeights0"][i] = mReprojectState.mHiddenLayerWeights0.dv[i];
+        perImageCB["dvHiddenLayerWeights1"][i] = mReprojectState.mHiddenLayerWeights1.dv[i];
+        perImageCB["dvOutputLayerWeights"][i] = mReprojectState.mOutputLayerWeights.dv[i];
     }
 
     mpUtilities->combineBuffers(pRenderContext, mpUtilities->mpdrCompactedBuffer[1], mReprojectState.pdaMoments);
