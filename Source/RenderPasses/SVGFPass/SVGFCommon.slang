@@ -263,29 +263,29 @@ float2 diffFloor(float2 x)
     return floor(x);
 }
 
-void d_sigmoid(inout DifferentialPair<float3> x, float3 g)
+void d_sigmoid(inout DifferentialPair<float4> x, float4 g)
 {
-    float3 e = exp(-x.p);
-    float3 d = 1.0f + e;
+    float4 e = exp(-x.p);
+    float4 d = 1.0f + e;
     d *= d;
     x = diffPair(x.p, g * e / d);
 }
 
 [BackwardDerivative(d_sigmoid)]
-float3 sigmoid(float3 x)
+float4 sigmoid(float4 x)
 {
-    float3 e = exp(-x);
+    float4 e = exp(-x);
     return 1.0f / (1.0f + e);
 }
 
-void d_softmax(inout DifferentialPair<float3> x, float3 g)
+void d_softplus(inout DifferentialPair<float4> x, float4 g)
 {
-    float3 e = exp(x.p);
+    float4 e = exp(x.p);
     x = diffPair(x.p, g * e / (1.0f + e));
 }
 
-[BackwardDerivative(d_softmax)]
-float3 softmax(float3 x)
+[BackwardDerivative(d_softplus)]
+float4 softplus(float4 x)
 {
     return log(1.0f + exp(x));
 }

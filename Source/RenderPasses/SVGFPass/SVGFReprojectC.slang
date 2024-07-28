@@ -56,6 +56,12 @@ cbuffer PerImageCB
     float dvReprojKernel[3];
     float dvReprojParams[4];
 
+    float dvInputLayerWeights0[2];
+    float dvInputLayerWeights1[2];
+    float dvHiddenLayerWeights0[4];
+    float dvHiddenLayerWeights1[4];
+    float dvOutputLayerWeights[4];
+
     RWByteAddressBuffer daIllumination;
     RWByteAddressBuffer daMoments;
     RWByteAddressBuffer daHistoryLength;
@@ -421,7 +427,8 @@ struct PS_OUT {
 
 // perhaps instead of having a simple lerp function for TAA, we can have more complex curve
 [BackwardDifferentiable]
-REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4] reprojectionParamters, float[3] kernelWeights, float alpha, float momentsAlpha)
+REPROJ_OUT reproject( FullScreenPassVsOut vsOut, float3 luminanceParams, float[4] reprojectionParamters, float[3] kernelWeights, float alpha, float momentsAlpha,
+    float[2] inputLayerWeights0, float[2] inputLayerWeights1, float[4] hiddenLayerWeights0, float[4] hiddenLayerWeights1, float[4] outputLayerWeights)
 {
     const float4 posH = vsOut.posH;
     const int2 ipos = posH.xy;
@@ -463,11 +470,34 @@ REPROJ_OUT reproject(FullScreenPassVsOut vsOut, float3 luminanceParams, float[4]
 
     float variance = max(0.f, moments.g - moments.r * moments.r);
 
-    // variance *= computeVarianceScale(16, 16, alpha);
+    float4 illum = float4(illumination, 0); // lerp(prevIllumination, float4(illumination, 0), alphaAdjusted)
+    if (success)
+    {
+        float4 inputLayerOutputs[2];
+
+        for (int i = 0; i < 2; i++)
+        {
+            inputLayerOutputs[i] = sigmoid(inputLayerWeights0[i] * float4(illumination, 0.0f) + inputLayerWeights1[i] * prevIllumination);
+        }
+
+        float4 hiddenLayerOutputs[4];
+        for (int i = 0; i < 4; i++)
+        {
+            hiddenLayerOutputs[i] = sigmoid(hiddenLayerWeights0[i] * inputLayerOutputs[0] + hiddenLayerWeights1[i] * inputLayerOutputs[1]);
+        }
+
+        illum = float4(0.0f);
+        for (int i = 0; i < 4; i++)
+        {
+            illum += outputLayerWeights[i] * hiddenLayerOutputs[i];
+        }
+        illum = softplus(illum);
+    }
+
 
     REPROJ_OUT psOut;
     // temporal integration of illumination
-    psOut.OutIllumination = lerp(prevIllumination, float4(illumination, 0), alphaAdjusted);
+    psOut.OutIllumination = illum;
     // variance is propagated through the alpha channel
     psOut.OutIllumination.a = variance;
     psOut.OutMoments = moments;

@@ -166,6 +166,12 @@ private:
         SVGFParameter<float[4]> mParams;
         SVGFParameter<float[3]> mKernel;
 
+        SVGFParameter<float[2]> mInputLayerWeights0;
+        SVGFParameter<float[2]> mInputLayerWeights1;
+        SVGFParameter<float[4]> mHiddenLayerWeights0;
+        SVGFParameter<float[4]> mHiddenLayerWeights1;
+        SVGFParameter<float[4]> mOutputLayerWeights;
+
         ref<FullScreenPass> sPass;
         ref<FullScreenPass> dPass;
     } mReprojectState;

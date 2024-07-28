@@ -114,6 +114,25 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     mReprojectState.mKernel.dv[2] = 1.0;
     REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mKernel);
 
+    for(int i = 0; i < 4; i++)
+    {
+        if(i < 2)
+        {
+            mReprojectState.mInputLayerWeights0.dv[i] = 1.0f;
+            mReprojectState.mInputLayerWeights1.dv[i] = 1.0f;
+        }
+
+        mReprojectState.mHiddenLayerWeights0.dv[i] = 1.0f;
+        mReprojectState.mHiddenLayerWeights1.dv[i] = 1.0f;
+        mReprojectState.mOutputLayerWeights.dv[i] = 1.0f;
+    }
+
+    REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mInputLayerWeights0);
+    REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mInputLayerWeights1);
+    REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mHiddenLayerWeights0);
+    REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mHiddenLayerWeights1);
+    REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mOutputLayerWeights);
+
 
 
     // set filter moments params
@@ -1195,6 +1214,19 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
         perImageCB["dvReprojParams"][i] = mReprojectState.mParams.dv[i];
     }
 
+    for(int i = 0; i < 4; i++)
+    {
+        if(i < 2)
+        {
+            perImageCB["dvInputLayerWeights0"] = mReprojectState.mInputLayerWeights0.dv[i];
+            perImageCB["dvInputLayerWeights1"] = mReprojectState.mInputLayerWeights1.dv[i];
+        }
+
+        perImageCB["dvHiddenLayerWeights0"] = mReprojectState.mHiddenLayerWeights0.dv[i];
+        perImageCB["dvHiddenLayerWeights0"] = mReprojectState.mHiddenLayerWeights1.dv[i];
+        perImageCB["dvOutputLayerWeights"] = mReprojectState.mOutputLayerWeights.dv[i];
+    }
+
     mReprojectState.sPass->execute(pRenderContext, mpCurReprojFbo);
 
     // save a copy of our past filtration for backwards differentiation
@@ -1248,6 +1280,19 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
         perImageCB["dvReprojParams"][i] = mReprojectState.mParams.dv[i];
     }
 
+    for(int i = 0; i < 4; i++)
+    {
+        if(i < 2)
+        {
+            perImageCB["dvInputLayerWeights0"] = mReprojectState.mInputLayerWeights0.dv[i];
+            perImageCB["dvInputLayerWeights1"] = mReprojectState.mInputLayerWeights1.dv[i];
+        }
+
+        perImageCB["dvHiddenLayerWeights0"] = mReprojectState.mHiddenLayerWeights0.dv[i];
+        perImageCB["dvHiddenLayerWeights0"] = mReprojectState.mHiddenLayerWeights1.dv[i];
+        perImageCB["dvOutputLayerWeights"] = mReprojectState.mOutputLayerWeights.dv[i];
+    }
+
     mpUtilities->combineBuffers(pRenderContext, mpUtilities->mpdrCompactedBuffer[1], mReprojectState.pdaMoments);
 
 
@@ -1263,6 +1308,11 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
     perImageCB_D["daAlpha"] = mReprojectState.mAlpha.da;
     perImageCB_D["daMomentsAlpha"] = mReprojectState.mMomentsAlpha.da;
 
+    perImageCB_D["daInputLayerWeights0"] = mReprojectState.mInputLayerWeights0.da;
+    perImageCB_D["daInputLayerWeights1"] = mReprojectState.mInputLayerWeights1.da;
+    perImageCB_D["daHiddenLayerWeights0"] = mReprojectState.mHiddenLayerWeights0.da;
+    perImageCB_D["daHiddenLayerWeights1"] = mReprojectState.mHiddenLayerWeights1.da;
+    perImageCB_D["daOutputLayerWeights"] = mReprojectState.mOutputLayerWeights.da;
 
     perImageCB["daIllumination"] = mpUtilities->mpdaRawOutputBuffer[0];
     perImageCB["daMoments"] = mpUtilities->mpdaRawOutputBuffer[1];
