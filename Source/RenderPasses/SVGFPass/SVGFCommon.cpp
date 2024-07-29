@@ -17,8 +17,11 @@ SVGFUtilitySet::SVGFUtilitySet(ref<Device> pDevice, int minX, int minY, int maxX
         mpdrCompactedBuffer[i] = createAccumulationBuffer();
     }
 
-    mpdrCombinedBuffer = createAccumulationBuffer(sizeof(float4));
-    mpdaUncombinedBuffer = createAccumulationBuffer(2 * sizeof(float4));
+    for (int i = 0; i < 2; i++)
+    {
+        mpdrCombinedBuffer[0] = createAccumulationBuffer(sizeof(float4));
+        mpdaUncombinedBuffer[0] = createAccumulationBuffer(2 * sizeof(float4));
+    }
 
     mpDummyFullscreenPass = createFullscreenPassAndDumpIR(kDummyFullScreenShader);
 }
@@ -103,20 +106,20 @@ void SVGFUtilitySet::clearRawOutputBuffer(RenderContext* pRenderContext, int idx
     pRenderContext->clearUAV(mpdaRawOutputBuffer[idx]->getUAV().get(), uint4(0));
 }
 
-void SVGFUtilitySet::combineBuffers(RenderContext* pRenderContext, ref<Buffer> lhs, ref<Buffer> rhs)
+void SVGFUtilitySet::combineBuffers(RenderContext* pRenderContext, int idx, ref<Buffer> lhs, ref<Buffer> rhs)
 {
     FALCOR_PROFILE(pRenderContext, "Combine Pass");
 
-    pRenderContext->copyBufferRegion(mpdaUncombinedBuffer.get(), 0             , lhs.get(), 0, lhs->getSize());
-    pRenderContext->copyBufferRegion(mpdaUncombinedBuffer.get(), lhs->getSize(), rhs.get(), 0, rhs->getSize());
+    pRenderContext->copyBufferRegion(mpdaUncombinedBuffer[idx].get(), 0, lhs.get(), 0, lhs->getSize());
+    pRenderContext->copyBufferRegion(mpdaUncombinedBuffer[idx].get(), lhs->getSize(), rhs.get(), 0, rhs->getSize());
 
-    std::swap(mpdaRawOutputBuffer[0], mpdaUncombinedBuffer);
-    std::swap(mpdrCompactedBuffer[0], mpdrCombinedBuffer);
+    std::swap(mpdaRawOutputBuffer[0], mpdaUncombinedBuffer[idx]);
+    std::swap(mpdrCompactedBuffer[0], mpdrCombinedBuffer[idx]);
 
     runCompactingPass(pRenderContext, 0, 2);
 
-    std::swap(mpdaRawOutputBuffer[0], mpdaUncombinedBuffer);
-    std::swap(mpdrCompactedBuffer[0], mpdrCombinedBuffer);
+    std::swap(mpdaRawOutputBuffer[0], mpdaUncombinedBuffer[idx]);
+    std::swap(mpdrCompactedBuffer[0], mpdrCombinedBuffer[idx]);
 }
 
 void SVGFUtilitySet::setPatchingState(ref<FullScreenPass> fsPass)

@@ -137,12 +137,12 @@ public:
 
     void runCompactingPass(RenderContext* pRenderContext, int idx, int n);
     void clearRawOutputBuffer(RenderContext* pRenderContext, int idx);
-    void combineBuffers(RenderContext* pRenderContext, ref<Buffer> lhs, ref<Buffer> rhs); 
+    void combineBuffers(RenderContext* pRenderContext, int idx, ref<Buffer> lhs, ref<Buffer> rhs); 
 
     ref<Buffer> mpdaRawOutputBuffer[2];
     ref<Buffer> mpdrCompactedBuffer[2];
-    ref<Buffer> mpdaUncombinedBuffer;
-    ref<Buffer> mpdrCombinedBuffer;
+    ref<Buffer> mpdaUncombinedBuffer[2];
+    ref<Buffer> mpdrCombinedBuffer[2];
 
     void setPatchingState(ref<FullScreenPass> fsPass);
 private:

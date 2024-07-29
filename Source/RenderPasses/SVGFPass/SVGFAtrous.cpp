@@ -217,8 +217,8 @@ void SVGFAtrousSubpass::computeBackPropagation(RenderContext* pRenderContext, SV
 
         if (iteration == mFeedbackTap)
         {
-            mpUtilities->combineBuffers(pRenderContext, drBuffer, svgfrd.fetchBufTable("ReprojOutIllum"));
-            drBuffer = mpUtilities->mpdrCombinedBuffer;
+            mpUtilities->combineBuffers(pRenderContext, 0, drBuffer, svgfrd.fetchBufTable("ReprojOutIllum"));
+            drBuffer = mpUtilities->mpdrCombinedBuffer[0];
         }
 
 

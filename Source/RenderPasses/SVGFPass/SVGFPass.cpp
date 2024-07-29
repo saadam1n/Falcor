@@ -1284,13 +1284,13 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
     }
     perImageCB["daMlpWeights"] =  mReprojectState.mTemporalMlpWeights.da;
 
-    mpUtilities->combineBuffers(pRenderContext, mpUtilities->mpdrCompactedBuffer[1], mReprojectState.pdaMoments);
+    mpUtilities->combineBuffers(pRenderContext, 0, mpUtilities->mpdrCompactedBuffer[1], mReprojectState.pdaMoments);
 
 
     auto perImageCB_D = mReprojectState.dPass->getRootVar()["PerImageCB_D"];
 
     perImageCB_D["drIllumination"] = mpUtilities->mpdrCompactedBuffer[0];
-    perImageCB_D["drMoments"] = mpUtilities->mpdrCombinedBuffer;
+    perImageCB_D["drMoments"] = mpUtilities->mpdrCombinedBuffer[0];
     perImageCB_D["drHistoryLen"] = mFilterMomentsState.pdaHistoryLen;
 
     perImageCB_D["daLuminanceParams"] = mReprojectState.mLuminanceParams.da;
