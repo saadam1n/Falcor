@@ -23,7 +23,7 @@ private:
     ref<FilterParameterReflector> mpParameterReflector;
 
     int mFilterIterations = 4;
-    int mFeedbackTap = 0;
+    int mFeedbackTap = -1;
 
     ref<FullScreenPass> mpEvaluatePass;
     ref<FullScreenPass> mpBackPropagatePass;

@@ -289,5 +289,3 @@ float4 softplus(float4 x)
 {
     return log(1.0f + exp(x));
 }
-
-

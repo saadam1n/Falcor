@@ -116,9 +116,9 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mKernel);
 
 
-    std::mt19937 mlp_rng(1234);
-    std::uniform_real_distribution<> mlp_offset(0.0f, 1.0f);
-    for(int i = 0; i < 162; i++)
+    std::mt19937 mlp_rng(1234567);
+    std::uniform_real_distribution<> mlp_offset(0.0f, 0.1f);
+    for(int i = 0; i < 512; i++)
     {
         mReprojectState.mTemporalMlpWeights.dv[i] = mlp_offset(mlp_rng);
     }
@@ -763,7 +763,7 @@ void SVGFPass::updateParameters(RenderContext* pRenderContext, int sampledFrames
 
             float adjustment = learningRate * calculateBaseAdjustment(averageGradient, pmi.momentum[j], pmi.ssgrad[j]);
 
-            if(isMlpParameter) adjustment *= 25.0f;
+            //if(isMlpParameter) adjustment *= 25.0f;
 
             pmi.mAddress[j] -= adjustment;
 
@@ -1220,7 +1220,7 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
         perImageCB["dvReprojParams"][i] = mReprojectState.mParams.dv[i];
     }
 
-    for(int i = 0; i < 162; i++)
+    for(int i = 0; i < 512; i++)
     {
         perImageCB["dvMlpWeights"][i] = mReprojectState.mTemporalMlpWeights.dv[i];
     }
@@ -1280,7 +1280,7 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
         perImageCB["dvReprojParams"][i] = mReprojectState.mParams.dv[i];
     }
 
-    for(int i = 0; i < 162; i++)
+    for(int i = 0; i < 512; i++)
     {
         perImageCB["dvMlpWeights"][i] = mReprojectState.mTemporalMlpWeights.dv[i];
     }
