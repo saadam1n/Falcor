@@ -482,10 +482,11 @@ void SVGFPass::runTrainingAndTesting(RenderContext* pRenderContext, const Render
 static std::vector<float> lossHistory;
 void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
 {
-#if 1
     FALCOR_PROFILE(pRenderContext, "Next Training Task");
 
     mTrainingDataset.preloadBitmaps();
+#if 0
+
 
     if(mEpoch < K_NUM_EPOCHS)
     {
@@ -581,13 +582,6 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
         mTrained = true;
     }
 #else
-        FALCOR_PROFILE(pRenderContext, "Next Training Task");
-
-
-
-
-
-    mTrainingDataset.preloadBitmaps();
 
     if(mEpoch < K_NUM_EPOCHS)
     {
@@ -617,8 +611,8 @@ void SVGFPass::runNextTrainingTask(RenderContext* pRenderContext)
             if(true || mDatasetIndex >= K_FRAME_SAMPLE_START)
             {
                 //mTrainingDataset.popInternalBuffers(pRenderContext);
-                mTrainingDataset.saveInternalTex(pRenderContext, "LossOutput", mTrainingDataset.pOutputTexture, true);
-                mTrainingDataset.saveInternalTex(pRenderContext, "LossReference", mTrainingDataset.pReferenceTexture, true); // lazy way to do it tbh
+                //mTrainingDataset.saveInternalTex(pRenderContext, "LossOutput", mTrainingDataset.pOutputTexture, true);
+                //mTrainingDataset.saveInternalTex(pRenderContext, "LossReference", mTrainingDataset.pReferenceTexture, true); // lazy way to do it tbh
 
                 mTrainingDataset.saveInternalTex(pRenderContext, "LossPrevOutput", mTrainingDataset.pPrevFiltered, true);
                 mTrainingDataset.saveInternalTex(pRenderContext, "LossPrevReference", mTrainingDataset.pPrevReference, true); // lazy way to do it tbh
@@ -1205,6 +1199,11 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevHistoryLength", mpPrevReprojFbo->getColorTexture(2));
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevTemporalAccum", mpPrevReprojFbo->getColorTexture(3));
 
+    for (int i = 0; i < 4; i++)
+    {
+        svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevFiltered" + std::to_string(i), mpFilteredPastFbo->getColorTexture(i));
+    }
+
     auto perImageCB = mReprojectState.sPass->getRootVar()["PerImageCB"];
 
     // Setup textures for our reprojection shader pass
@@ -1219,6 +1218,12 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gPrevLinearZAndNormal"] = svgfrd.pPrevLinearZAndNormalTexture;
     perImageCB["gPrevHistoryLength"] = mpPrevReprojFbo->getColorTexture(2);
+
+    for (int i = 0; i < 4; i++)
+    {
+        perImageCB["gPrevFiltered"][i] = mpFilteredPastFbo->getColorTexture(i);
+    }
+
 
     // Setup variables for our reprojection pass
     perImageCB["dvAlpha"] = mReprojectState.mAlpha.dv;
@@ -1248,7 +1253,12 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
     svgfrd.saveInternalTex(pRenderContext, "ReprojPrevHistoryLength", mpPrevReprojFbo->getColorTexture(2), true);
     svgfrd.saveInternalTex(pRenderContext, "ReprojPrevTemporalAccum", mpPrevReprojFbo->getColorTexture(3), true);
 
-    svgfrd.fetchTexTable("FilteredPast") = mpFilteredPastFbo->getColorTexture(0);
+    for (int i = 0; i < 4; i++)
+    {
+        svgfrd.saveInternalTex(pRenderContext, "ReprojPrevFiltered" + std::to_string(i), mpFilteredPastFbo->getColorTexture(i), true);
+        svgfrd.fetchTexTable("FilteredPast" + std::to_string(i)) = mpFilteredPastFbo->getColorTexture(i);
+    }
+
     svgfrd.fetchTexTable("ReprojOutputCurIllum") = mpCurReprojFbo->getColorTexture(0);
 
     // prevent segfauilt
@@ -1282,6 +1292,11 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
     perImageCB["gLinearZAndNormal"]       = svgfrd.fetchInternalTex("LinearZAndNormalTex");
     perImageCB["gPrevLinearZAndNormal"]   = svgfrd.fetchInternalTex("LinearZAndNormalPrevTex");
     perImageCB["gPrevHistoryLength"] = svgfrd.fetchInternalTex("ReprojPrevHistoryLength");
+
+    for (int i = 0; i < 4; i++)
+    {
+        perImageCB["gPrevFiltered"][i] = svgfrd.fetchInternalTex("ReprojPrevFiltered" + std::to_string(i));
+    }
 
     // Setup variables for our reprojection pass
     perImageCB["dvAlpha"] = mReprojectState.mAlpha.dv;

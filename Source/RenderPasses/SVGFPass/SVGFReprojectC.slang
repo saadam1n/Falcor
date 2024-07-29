@@ -51,6 +51,7 @@ cbuffer PerImageCB
     Texture2D gLinearZAndNormal;
     Texture2D gPrevLinearZAndNormal;
     Texture2D gPrevHistoryLength;
+    Texture2D gPrevFiltered[4];
 
     float       dvAlpha;
     float       dvMomentsAlpha;

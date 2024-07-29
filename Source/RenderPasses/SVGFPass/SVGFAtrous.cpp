@@ -118,9 +118,9 @@ void SVGFAtrousSubpass::computeEvaluation(RenderContext* pRenderContext, SVGFRen
         mpEvaluatePass->execute(pRenderContext, curTargetFbo);
 
         // store the filtered color for the feedback path
-        if (updateInternalBuffers && iteration == std::min(mFeedbackTap, mFilterIterations - 1))
+        if (updateInternalBuffers)
         {
-            pRenderContext->blit(curTargetFbo->getColorTexture(0)->getSRV(), svgfrd.fetchTexTable("FilteredPast")->getRTV());
+            pRenderContext->blit(curTargetFbo->getColorTexture(0)->getSRV(), svgfrd.fetchTexTable("FilteredPast" + std::to_string(iteration))->getRTV());
         }
 
         std::swap(mpPingPongFbo[0], mpPingPongFbo[1]);
@@ -134,11 +134,6 @@ void SVGFAtrousSubpass::computeEvaluation(RenderContext* pRenderContext, SVGFRen
                 //std::cout << curIterationState.mSigmaN.dv[i][j] << "\n";
             }
         }
-    }
-
-    if (updateInternalBuffers && mFeedbackTap < 0)
-    {
-        pRenderContext->blit(svgfrd.fetchTexTable("ReprojOutputCurIllum")->getSRV(), svgfrd.fetchTexTable("FilteredPast")->getRTV());
     }
 
     svgfrd.fetchTexTable("FinalModulateInIllumination") = mpPingPongFbo[0]->getColorTexture(0);
@@ -213,12 +208,6 @@ void SVGFAtrousSubpass::computeBackPropagation(RenderContext* pRenderContext, SV
         else
         {
             drBuffer =  mpUtilities->mpdrCompactedBuffer[0];
-        }
-
-        if (iteration == mFeedbackTap)
-        {
-            mpUtilities->combineBuffers(pRenderContext, 0, drBuffer, svgfrd.fetchBufTable("ReprojOutIllum"));
-            drBuffer = mpUtilities->mpdrCombinedBuffer[0];
         }
 
 
