@@ -440,10 +440,10 @@ float getInput(float4 curIllum, float4 prevIllum, int i)
     }
 }
 
-const int K_NUM_FEATURES = 8;
-const int K_INPUT_LAYER_NODES = 8;
-const int K_HIDDEN_LAYER_NODES = 8;
-const int K_OUTPUT_LAYER_NODES = 8;
+#define K_NUM_FEATURES 8
+#define K_INPUT_LAYER_NODES 8
+#define K_HIDDEN_LAYER_NODES 8
+#define K_OUTPUT_LAYER_NODES 2
 
 const int getWeightLayer0(const int node, const int source)
 {
@@ -501,36 +501,36 @@ float getWeight(int layer, int node, int source)
 
 void d_ff_mlp(float4 curIllum, inout DifferentialPair<float4> prevIllum, float4 dLoss)
 {
-    float inputLayerOutputs[8];
+    float inputLayerOutputs[K_INPUT_LAYER_NODES];
 
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < K_INPUT_LAYER_NODES; i++)
     {
         inputLayerOutputs[i] = 0.0f;
-        for (int j = 0; j < 9; j++)
+        for (int j = 0; j <= K_NUM_FEATURES; j++)
         {
-            inputLayerOutputs[i] += getWeight(0, i, j) * (j == 8 ? 1.0f : getInput(curIllum, prevIllum.p, j));
+            inputLayerOutputs[i] += getWeight(0, i, j) * (j == K_NUM_FEATURES ? 1.0f : getInput(curIllum, prevIllum.p, j));
         }
         inputLayerOutputs[i] = max(inputLayerOutputs[i], 0.0f);
     }
 
-    float hiddenLayerOutputs[8];
-    for (int i = 0; i < 8; i++)
+    float hiddenLayerOutputs[K_HIDDEN_LAYER_NODES];
+    for (int i = 0; i < K_HIDDEN_LAYER_NODES; i++)
     {
         hiddenLayerOutputs[i] = 0.0f;
-        for (int j = 0; j < 9; j++)
+        for (int j = 0; j <= K_INPUT_LAYER_NODES; j++)
         {
-            hiddenLayerOutputs[i] += getWeight(1, i, j) * (j == 8 ? 1.0f : inputLayerOutputs[j]);
+            hiddenLayerOutputs[i] += getWeight(1, i, j) * (j == K_INPUT_LAYER_NODES ? 1.0f : inputLayerOutputs[j]);
         }
         hiddenLayerOutputs[i] = max(hiddenLayerOutputs[i], 0.0f);
     }
 
     float2 outputLayerOutputs;
-    for (int i = 0; i < 2; i++)
+    for (int i = 0; i < K_OUTPUT_LAYER_NODES; i++)
     {
         outputLayerOutputs[i] = 0.0f;
-        for (int j = 0; j < 9; j++)
+        for (int j = 0; j <= K_HIDDEN_LAYER_NODES; j++)
         {
-            outputLayerOutputs[i] += getWeight(2, i, j) * (j == 8 ? 1.0f : hiddenLayerOutputs[j]);
+            outputLayerOutputs[i] += getWeight(2, i, j) * (j == K_HIDDEN_LAYER_NODES ? 1.0f : hiddenLayerOutputs[j]);
         }
     }
 
@@ -540,7 +540,7 @@ void d_ff_mlp(float4 curIllum, inout DifferentialPair<float4> prevIllum, float4 
 
     // float4 finalIllum = curIllum * weights[0] + prevIllum.p * weights[1];
     float4 dLdFinalIllum = dLoss;
-    prevIllum = diffPair(prevIllum.p, dLdFinalIllum * weights[1]);
+    float4 dLdPrevIllum = dLdFinalIllum * weights[1];
 
     float2 dLdWeights = float2(dot(dLdFinalIllum * curIllum, 1.0f.xxxx), dot(dLdFinalIllum * prevIllum.p, 1.0f.xxxx));
     float dLdDiv = dot(dLdWeights * -eOut / (div * div), 1.0f.xx);
@@ -548,20 +548,19 @@ void d_ff_mlp(float4 curIllum, inout DifferentialPair<float4> prevIllum, float4 
 
     float2 dLdOutputLayerOutputs = dLdEOut * exp(outputLayerOutputs);
 
-    float dLdHiddenLayerOutputs[8];
-    for (int i = 0; i < 8; i++)
+    float dLdHiddenLayerOutputs[K_HIDDEN_LAYER_NODES];
+    for (int i = 0; i < K_HIDDEN_LAYER_NODES; i++)
     {
         dLdHiddenLayerOutputs[i] = 0.0f;
     }
 
-    for (int i = 1; i >= 0; i--)
+    for (int i = K_OUTPUT_LAYER_NODES - 1; i >= 0; i--)
     {
-        for (int j = 8; j >= 0; j--)
+        for (int j = K_HIDDEN_LAYER_NODES; j >= 0; j--)
         {
-            float readVal = (j == 8 ? 1.0f : hiddenLayerOutputs[j]);
-            //outputLayerOutputs[i] += getWeight(2, i, j) * readVal;
+            float readVal = (j == K_HIDDEN_LAYER_NODES ? 1.0f : hiddenLayerOutputs[j]);
 
-            if (j != 8)
+            if (j != K_HIDDEN_LAYER_NODES)
             {
                 dLdHiddenLayerOutputs[j] += dLdOutputLayerOutputs[i] * getWeight(2, i, j);
             }
@@ -571,7 +570,7 @@ void d_ff_mlp(float4 curIllum, inout DifferentialPair<float4> prevIllum, float4 
     }
 
     // relu
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < K_HIDDEN_LAYER_NODES; i++)
     {
         if (hiddenLayerOutputs[i] == 0.0f)
         {
@@ -579,19 +578,19 @@ void d_ff_mlp(float4 curIllum, inout DifferentialPair<float4> prevIllum, float4 
         }
     }
 
-    float dLdInputLayerOutputs[8];
-    for (int i = 0; i < 8; i++)
+    float dLdInputLayerOutputs[K_INPUT_LAYER_NODES];
+    for (int i = 0; i < K_INPUT_LAYER_NODES; i++)
     {
         dLdInputLayerOutputs[i] = 0.0f;
     }
 
-    for (int i = 7; i >= 0; i--)
+    for (int i = K_HIDDEN_LAYER_NODES - 1; i >= 0; i--)
     {
-        for (int j = 8; j >= 0; j--)
+        for (int j = K_INPUT_LAYER_NODES; j >= 0; j--)
         {
-            float readVal = (j == 8 ? 1.0f : inputLayerOutputs[j]);
+            float readVal = (j == K_INPUT_LAYER_NODES ? 1.0f : inputLayerOutputs[j]);
             // hiddenLayerOutputs[i] += getWeight(1, i, j) * (j == 8 ? 1.0f : inputLayerOutputs[j]);
-            if (j != 8)
+            if (j != K_INPUT_LAYER_NODES)
             {
                 dLdInputLayerOutputs[j] += dLdHiddenLayerOutputs[i] * getWeight(1, i, j);
             }
@@ -601,7 +600,7 @@ void d_ff_mlp(float4 curIllum, inout DifferentialPair<float4> prevIllum, float4 
     }
 
     // Relu
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < K_INPUT_LAYER_NODES; i++)
     {
         if (inputLayerOutputs[i] == 0.0f)
         {
@@ -609,57 +608,61 @@ void d_ff_mlp(float4 curIllum, inout DifferentialPair<float4> prevIllum, float4 
         }
     }
 
-    // technically we need to accumulate prev illum derivatives but I don't really care
-    for (int i = 7; i >= 0; i--)
+    for (int i = K_INPUT_LAYER_NODES - 1; i >= 0; i--)
     {
-        for (int j = 8; j >= 0; j--)
+        for (int j = K_NUM_FEATURES; j >= 0; j--)
         {
-            float readVal = (j == 8 ? 1.0f : getInput(curIllum, prevIllum.p, j));
+            float readVal = (j == K_NUM_FEATURES ? 1.0f : getInput(curIllum, prevIllum.p, j));
             // inputLayerOutputs[i] += getWeight(0, i, j) * (j == 8 ? 1.0f : getInput(curIllum, prevIllum.p, j));
 
-            //[j] += dLdInputLayerOutputs[i] * getWeight(0, i, j);
+            if (j >= 4)
+            {
+                dLdPrevIllum[j - 4] += dLdInputLayerOutputs[i] * getWeight(0, i, j);
+            }
             __bwd_diff(getWeight)(0, i, j, dLdInputLayerOutputs[i] * readVal);
         }
     }
+
+    prevIllum = diffPair(prevIllum.p, dLdPrevIllum);
 }
 
 [BackwardDerivative(d_ff_mlp)]
 float4 ff_mlp( no_diff float4 curIllum, float4 prevIllum)
 {
-    float inputLayerOutputs[8];
+    float inputLayerOutputs[K_INPUT_LAYER_NODES];
 
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < K_INPUT_LAYER_NODES; i++)
     {
         inputLayerOutputs[i] = 0.0f;
-        for (int j = 0; j < 9; j++)
+        for (int j = 0; j <= K_NUM_FEATURES; j++)
         {
-            inputLayerOutputs[i] += getWeight(0, i, j) * (j == 9 ? 1.0f : getInput(curIllum, prevIllum, j));
+            inputLayerOutputs[i] += getWeight(0, i, j) * (j == K_NUM_FEATURES ? 1.0f : getInput(curIllum, prevIllum, j));
         }
         inputLayerOutputs[i] = max(inputLayerOutputs[i], 0.0f);
     }
 
-    float hiddenLayerOutputs[8];
-    for (int i = 0; i < 8; i++)
+    float hiddenLayerOutputs[K_HIDDEN_LAYER_NODES];
+    for (int i = 0; i < K_HIDDEN_LAYER_NODES; i++)
     {
         hiddenLayerOutputs[i] = 0.0f;
-        for (int j = 0; j < 9; j++)
+        for (int j = 0; j <= K_INPUT_LAYER_NODES; j++)
         {
-            hiddenLayerOutputs[i] += getWeight(1, i, j) * (j == 9 ? 1.0f : inputLayerOutputs[j]);
+            hiddenLayerOutputs[i] += getWeight(1, i, j) * (j == K_INPUT_LAYER_NODES ? 1.0f : inputLayerOutputs[j]);
         }
         hiddenLayerOutputs[i] = max(hiddenLayerOutputs[i], 0.0f);
     }
 
-    float outputLayerOutputs[2];
-    for (int i = 0; i < 2; i++)
+    float2 outputLayerOutputs;
+    for (int i = 0; i < K_OUTPUT_LAYER_NODES; i++)
     {
         outputLayerOutputs[i] = 0.0f;
-        for (int j = 0; j < 9; j++)
+        for (int j = 0; j <= K_HIDDEN_LAYER_NODES; j++)
         {
-            inputLayerOutputs[i] += getWeight(0, i, j) * (j == 8 ? 1.0f : hiddenLayerOutputs[j]);
+            outputLayerOutputs[i] += getWeight(2, i, j) * (j == K_HIDDEN_LAYER_NODES ? 1.0f : hiddenLayerOutputs[j]);
         }
     }
 
-    float2 eOut = exp(float2(outputLayerOutputs[0], outputLayerOutputs[1]));
+    float2 eOut = exp(outputLayerOutputs);
     float div = eOut[0] + eOut[1];
     float2 weights = eOut / div;
 
