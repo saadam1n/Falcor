@@ -440,24 +440,40 @@ float getInput(float4 curIllum, float4 prevIllum, int i)
     }
 }
 
+const int K_NUM_FEATURES = 8;
 const int K_INPUT_LAYER_NODES = 8;
 const int K_HIDDEN_LAYER_NODES = 8;
 const int K_OUTPUT_LAYER_NODES = 8;
 
-int getWeightIndex(int layer, int node, int source)
+const int getWeightLayer0(const int node, const int source)
+{
+    return node * (K_NUM_FEATURES + 1) + source;
+}
+
+const int getWeightLayer1(const int node, const int source)
+{
+    return getWeightLayer0(K_INPUT_LAYER_NODES - 1, K_NUM_FEATURES) + 1 + node * (K_INPUT_LAYER_NODES + 1) + source;
+}
+
+const int getWeightLayer2(const int node, const int source)
+{
+    return getWeightLayer1(K_HIDDEN_LAYER_NODES - 1, K_INPUT_LAYER_NODES) + 1 + node * (K_OUTPUT_LAYER_NODES + 1) + source;
+}
+
+const int getWeightIndex(const int layer, const int node, const int source)
 {
     int idx = 0;
     if (layer == 0)
     {
-        idx = node * 9 + source;
+        idx = getWeightLayer0(node, source);
     }
     else if (layer == 1)
     {
-        idx = 72 + node * 9 + source;
+        idx = getWeightLayer1(node, source);
     }
     else
     {
-        idx = 144 + node * 9 + source;
+        idx = getWeightLayer2(node, source);
     }
 
     return idx;
