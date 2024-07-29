@@ -420,7 +420,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 }
 
 
-const int K_NUM_EPOCHS = 32;
+const int K_NUM_EPOCHS = 8;
 const int K_FRAME_SAMPLE_START = 48;
 
 const float K_LRATE_NUMER = 25.0f * 0.0085f; // 0.0085 is a good value
