@@ -19,8 +19,8 @@ SVGFUtilitySet::SVGFUtilitySet(ref<Device> pDevice, int minX, int minY, int maxX
 
     for (int i = 0; i < 2; i++)
     {
-        mpdrCombinedBuffer[0] = createAccumulationBuffer(sizeof(float4));
-        mpdaUncombinedBuffer[0] = createAccumulationBuffer(2 * sizeof(float4));
+        mpdrCombinedBuffer[i] = createAccumulationBuffer(sizeof(float4));
+        mpdaUncombinedBuffer[i] = createAccumulationBuffer(2 * sizeof(float4));
     }
 
     mpDummyFullscreenPass = createFullscreenPassAndDumpIR(kDummyFullScreenShader);

@@ -1250,6 +1250,8 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
     mpUtilities->clearRawOutputBuffer(pRenderContext, 0);
     mpUtilities->clearRawOutputBuffer(pRenderContext, 1);
 
+
+
     auto perImageCB = mReprojectState.dPass->getRootVar()["PerImageCB"];
 
     // Setup textures for our reprojection shader pass
@@ -1285,13 +1287,15 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
     perImageCB["daMlpWeights"] =  mReprojectState.mTemporalMlpWeights.da;
 
     mpUtilities->combineBuffers(pRenderContext, 0, mpUtilities->mpdrCompactedBuffer[1], mReprojectState.pdaMoments);
-
+    mpUtilities->combineBuffers(pRenderContext, 1, mFilterMomentsState.pdaHistoryLen, mReprojectState.pdaHistoryLength);
+    pRenderContext->clearUAV(mReprojectState.pdaMoments->getUAV().get(), float4(0.0f));
+    pRenderContext->clearUAV(mReprojectState.pdaHistoryLength->getUAV().get(), float4(0.0f));
 
     auto perImageCB_D = mReprojectState.dPass->getRootVar()["PerImageCB_D"];
 
     perImageCB_D["drIllumination"] = mpUtilities->mpdrCompactedBuffer[0];
     perImageCB_D["drMoments"] = mpUtilities->mpdrCombinedBuffer[0];
-    perImageCB_D["drHistoryLen"] = mFilterMomentsState.pdaHistoryLen;
+    perImageCB_D["drHistoryLen"] = mpUtilities->mpdrCombinedBuffer[1];
 
     perImageCB_D["daLuminanceParams"] = mReprojectState.mLuminanceParams.da;
     perImageCB_D["daReprojKernel"] = mReprojectState.mKernel.da;

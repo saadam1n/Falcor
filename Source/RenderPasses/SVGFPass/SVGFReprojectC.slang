@@ -129,7 +129,7 @@ int getBilinearIndex(int2 offset)
 
 void d_getPrevIllumBilinear(int2 p, int2 offset, float4 grad)
 {
-    //storeDerivBuf4(daIllumination, p, grad, gAlbedo, getBilinearIndex(offset));
+    storeDerivBuf4(daIllumination, p, grad, gAlbedo, getBilinearIndex(offset));
 }
 
 [BackwardDerivative(d_getPrevIllumBilinear)]
@@ -140,7 +140,7 @@ float4 getPrevIllumBilinear(int2 p, int2 offset)
 
 void d_getPrevMomentsBilinear(int2 p, int2 offset, float2 grad)
 {
-    //storeDerivBuf4(daMoments, p, float4(grad, 0.0f.xx), gAlbedo, getBilinearIndex(offset));
+    storeDerivBuf4(daMoments, p, float4(grad, 0.0f.xx), gAlbedo, getBilinearIndex(offset));
 }
 
 [BackwardDerivative(d_getPrevMomentsBilinear)]
@@ -159,7 +159,7 @@ int getBilateralIndex(int2 offset)
 
 void d_getPrevIllumBilateral(int2 p, int2 offset, float4 grad)
 {
-    //storeDerivBuf4(daIllumination, p, grad, gAlbedo, getBilateralIndex(offset));
+    storeDerivBuf4(daIllumination, p, grad, gAlbedo, getBilateralIndex(offset));
 }
 
 [BackwardDerivative(d_getPrevIllumBilateral)]
@@ -170,7 +170,7 @@ float4 getPrevIllumBilateral(int2 p, int2 offset)
 
 void d_getPrevMomentsBilateral(int2 p, int2 offset, float2 grad)
 {
-    //storeDerivBuf4(daMoments, p, float4(grad, 0.0f.xx), gAlbedo, getBilateralIndex(offset));
+    storeDerivBuf4(daMoments, p, float4(grad, 0.0f.xx), gAlbedo, getBilateralIndex(offset));
 }
 
 [BackwardDerivative(d_getPrevMomentsBilateral)]
@@ -183,7 +183,7 @@ float2 getPrevMomentsBilateral(int2 p, int2 offset)
 
 void d_getPrevHistoryLength(int2 ipos, float grad)
 {
-    //storeDerivBuf4(daHistoryLength, ipos, float4(grad, 0.0f.xxx), gAlbedo);
+    storeDerivBuf4(daHistoryLength, ipos, float4(grad, 0.0f.xxx), gAlbedo);
 }
 
 [BackwardDerivative(d_getPrevHistoryLength)]
@@ -723,12 +723,18 @@ void d_reproject( FullScreenPassVsOut vsOut, inout DifferentialPair<float3> lumi
 
     luminanceParams = diffPair(luminanceParams.p, dLdOriginalMoments.r * illumination);
 
+    float dLdHistoryLength = 0.0f;
+
     float dLdMomentsAlphaAdjusted = dot(dLdMoments * (pm - prevMoments), 1.0f.xx);
 
     float dLdMomentsALpha = 0.0f;
     if (success && alphaMomentsAdjusted > reprojectionParamters.p[1] / historyLength)
     {
         dLdMomentsALpha = dLdMomentsAlphaAdjusted;
+    }
+    else
+    {
+        dLdHistoryLength += dLdMomentsAlphaAdjusted * -reprojectionParamters.p[1] / (historyLength * historyLength);
     }
     momentsAlpha = diffPair(momentsAlpha.p, dLdMomentsALpha);
 
@@ -738,14 +744,23 @@ void d_reproject( FullScreenPassVsOut vsOut, inout DifferentialPair<float3> lumi
     {
         dLdAlpha = dLdAlphaAdjusted;
     }
+    else
+    {
+        dLdHistoryLength += dLdAlphaAdjusted * -reprojectionParamters.p[1] / (historyLength * historyLength);
+    }
     alpha = diffPair(alpha.p, dLdAlpha);
+
+    if (!success || pfd.historyLength > historyLength)
+    {
+        dLdHistoryLength = 0.0f;
+    }
 
     // to do: history length and a bunch of other stuff
     PrevFrameData.Differential dpfd;
 
     dpfd.prevIllum = dLdPrevIllum.d;
     dpfd.prevMoments = dLdPrevMoments;
-    dpfd.historyLength = 0.0f;
+    dpfd.historyLength = dLdHistoryLength;
 
     __bwd_diff(loadPrevData)(posH.xy, reprojectionParamters, kernelWeights, dpfd);
 
