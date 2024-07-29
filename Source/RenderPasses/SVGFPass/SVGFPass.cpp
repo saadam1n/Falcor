@@ -1200,6 +1200,7 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
     FALCOR_PROFILE(pRenderContext, "Reproj");
 
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPastFiltered", mpFilteredPastFbo->getColorTexture(0));
+    svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevIllum", mpPrevReprojFbo->getColorTexture(0));
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevMoments", mpPrevReprojFbo->getColorTexture(1));
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevHistoryLength", mpPrevReprojFbo->getColorTexture(2));
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevTemporalAccum", mpPrevReprojFbo->getColorTexture(3));
@@ -1212,6 +1213,7 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
     perImageCB["gEmission"] = svgfrd.pEmissionTexture;
     perImageCB["gAlbedo"] = svgfrd.pAlbedoTexture;
     perImageCB["gPositionNormalFwidth"] = svgfrd.pPosNormalFwidthTexture;
+    perImageCB["gPrevIllum"] = mpPrevReprojFbo->getColorTexture(0);
     perImageCB["gPrevTemporalAccum"] = mpPrevReprojFbo->getColorTexture(3);
     perImageCB["gPrevMoments"] = mpPrevReprojFbo->getColorTexture(1);
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
@@ -1241,6 +1243,7 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
 
     // save a copy of our past filtration for backwards differentiation
     svgfrd.saveInternalTex(pRenderContext, "ReprojPastFiltered", mpFilteredPastFbo->getColorTexture(0), true);
+    svgfrd.saveInternalTex(pRenderContext, "ReprojPrevIllum", mpPrevReprojFbo->getColorTexture(0), true);
     svgfrd.saveInternalTex(pRenderContext, "ReprojPrevMoments", mpPrevReprojFbo->getColorTexture(1), true);
     svgfrd.saveInternalTex(pRenderContext, "ReprojPrevHistoryLength", mpPrevReprojFbo->getColorTexture(2), true);
     svgfrd.saveInternalTex(pRenderContext, "ReprojPrevTemporalAccum", mpPrevReprojFbo->getColorTexture(3), true);
@@ -1273,6 +1276,7 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
     perImageCB["gEmission"]      = svgfrd.pEmissionTexture;
     perImageCB["gAlbedo"]        = svgfrd.pAlbedoTexture;
     perImageCB["gPositionNormalFwidth"] = svgfrd.pPosNormalFwidthTexture;
+    perImageCB["gPrevIllum"]     = svgfrd.fetchInternalTex("ReprojPrevIllum");
     perImageCB["gPrevTemporalAccum"]     = svgfrd.fetchInternalTex("ReprojPrevTemporalAccum");
     perImageCB["gPrevMoments"]   = svgfrd.fetchInternalTex("ReprojPrevMoments");
     perImageCB["gLinearZAndNormal"]       = svgfrd.fetchInternalTex("LinearZAndNormalTex");
