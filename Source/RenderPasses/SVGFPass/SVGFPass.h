@@ -141,8 +141,8 @@ private:
     int mDatasetIndex = 0;
     int mBatchSize = 0;
     bool mBackPropagatingState = false;
-    bool mFirstBackPropIteration;
-    int mReductionAddress;
+    bool mFirstBackPropIteration = true;
+    int mReductionAddress = 0;
     float mBetaMomentumCorrection;
     float mBetaSsgradCorrection;
     SVGFTrainingDataset mTrainingDataset;
@@ -166,11 +166,7 @@ private:
         SVGFParameter<float[4]> mParams;
         SVGFParameter<float[3]> mKernel;
 
-        SVGFParameter<float[2]> mInputLayerWeights0;
-        SVGFParameter<float[2]> mInputLayerWeights1;
-        SVGFParameter<float[4]> mHiddenLayerWeights0;
-        SVGFParameter<float[4]> mHiddenLayerWeights1;
-        SVGFParameter<float[4]> mOutputLayerWeights;
+        SVGFParameter<float[162]> mTemporalMlpWeights;
 
         ref<FullScreenPass> sPass;
         ref<FullScreenPass> dPass;

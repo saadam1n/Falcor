@@ -115,67 +115,15 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     mReprojectState.mKernel.dv[2] = 1.0;
     REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mKernel);
 
-    const float K_TANH_LINEARIZATION = 1.0f;
 
-    mReprojectState.mInputLayerWeights0.dv[0] = 1.0f / K_TANH_LINEARIZATION; // linear copy of current illum
-    mReprojectState.mInputLayerWeights0.dv[1] = 0.0f;
-
-    mReprojectState.mInputLayerWeights1.dv[0] = 0.0f;
-    mReprojectState.mInputLayerWeights1.dv[1] = 1.0f / K_TANH_LINEARIZATION; // linear copy of previous illum
-
-    mReprojectState.mHiddenLayerWeights0.dv[0] = 1.0f; // linear copy
-    mReprojectState.mHiddenLayerWeights0.dv[1] = 0.0f;
-    mReprojectState.mHiddenLayerWeights0.dv[2] = 0.0f;
-    mReprojectState.mHiddenLayerWeights0.dv[3] = 0.0f;
-
-    mReprojectState.mHiddenLayerWeights1.dv[0] = 0.0f;
-    mReprojectState.mHiddenLayerWeights1.dv[1] = 1.0f; // linear copy
-    mReprojectState.mHiddenLayerWeights1.dv[2] = 0.0f;
-    mReprojectState.mHiddenLayerWeights1.dv[3] = 0.0f;
-
-    mReprojectState.mOutputLayerWeights.dv[0] = K_TANH_LINEARIZATION * dvAlpha; // linear copy
-    mReprojectState.mOutputLayerWeights.dv[1] = K_TANH_LINEARIZATION * (1.0f - dvAlpha); // linear copy
-    mReprojectState.mOutputLayerWeights.dv[2] = 0.0f;
-    mReprojectState.mOutputLayerWeights.dv[3] = 0.0f;
-
-    const float K_MLP_RANDOMIZATION = 0.01f / K_TANH_LINEARIZATION;
     std::mt19937 mlp_rng(1234);
-    std::uniform_real_distribution<> mlp_offset(-K_MLP_RANDOMIZATION, K_MLP_RANDOMIZATION);
-
-    for(int i = 0; i < 4; i++)
+    std::uniform_real_distribution<> mlp_offset(0.0f, 1.0f);
+    for(int i = 0; i < 162; i++)
     {
-        //break;
-        if(i < 2)
-        {
-            mReprojectState.mInputLayerWeights0.dv[i] += mlp_offset(mlp_rng);
-            mReprojectState.mInputLayerWeights1.dv[i] += mlp_offset(mlp_rng);
-        }
-
-        mReprojectState.mHiddenLayerWeights0.dv[i] += mlp_offset(mlp_rng);
-        mReprojectState.mHiddenLayerWeights1.dv[i] += mlp_offset(mlp_rng);
-        mReprojectState.mOutputLayerWeights.dv[i] += mlp_offset(mlp_rng);
+        mReprojectState.mTemporalMlpWeights.dv[i] = mlp_offset(mlp_rng);
     }
+    REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mTemporalMlpWeights);
 
-    for(int i = 0; i < 4; i++)
-    {
-        break;
-
-        if(i < 2)
-        {
-            mReprojectState.mInputLayerWeights0.dv[i] = 1.0f;
-            mReprojectState.mInputLayerWeights1.dv[i] = 1.0f;
-        }
-
-        mReprojectState.mHiddenLayerWeights0.dv[i] = 1.0f;
-        mReprojectState.mHiddenLayerWeights1.dv[i] = 1.0f;
-        mReprojectState.mOutputLayerWeights.dv[i] = 1.0f;
-    }
-
-    REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mInputLayerWeights0);
-    REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mInputLayerWeights1);
-    REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mHiddenLayerWeights0);
-    REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mHiddenLayerWeights1);
-    REGISTER_PARAMETER(mpParameterReflector, mReprojectState.mOutputLayerWeights);
 
 
 
@@ -475,7 +423,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 const int K_NUM_EPOCHS = 32;
 const int K_FRAME_SAMPLE_START = 48;
 
-const float K_LRATE_NUMER = 25.0f * 0.001f; // 0.0085 is a good value
+const float K_LRATE_NUMER = 25.0f * 0.0085f; // 0.0085 is a good value
 const float K_LRATE_DENOM = 25.0f * 1.0f;
 
 // parameters for the adam algorithm
@@ -760,11 +708,14 @@ void SVGFPass::reduceAllData(RenderContext* pRenderContext)
     mpParallelReduction->execute<float4>(pRenderContext, mTrainingDataset.pLossTexture, ParallelReduction::Type::Sum, nullptr, mReadbackBuffer[2], mDatasetIndex * sizeof(float4));
 }
 
+std::ofstream alsoLog("C:\\FalcorFiles\\log.txt");
+
 float SVGFPass::getAverageGradient(float* ptr, int baseOffset, int sampledFrames)
 {
     float totalGradient = 0.0f;
     for (int k = 0; k < sampledFrames; k++)
     {
+        alsoLog << "\t\t" << ptr[baseOffset + k * mpParameterReflector->getPackedStride()] << "\n";
         totalGradient += ptr[baseOffset + k * mpParameterReflector->getPackedStride()];
     }
     totalGradient /= sampledFrames;
@@ -804,7 +755,7 @@ void SVGFPass::updateParameters(RenderContext* pRenderContext, int sampledFrames
     {
         auto& pmi = mpParameterReflector->mRegistry[i];
 
-        bool isMlpParameter = (pmi.mName.find("LayerWeights") != std::string::npos);
+        bool isMlpParameter = (pmi.mName.find("MlpWeights") != std::string::npos);
 
         for (int j = 0; j < pmi.mNumElements; j++)
         {
@@ -812,7 +763,7 @@ void SVGFPass::updateParameters(RenderContext* pRenderContext, int sampledFrames
 
             float adjustment = learningRate * calculateBaseAdjustment(averageGradient, pmi.momentum[j], pmi.ssgrad[j]);
 
-            if(isMlpParameter) adjustment *= 0.2f;
+            if(isMlpParameter) adjustment *= 25.0f;
 
             pmi.mAddress[j] -= adjustment;
 
@@ -820,8 +771,9 @@ void SVGFPass::updateParameters(RenderContext* pRenderContext, int sampledFrames
 
             currentOffset++;
 
-
-            std::cout << "\tAdjusting " << pmi.mName << "\tby " << -adjustment << "\twhen negative gradient is " << -averageGradient << "\n";
+            std::string printName = pmi.mName + (pmi.mNumElements != 1 ? "[" + std::to_string(j) + "]" : "");
+            alsoLog << "\tAdjusting " << printName << "\tby " << -adjustment << "\twhen negative gradient is " << -averageGradient << "\n";
+            std::cout << "\tAdjusting " << printName << "\tby " << -adjustment << "\twhen negative gradient is " << -averageGradient << "\n";
             if(sign(adjustment) != sign(averageGradient))
             {
                 std::cout << "\tSign mismatch with " << averageGradient << "\n";
@@ -851,6 +803,9 @@ void SVGFPass::updateParameters(RenderContext* pRenderContext, int sampledFrames
     {
         std::cout << "\t" << s << "\n";
     }
+
+    alsoLog.flush();
+    alsoLog.close();
 }
 
 void SVGFPass::printLoss(RenderContext* pRenderContext, int sampledFrames)
@@ -1265,17 +1220,9 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
         perImageCB["dvReprojParams"][i] = mReprojectState.mParams.dv[i];
     }
 
-    for(int i = 0; i < 4; i++)
+    for(int i = 0; i < 162; i++)
     {
-        if(i < 2)
-        {
-            perImageCB["dvInputLayerWeights0"][i] = mReprojectState.mInputLayerWeights0.dv[i];
-            perImageCB["dvInputLayerWeights1"][i] = mReprojectState.mInputLayerWeights1.dv[i];
-        }
-
-        perImageCB["dvHiddenLayerWeights0"][i] = mReprojectState.mHiddenLayerWeights0.dv[i];
-        perImageCB["dvHiddenLayerWeights1"][i] = mReprojectState.mHiddenLayerWeights1.dv[i];
-        perImageCB["dvOutputLayerWeights"][i] = mReprojectState.mOutputLayerWeights.dv[i];
+        perImageCB["dvMlpWeights"][i] = mReprojectState.mTemporalMlpWeights.dv[i];
     }
 
     mReprojectState.sPass->execute(pRenderContext, mpCurReprojFbo);
@@ -1331,18 +1278,11 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
         perImageCB["dvReprojParams"][i] = mReprojectState.mParams.dv[i];
     }
 
-    for(int i = 0; i < 4; i++)
+    for(int i = 0; i < 162; i++)
     {
-        if(i < 2)
-        {
-            perImageCB["dvInputLayerWeights0"][i] = mReprojectState.mInputLayerWeights0.dv[i];
-            perImageCB["dvInputLayerWeights1"][i] = mReprojectState.mInputLayerWeights1.dv[i];
-        }
-
-        perImageCB["dvHiddenLayerWeights0"][i] = mReprojectState.mHiddenLayerWeights0.dv[i];
-        perImageCB["dvHiddenLayerWeights1"][i] = mReprojectState.mHiddenLayerWeights1.dv[i];
-        perImageCB["dvOutputLayerWeights"][i] = mReprojectState.mOutputLayerWeights.dv[i];
+        perImageCB["dvMlpWeights"][i] = mReprojectState.mTemporalMlpWeights.dv[i];
     }
+    perImageCB["daMlpWeights"] =  mReprojectState.mTemporalMlpWeights.da;
 
     mpUtilities->combineBuffers(pRenderContext, mpUtilities->mpdrCompactedBuffer[1], mReprojectState.pdaMoments);
 
@@ -1358,12 +1298,6 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
     perImageCB_D["daReprojParams"] = mReprojectState.mParams.da;
     perImageCB_D["daAlpha"] = mReprojectState.mAlpha.da;
     perImageCB_D["daMomentsAlpha"] = mReprojectState.mMomentsAlpha.da;
-
-    perImageCB_D["daInputLayerWeights0"] = mReprojectState.mInputLayerWeights0.da;
-    perImageCB_D["daInputLayerWeights1"] = mReprojectState.mInputLayerWeights1.da;
-    perImageCB_D["daHiddenLayerWeights0"] = mReprojectState.mHiddenLayerWeights0.da;
-    perImageCB_D["daHiddenLayerWeights1"] = mReprojectState.mHiddenLayerWeights1.da;
-    perImageCB_D["daOutputLayerWeights"] = mReprojectState.mOutputLayerWeights.da;
 
     perImageCB["daIllumination"] = mpUtilities->mpdaRawOutputBuffer[0];
     perImageCB["daMoments"] = mpUtilities->mpdaRawOutputBuffer[1];
