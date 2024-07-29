@@ -45,7 +45,7 @@ cbuffer PerImageCB
     Texture2D gColor;
     Texture2D gAlbedo;
     Texture2D gEmission;
-    Texture2D gPrevIllum;
+    Texture2D gPrevTemporalAccum;
     Texture2D gPrevMoments;
     Texture2D gLinearZAndNormal;
     Texture2D gPrevLinearZAndNormal;
@@ -127,15 +127,15 @@ int getBilinearIndex(int2 offset)
     return storageIdx;
 }
 
-void d_getPrevIllumBilinear(int2 p, int2 offset, float4 grad)
+void d_getPrevTemporalAccumBilinear(int2 p, int2 offset, float4 grad)
 {
     //storeDerivBuf4(daIllumination, p, grad, gAlbedo, getBilinearIndex(offset));
 }
 
-[BackwardDerivative(d_getPrevIllumBilinear)]
-float4 getPrevIllumBilinear(int2 p, int2 offset)
+[BackwardDerivative(d_getPrevTemporalAccumBilinear)]
+float4 getPrevTemporalAccumBilinear(int2 p, int2 offset)
 {
-    return gPrevIllum[p];
+    return gPrevTemporalAccum[p];
 }
 
 void d_getPrevMomentsBilinear(int2 p, int2 offset, float2 grad)
@@ -157,15 +157,15 @@ int getBilateralIndex(int2 offset)
     return storageIdx + 4;
 }
 
-void d_getPrevIllumBilateral(int2 p, int2 offset, float4 grad)
+void d_getPrevTemporalAccumBilateral(int2 p, int2 offset, float4 grad)
 {
     //storeDerivBuf4(daIllumination, p, grad, gAlbedo, getBilateralIndex(offset));
 }
 
-[BackwardDerivative(d_getPrevIllumBilateral)]
-float4 getPrevIllumBilateral(int2 p, int2 offset)
+[BackwardDerivative(d_getPrevTemporalAccumBilateral)]
+float4 getPrevTemporalAccumBilateral(int2 p, int2 offset)
 {
-    return gPrevIllum[p];
+    return gPrevTemporalAccum[p];
 }
 
 void d_getPrevMomentsBilateral(int2 p, int2 offset, float2 grad)
@@ -212,7 +212,7 @@ bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal
 
 struct PrevFrameData : IDifferentiable
 {
-    float4 prevIllum;
+    float4 prevTemporalAccum;
     float2 prevMoments;
     float historyLength;
     bool success;
@@ -254,7 +254,7 @@ void d_bilinearLoad(float2 posPrev, int2 iposPrev, float2 depth, float3 normal, 
         // float2 dLdSumWFromMoments = -grad.prevMoments / (sumw * sumw);
         // float dLdSumW = dot(dLdSumWFromIllum, 1.0f.xxxx) + dot(dLdSumWFromMoments, 1.0f.xx);
 
-        float4 dLdPrevIllum = -grad.prevIllum / sumw;
+        float4 dLdPrevIllum = -grad.prevTemporalAccum / sumw;
         float2 dLdPrevMoments = -grad.prevMoments / sumw;
 
         for (int sampleIdx = 0; sampleIdx < 4; sampleIdx++)
@@ -262,7 +262,7 @@ void d_bilinearLoad(float2 posPrev, int2 iposPrev, float2 depth, float3 normal, 
             int2 loc = int2(posPrev) + offset[sampleIdx];
             if (v[sampleIdx])
             {
-                __bwd_diff(getPrevIllumBilinear)(loc, offset[sampleIdx], dLdPrevIllum);
+                __bwd_diff(getPrevTemporalAccumBilinear)(loc, offset[sampleIdx], dLdPrevIllum);
                 __bwd_diff(getPrevMomentsBilinear)(loc, offset[sampleIdx], dLdPrevMoments);
             }
         }
@@ -276,7 +276,7 @@ PrevFrameData bilinearLoad(no_diff float2 posPrev, int2 iposPrev, no_diff float2
 
     PrevFrameData pfd;
 
-    pfd.prevIllum = float4(0, 0, 0, 0);
+    pfd.prevTemporalAccum = float4(0, 0, 0, 0);
     pfd.prevMoments = float2(0, 0);
     pfd.success = false;
 
@@ -308,7 +308,7 @@ PrevFrameData bilinearLoad(no_diff float2 posPrev, int2 iposPrev, no_diff float2
             const int2 loc = int2(posPrev) + offset[sampleIdx];
             if (v[sampleIdx])
             {
-                pfd.prevIllum += w[sampleIdx] * getPrevIllumBilinear(loc, offset[sampleIdx]);
+                pfd.prevTemporalAccum += w[sampleIdx] * getPrevTemporalAccumBilateral(loc, offset[sampleIdx]);
                 pfd.prevMoments += w[sampleIdx] * getPrevMomentsBilinear(loc, offset[sampleIdx]);
                 sumw += w[sampleIdx];
             }
@@ -316,7 +316,7 @@ PrevFrameData bilinearLoad(no_diff float2 posPrev, int2 iposPrev, no_diff float2
 
         // redistribute weights in case not all taps were used
         pfd.success = (sumw >= 0.01);
-        pfd.prevIllum = (pfd.success ? pfd.prevIllum / sumw : float4(0));
+        pfd.prevTemporalAccum = (pfd.success ? pfd.prevTemporalAccum / sumw : float4(0));
         pfd.prevMoments = (pfd.success ? pfd.prevMoments / sumw : float2(0));
     }
 
@@ -330,7 +330,7 @@ PrevFrameData bilateralLoad(int2 iposPrev, float[3] kernelWeights, no_diff float
     float totalWeight = 0.0;
 
     PrevFrameData pfd;
-    pfd.prevIllum = float4(0.0f);
+    pfd.prevTemporalAccum = float4(0.0f);
     pfd.prevMoments = float2(0.0f);
 
     // this code performs a binary descision for each tap of the cross-bilateral filter
@@ -345,7 +345,7 @@ PrevFrameData bilateralLoad(int2 iposPrev, float[3] kernelWeights, no_diff float
 
             if (isReprjValid(iposPrev, depth.x, depthFilter.x, depth.y, normal, normalFilter, normalFwidth, reprojectionParamters))
             {
-                pfd.prevIllum += curWeight * getPrevIllumBilateral(p, int2(xx, yy));
+                pfd.prevTemporalAccum += curWeight * getPrevTemporalAccumBilateral(p, int2(xx, yy));
                 pfd.prevMoments += curWeight * getPrevMomentsBilateral(p, int2(xx, yy));
                 nValid += 1.0;
                 totalWeight += curWeight;
@@ -358,7 +358,7 @@ PrevFrameData bilateralLoad(int2 iposPrev, float[3] kernelWeights, no_diff float
 
         totalWeight = max(totalWeight, 1e-6);
 
-        pfd.prevIllum /= totalWeight;
+        pfd.prevTemporalAccum /= totalWeight;
         pfd.prevMoments /= totalWeight;
     }
 
@@ -396,7 +396,7 @@ PrevFrameData loadPrevData(no_diff float2 posH, float[4] reprojectionParamters, 
     }
     else
     {
-        pfd.prevIllum = float4(0, 0, 0, 0);
+        pfd.prevTemporalAccum = float4(0, 0, 0, 0);
         pfd.prevMoments = float2(0, 0);
         pfd.historyLength = 0;
     }
@@ -416,13 +416,14 @@ struct REPROJ_OUT : IDifferentiable
     float4 OutIllumination;
     float2 OutMoments;
     float  OutHistoryLength;
+    float4 OutTemporalAccum;
 };
 
 struct PS_OUT {
-    float4 OutIllumination  : SV_TARGET0;
-    float2 OutMoments       : SV_TARGET1;
-    float  OutHistoryLength : SV_TARGET2;
-    float4 OutDebug         : SV_TARGET3;
+    float4 OutIllumination               : SV_TARGET0;
+    float2 OutMoments                    : SV_TARGET1;
+    float  OutHistoryLength              : SV_TARGET2;
+    float4 OutTemporalAccum         : SV_TARGET3;
 };
 
 
@@ -695,7 +696,7 @@ void d_reproject( FullScreenPassVsOut vsOut, inout DifferentialPair<float3> lumi
 
     var pfd = loadPrevData(posH.xy, reprojectionParamters.p, kernelWeights.p); // get temporal data with weights
 
-    float4 prevIllumination = pfd.prevIllum;
+    float4 prevIllumination = pfd.prevTemporalAccum;
     float2 prevMoments = pfd.prevMoments;
     float historyLength = pfd.historyLength;
     bool success = pfd.success;
@@ -784,7 +785,7 @@ void d_reproject( FullScreenPassVsOut vsOut, inout DifferentialPair<float3> lumi
     // to do: history length and a bunch of other stuff
     PrevFrameData.Differential dpfd;
 
-    dpfd.prevIllum = dLdPrevIllum.d;
+    dpfd.prevTemporalAccum = dLdPrevIllum.d;
     dpfd.prevMoments = dLdPrevMoments;
     dpfd.historyLength = dLdHistoryLength;
 
@@ -809,7 +810,7 @@ REPROJ_OUT reproject( FullScreenPassVsOut vsOut, float3 luminanceParams, float[4
 
     var pfd = loadPrevData(posH.xy, reprojectionParamters, kernelWeights); // get temporal data with weights
 
-    float4 prevIllumination = pfd.prevIllum;
+    float4 prevIllumination = pfd.prevTemporalAccum;
     float2 prevMoments = pfd.prevMoments;
     float historyLength = pfd.historyLength;
     bool success = pfd.success;
@@ -836,10 +837,11 @@ REPROJ_OUT reproject( FullScreenPassVsOut vsOut, float3 luminanceParams, float[4
 
     float variance = max(0.f, moments.g - moments.r * moments.r);
 
-    float4 illum = lerp(prevIllumination, float4(illumination, 0), alphaAdjusted);
+    float4 initialEstimate = lerp(prevIllumination, float4(illumination, 0), alphaAdjusted); ;
+    float4 illum = initialEstimate;
     if (success)
     {
-        illum = ff_mlp(illum, prevIllumination);
+        illum = ff_mlp(initialEstimate, prevIllumination);
     }
 
 
@@ -850,6 +852,7 @@ REPROJ_OUT reproject( FullScreenPassVsOut vsOut, float3 luminanceParams, float[4
     psOut.OutIllumination.a = variance;
     psOut.OutMoments = moments;
     psOut.OutHistoryLength = historyLength;
+    psOut.OutTemporalAccum = initialEstimate;
 
     return psOut;
 }

@@ -30,6 +30,7 @@ void main(FullScreenPassVsOut vsOut) {
     diffInput.OutIllumination = readDerivBuf4(drIllumination, ipos, gIllumination);
     diffInput.OutMoments = readDerivBuf4(drMoments, ipos, gIllumination).xy;
     diffInput.OutHistoryLength = readDerivBuf4(drHistoryLen, ipos, gIllumination).x;
+    diffInput.OutTemporalAccum = float4(0.0f);
 
     __bwd_diff(reproject )(vsOut, dpLuminanceParams, dpReprojParams, dpReprojKernel, dpAlpha, dpMomentsAlpha, diffInput);
 

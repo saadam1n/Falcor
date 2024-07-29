@@ -199,6 +199,7 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float); // illumination
         desc.setColorTarget(1, Falcor::ResourceFormat::RG32Float); // moments
         desc.setColorTarget(2, Falcor::ResourceFormat::R32Float); // history length
+        desc.setColorTarget(3, Falcor::ResourceFormat::RGBA32Float); // temporal accum
         mpCurReprojFbo  = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
         mpPrevReprojFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
     }
@@ -217,9 +218,19 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
 
         mpPingPongFbo[0]  = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
         mpPingPongFbo[1]  = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
-        mpFilteredPastFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
         mpFilteredIlluminationFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
         mpFinalFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+    }
+
+    {
+        // One buffer for each of the atrous passes
+        Fbo::Desc desc;
+        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(2, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(3, Falcor::ResourceFormat::RGBA32Float);
+
+        mpFilteredPastFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
     }
 
     {
@@ -1191,6 +1202,7 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPastFiltered", mpFilteredPastFbo->getColorTexture(0));
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevMoments", mpPrevReprojFbo->getColorTexture(1));
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevHistoryLength", mpPrevReprojFbo->getColorTexture(2));
+    svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevTemporalAccum", mpPrevReprojFbo->getColorTexture(3));
 
     auto perImageCB = mReprojectState.sPass->getRootVar()["PerImageCB"];
 
@@ -1200,7 +1212,7 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
     perImageCB["gEmission"] = svgfrd.pEmissionTexture;
     perImageCB["gAlbedo"] = svgfrd.pAlbedoTexture;
     perImageCB["gPositionNormalFwidth"] = svgfrd.pPosNormalFwidthTexture;
-    perImageCB["gPrevIllum"] = mpFilteredPastFbo->getColorTexture(0);
+    perImageCB["gPrevTemporalAccum"] = mpPrevReprojFbo->getColorTexture(3);
     perImageCB["gPrevMoments"] = mpPrevReprojFbo->getColorTexture(1);
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gPrevLinearZAndNormal"] = svgfrd.pPrevLinearZAndNormalTexture;
@@ -1231,6 +1243,7 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
     svgfrd.saveInternalTex(pRenderContext, "ReprojPastFiltered", mpFilteredPastFbo->getColorTexture(0), true);
     svgfrd.saveInternalTex(pRenderContext, "ReprojPrevMoments", mpPrevReprojFbo->getColorTexture(1), true);
     svgfrd.saveInternalTex(pRenderContext, "ReprojPrevHistoryLength", mpPrevReprojFbo->getColorTexture(2), true);
+    svgfrd.saveInternalTex(pRenderContext, "ReprojPrevTemporalAccum", mpPrevReprojFbo->getColorTexture(3), true);
 
     svgfrd.fetchTexTable("FilteredPast") = mpFilteredPastFbo->getColorTexture(0);
     svgfrd.fetchTexTable("ReprojOutputCurIllum") = mpCurReprojFbo->getColorTexture(0);
@@ -1260,7 +1273,7 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
     perImageCB["gEmission"]      = svgfrd.pEmissionTexture;
     perImageCB["gAlbedo"]        = svgfrd.pAlbedoTexture;
     perImageCB["gPositionNormalFwidth"] = svgfrd.pPosNormalFwidthTexture;
-    perImageCB["gPrevIllum"]     = svgfrd.fetchInternalTex("ReprojPastFiltered");
+    perImageCB["gPrevTemporalAccum"]     = svgfrd.fetchInternalTex("ReprojPrevTemporalAccum");
     perImageCB["gPrevMoments"]   = svgfrd.fetchInternalTex("ReprojPrevMoments");
     perImageCB["gLinearZAndNormal"]       = svgfrd.fetchInternalTex("LinearZAndNormalTex");
     perImageCB["gPrevLinearZAndNormal"]   = svgfrd.fetchInternalTex("LinearZAndNormalPrevTex");

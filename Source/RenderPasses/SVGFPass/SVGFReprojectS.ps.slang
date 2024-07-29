@@ -9,6 +9,7 @@ PS_OUT main(FullScreenPassVsOut vsOut) {
     ret.OutMoments = nodiffres.OutMoments;
     ret.OutIllumination = nodiffres.OutIllumination;
     ret.OutHistoryLength = nodiffres.OutHistoryLength;
+    ret.OutTemporalAccum = nodiffres.OutTemporalAccum;
 
     return ret;
 }
