@@ -166,7 +166,7 @@ private:
         SVGFParameter<float[4]> mParams;
         SVGFParameter<float[3]> mKernel;
 
-        SVGFParameter<float[512]> mTemporalMlpWeights;
+        SVGFParameter<float[kNumReprojectionMlpWeights]> mTemporalMlpWeights;
 
         ref<FullScreenPass> sPass;
         ref<FullScreenPass> dPass;

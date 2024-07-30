@@ -118,7 +118,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
 
     std::mt19937 mlp_rng(1234567);
     std::uniform_real_distribution<> mlp_offset(0.0f, 0.1f);
-    for(int i = 0; i < 512; i++)
+    for(int i = 0; i < kNumReprojectionMlpWeights; i++)
     {
         mReprojectState.mTemporalMlpWeights.dv[i] = mlp_offset(mlp_rng);
     }
@@ -229,6 +229,7 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Float);
         desc.setColorTarget(2, Falcor::ResourceFormat::RGBA32Float);
         desc.setColorTarget(3, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(4, Falcor::ResourceFormat::RGBA32Float); //4th one for the filter moments pass
 
         mpFilteredPastFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
     }
@@ -1141,6 +1142,8 @@ void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext, SVGFRenderD
     svgfrd.saveInternalTex(pRenderContext, "FilterMomentsHistoryLength", mpCurReprojFbo->getColorTexture(2), false);
 
     svgfrd.fetchTexTable("AtrousInputIllumination") = mpPingPongFbo[0]->getColorTexture(0);
+
+    pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), svgfrd.fetchTexTable("FilteredPast4")->getRTV());
 }
 
 void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
@@ -1199,7 +1202,7 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevHistoryLength", mpPrevReprojFbo->getColorTexture(2));
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevTemporalAccum", mpPrevReprojFbo->getColorTexture(3));
 
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 5; i++)
     {
         svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevFiltered" + std::to_string(i), mpFilteredPastFbo->getColorTexture(i));
     }
@@ -1239,7 +1242,7 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
         perImageCB["dvReprojParams"][i] = mReprojectState.mParams.dv[i];
     }
 
-    for(int i = 0; i < 512; i++)
+    for(int i = 0; i < kNumReprojectionMlpWeights; i++)
     {
         perImageCB["dvMlpWeights"][i] = mReprojectState.mTemporalMlpWeights.dv[i];
     }
@@ -1253,7 +1256,7 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
     svgfrd.saveInternalTex(pRenderContext, "ReprojPrevHistoryLength", mpPrevReprojFbo->getColorTexture(2), true);
     svgfrd.saveInternalTex(pRenderContext, "ReprojPrevTemporalAccum", mpPrevReprojFbo->getColorTexture(3), true);
 
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 5; i++)
     {
         svgfrd.saveInternalTex(pRenderContext, "ReprojPrevFiltered" + std::to_string(i), mpFilteredPastFbo->getColorTexture(i), true);
         svgfrd.fetchTexTable("FilteredPast" + std::to_string(i)) = mpFilteredPastFbo->getColorTexture(i);
@@ -1293,7 +1296,7 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
     perImageCB["gPrevLinearZAndNormal"]   = svgfrd.fetchInternalTex("LinearZAndNormalPrevTex");
     perImageCB["gPrevHistoryLength"] = svgfrd.fetchInternalTex("ReprojPrevHistoryLength");
 
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 5; i++)
     {
         perImageCB["gPrevFiltered"][i] = svgfrd.fetchInternalTex("ReprojPrevFiltered" + std::to_string(i));
     }
@@ -1312,7 +1315,7 @@ void SVGFPass::computeDerivReprojection(RenderContext* pRenderContext, SVGFRende
         perImageCB["dvReprojParams"][i] = mReprojectState.mParams.dv[i];
     }
 
-    for(int i = 0; i < 512; i++)
+    for(int i = 0; i < kNumReprojectionMlpWeights; i++)
     {
         perImageCB["dvMlpWeights"][i] = mReprojectState.mTemporalMlpWeights.dv[i];
     }

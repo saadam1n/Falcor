@@ -36,7 +36,8 @@ bool isNaN(float f)
     return (u > 0x7F800000);           // greater than Inf is NaN
 }
 
-#define MLP_NUM_WEIGHTS 512
+#define MLP_NUM_WEIGHTS 1192
+#define NUM_FILTER_ITERATIONS 5
 
 cbuffer PerImageCB
 {
@@ -51,7 +52,7 @@ cbuffer PerImageCB
     Texture2D gLinearZAndNormal;
     Texture2D gPrevLinearZAndNormal;
     Texture2D gPrevHistoryLength;
-    Texture2D gPrevFiltered[4];
+    Texture2D gPrevFiltered[NUM_FILTER_ITERATIONS];
 
     float       dvAlpha;
     float       dvMomentsAlpha;
@@ -216,6 +217,12 @@ float getPrevHistoryLength(int2 ipos)
     return gPrevHistoryLength[ipos].r;
 }
 
+// Other thing I might want to accum eventually
+no_diff float4 getPrevFiltered(int2 ipos, int idx)
+{
+    return gPrevFiltered[idx][ipos];
+}
+
 // todo: get a differentiable version of this
 bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal, float3 normalPrev, float fwidthNormal, float[4] reprojectionParamters)
 {
@@ -238,6 +245,7 @@ struct PrevFrameData : IDifferentiable
 {
     float4 prevTemporalAccum;
     float4 prevIllum;
+    float4 prevFiltered[NUM_FILTER_ITERATIONS];
     float2 prevMoments;
     float historyLength;
     bool success;
@@ -308,6 +316,11 @@ PrevFrameData bilinearLoad(no_diff float2 posPrev, int2 iposPrev, no_diff float2
     pfd.prevMoments = float2(0, 0);
     pfd.success = false;
 
+    for (int i = 0; i < NUM_FILTER_ITERATIONS; i++)
+    {
+        pfd.prevFiltered[i] = float4(0, 0, 0, 0);
+    }
+
     // check for all 4 taps of the bilinear filter for validity
     bool v[4];
     for (int sampleIdx = 0; sampleIdx < 4; sampleIdx++)
@@ -340,6 +353,12 @@ PrevFrameData bilinearLoad(no_diff float2 posPrev, int2 iposPrev, no_diff float2
                 pfd.prevIllum += w[sampleIdx] * getPrevIllumBilinear(loc, offset[sampleIdx]);
                 pfd.prevMoments += w[sampleIdx] * getPrevMomentsBilinear(loc, offset[sampleIdx]);
                 sumw += w[sampleIdx];
+
+                for (int i = 0; i < NUM_FILTER_ITERATIONS; i++)
+                {
+                    float4 f = getPrevFiltered(loc, i);
+                    pfd.prevFiltered[i] += w[sampleIdx] * f;
+                }
             }
         }
 
@@ -348,6 +367,11 @@ PrevFrameData bilinearLoad(no_diff float2 posPrev, int2 iposPrev, no_diff float2
         pfd.prevTemporalAccum /= sumw;
         pfd.prevIllum /= sumw;
         pfd.prevMoments /= sumw;
+
+        for (int i = 0; i < NUM_FILTER_ITERATIONS; i++)
+        {
+            pfd.prevFiltered[i] /= sumw;
+        }
     }
 
     return pfd;
@@ -364,6 +388,11 @@ PrevFrameData bilateralLoad(int2 iposPrev, float[3] kernelWeights, no_diff float
     pfd.prevIllum = float4(0.0f);
     pfd.prevMoments = float2(0.0f);
 
+    for (int i = 0; i < NUM_FILTER_ITERATIONS; i++)
+    {
+        pfd.prevFiltered[i] = float4(0, 0, 0, 0);
+    }
+
     // this code performs a binary descision for each tap of the cross-bilateral filter
     for (int yy = -1; yy <= 1; yy++)
     {
@@ -379,6 +408,13 @@ PrevFrameData bilateralLoad(int2 iposPrev, float[3] kernelWeights, no_diff float
                 pfd.prevTemporalAccum += curWeight * getPrevTemporalAccumBilateral(p, int2(xx, yy));
                 pfd.prevIllum += curWeight * getPrevIllumBilateral(p, int2(xx, yy));
                 pfd.prevMoments += curWeight * getPrevMomentsBilateral(p, int2(xx, yy));
+
+                for (int i = 0; i < NUM_FILTER_ITERATIONS; i++)
+                {
+                    float4 f = getPrevFiltered(p, i);
+                    pfd.prevFiltered[i] += curWeight* f;
+                }
+
                 nValid += 1.0;
                 totalWeight += curWeight;
             }
@@ -393,6 +429,11 @@ PrevFrameData bilateralLoad(int2 iposPrev, float[3] kernelWeights, no_diff float
         pfd.prevTemporalAccum /= totalWeight;
         pfd.prevIllum /= totalWeight;
         pfd.prevMoments /= totalWeight;
+
+        for (int i = 0; i < NUM_FILTER_ITERATIONS; i++)
+        {
+            pfd.prevFiltered[i] /= totalWeight;
+        }
     }
 
     return pfd;
@@ -463,22 +504,27 @@ struct PS_OUT {
 
 
 
-float getInput(float4 curIllum, float4 prevIllum, int i)
+float getInput(float4 curIllum, float4 prevIllum, float4[NUM_FILTER_ITERATIONS] prevFiltered, int i)
 {
     if (i < 4)
     {
         return curIllum[i];
     }
-    else
+    else if(i < 8)
     {
         return prevIllum[i - 4];
     }
+    else
+    {
+        int index = i / 4 - 2;
+        return prevFiltered[index][i % 4];
+    }
 }
 
-#define K_NUM_FEATURES 8
-#define K_INPUT_LAYER_NODES 8
-#define K_HIDDEN_LAYER_NODES 4
-#define K_OUTPUT_LAYER_NODES 2
+#define K_NUM_FEATURES (8 + 4 * NUM_FILTER_ITERATIONS)
+#define K_INPUT_LAYER_NODES K_NUM_FEATURES
+#define K_HIDDEN_LAYER_NODES 12
+#define K_OUTPUT_LAYER_NODES 6
 
 const int getWeightLayer0(const int node, const int source)
 {
@@ -535,7 +581,7 @@ float getWeight(int layer, int node, int source)
 }
 
 #define COLOR_INPUT_POWER 0.2f
-void d_ff_mlp(float4 curIllum, inout DifferentialPair<float4> prevIllum, float4 dLoss)
+void d_ff_mlp(float4 curIllum, inout DifferentialPair<float4> prevIllum, float4[NUM_FILTER_ITERATIONS] prevFiltered, float4 dLoss)
 {
     float inputLayerOutputs[K_INPUT_LAYER_NODES];
 
@@ -544,7 +590,7 @@ void d_ff_mlp(float4 curIllum, inout DifferentialPair<float4> prevIllum, float4 
         inputLayerOutputs[i] = 0.0f;
         for (int j = 0; j <= K_NUM_FEATURES; j++)
         {
-            inputLayerOutputs[i] += getWeight(0, i, j) * (j == K_NUM_FEATURES ? 1.0f : pow(getInput(curIllum, prevIllum.p, j), COLOR_INPUT_POWER));
+            inputLayerOutputs[i] += getWeight(0, i, j) * (j == K_NUM_FEATURES ? 1.0f : pow(getInput(curIllum, prevIllum.p, prevFiltered, j), COLOR_INPUT_POWER));
         }
         inputLayerOutputs[i] = max(inputLayerOutputs[i], 0.0f);
     }
@@ -560,7 +606,7 @@ void d_ff_mlp(float4 curIllum, inout DifferentialPair<float4> prevIllum, float4 
         hiddenLayerOutputs[i] = max(hiddenLayerOutputs[i], 0.0f);
     }
 
-    float2 outputLayerOutputs;
+    float outputLayerOutputs[K_OUTPUT_LAYER_NODES];
     for (int i = 0; i < K_OUTPUT_LAYER_NODES; i++)
     {
         outputLayerOutputs[i] = 0.0f;
@@ -570,19 +616,57 @@ void d_ff_mlp(float4 curIllum, inout DifferentialPair<float4> prevIllum, float4 
         }
     }
 
-    float2 eOut = exp(outputLayerOutputs);
-    float div = eOut[0] + eOut[1];
-    float2 weights = eOut / div;
+    float eOut[K_OUTPUT_LAYER_NODES];
+    float div = 0.0f;
+    for (int i = 0; i < K_OUTPUT_LAYER_NODES; i++)
+    {
+        eOut[i] = exp(outputLayerOutputs[i]);
+        eOut[i] = clamp(eOut[i], 1e-6f, 1e+6f);
+        div += eOut[i];
+    }
 
-    // float4 finalIllum = curIllum * weights[0] + prevIllum.p * weights[1];
+    float weights[K_OUTPUT_LAYER_NODES];
+    for (int i = 0; i < K_OUTPUT_LAYER_NODES; i++)
+    {
+        weights[i] = eOut[i] / div;
+    }
+
+    /*
+    float4 finalIllum = curIllum * weights[0] + prevIllum * weights[1];
+    for (int i = 0; i < NUM_FILTER_ITERATIONS; i++)
+    {
+        finalIllum += weights[i + 2] * prevFiltered[i];
+    }
+    */
+
     float4 dLdFinalIllum = dLoss;
     float4 dLdPrevIllum = dLdFinalIllum * weights[1];
 
-    float2 dLdWeights = float2(dot(dLdFinalIllum * curIllum, 1.0f.xxxx), dot(dLdFinalIllum * prevIllum.p, 1.0f.xxxx));
-    float dLdDiv = dot(dLdWeights * -eOut / (div * div), 1.0f.xx);
-    float2 dLdEOut = dLdWeights / div + dLdDiv;
+    float dLdWeights[K_OUTPUT_LAYER_NODES];
+    dLdWeights[0] = dot(dLdFinalIllum * curIllum, 1.0f.xxxx);
+    dLdWeights[1] = dot(dLdFinalIllum * prevIllum.p, 1.0f.xxxx);
+    for (int i = 0; i < NUM_FILTER_ITERATIONS; i++)
+    {
+        dLdWeights[i + 2] = dot(weights[i + 2] * prevFiltered[i], 1.0f.xxxx);
+    }
 
-    float2 dLdOutputLayerOutputs = dLdEOut * exp(outputLayerOutputs);
+    float dLdDiv = 0.0f;
+    for (int i = 0; i < K_OUTPUT_LAYER_NODES; i++)
+    {
+        dLdDiv += dLdWeights[i] * -eOut[i] / (div * div);
+    }
+
+    float dLdOutputLayerOutputs[K_OUTPUT_LAYER_NODES];
+    for (int i = 0; i < K_OUTPUT_LAYER_NODES; i++)
+    {
+        float dLdEout = dLdWeights[i] / div + dLdDiv;
+        if (eOut[i] == 1e-6f || eOut[i] == 1e+6f)
+        {
+            dLdEout = 0.0f;
+        }
+        dLdOutputLayerOutputs[i] = dLdEout * exp(outputLayerOutputs[i]);
+    }
+
 
     float dLdHiddenLayerOutputs[K_HIDDEN_LAYER_NODES];
     for (int i = 0; i < K_HIDDEN_LAYER_NODES; i++)
@@ -648,10 +732,10 @@ void d_ff_mlp(float4 curIllum, inout DifferentialPair<float4> prevIllum, float4 
     {
         for (int j = K_NUM_FEATURES; j >= 0; j--)
         {
-            float readVal = (j == K_NUM_FEATURES ? 1.0f : getInput(curIllum, prevIllum.p, j));
+            float readVal = (j == K_NUM_FEATURES ? 1.0f : getInput(curIllum, prevIllum.p, prevFiltered, j));
             // inputLayerOutputs[i] += getWeight(0, i, j) * (j == 8 ? 1.0f : getInput(curIllum, prevIllum.p, j));
 
-            if (j >= 4)
+            if (false && j >= 4)
             {
                 float rawLoss = dLdInputLayerOutputs[i] * getWeight(0, i, j);
                 dLdPrevIllum[j - 4] += rawLoss * COLOR_INPUT_POWER * pow(prevIllum.p[j - 4], COLOR_INPUT_POWER - 1.0f);
@@ -664,7 +748,7 @@ void d_ff_mlp(float4 curIllum, inout DifferentialPair<float4> prevIllum, float4 
 }
 
 [BackwardDerivative(d_ff_mlp)]
-float4 ff_mlp( no_diff float4 curIllum, float4 prevIllum)
+float4 ff_mlp(no_diff float4 curIllum, float4 prevIllum, no_diff float4[NUM_FILTER_ITERATIONS] prevFiltered)
 {
     float inputLayerOutputs[K_INPUT_LAYER_NODES];
 
@@ -673,7 +757,7 @@ float4 ff_mlp( no_diff float4 curIllum, float4 prevIllum)
         inputLayerOutputs[i] = 0.0f;
         for (int j = 0; j <= K_NUM_FEATURES; j++)
         {
-            inputLayerOutputs[i] += getWeight(0, i, j) * (j == K_NUM_FEATURES ? 1.0f : pow(getInput(curIllum, prevIllum, j), COLOR_INPUT_POWER));
+            inputLayerOutputs[i] += getWeight(0, i, j) * (j == K_NUM_FEATURES ? 1.0f : pow(getInput(curIllum, prevIllum, prevFiltered, j), COLOR_INPUT_POWER));
         }
         inputLayerOutputs[i] = max(inputLayerOutputs[i], 0.0f);
     }
@@ -689,7 +773,7 @@ float4 ff_mlp( no_diff float4 curIllum, float4 prevIllum)
         hiddenLayerOutputs[i] = max(hiddenLayerOutputs[i], 0.0f);
     }
 
-    float2 outputLayerOutputs;
+    float outputLayerOutputs[K_OUTPUT_LAYER_NODES];
     for (int i = 0; i < K_OUTPUT_LAYER_NODES; i++)
     {
         outputLayerOutputs[i] = 0.0f;
@@ -699,16 +783,29 @@ float4 ff_mlp( no_diff float4 curIllum, float4 prevIllum)
         }
     }
 
+    float eOut[K_OUTPUT_LAYER_NODES];
+    float div = 0.0f;
+    for (int i = 0; i < K_OUTPUT_LAYER_NODES; i++)
+    {
+        eOut[i] = exp(outputLayerOutputs[i]);
+        eOut[i] = clamp(eOut[i], 1e-6f, 1e+6f);
+        div += eOut[i];
+    }
 
+    float weights[K_OUTPUT_LAYER_NODES];
+    for (int i = 0; i < K_OUTPUT_LAYER_NODES; i++)
+    {
+        weights[i] = eOut[i] / div;
+    }
 
-    float2 eOut = exp(outputLayerOutputs);
-    eOut = clamp(eOut, float2(1e-6f), float2(1e+6f)); // nan protection
-
-    float div = eOut[0] + eOut[1];
-    float2 weights = eOut / div;
 
 
     float4 finalIllum = curIllum * weights[0] + prevIllum * weights[1];
+    for (int i = 0; i < NUM_FILTER_ITERATIONS; i++)
+    {
+        finalIllum += weights[i + 2] * prevFiltered[i];
+    }
+
     return finalIllum;
 }
 
@@ -762,7 +859,7 @@ void d_reproject( FullScreenPassVsOut vsOut, inout DifferentialPair<float3> lumi
     if (success)
     {
         storePos = ipos;
-        __bwd_diff(ff_mlp)(initialEstimate, dLdPrevIllum, dLdIllumination);
+        __bwd_diff(ff_mlp)(initialEstimate, dLdPrevIllum, pfd.prevFiltered, dLdIllumination);
     }
 
 
@@ -873,7 +970,7 @@ REPROJ_OUT reproject( FullScreenPassVsOut vsOut, float3 luminanceParams, float[4
     float4 illum = initialEstimate;
     if (success)
     {
-        illum = ff_mlp(initialEstimate, pfd.prevIllum);
+        illum = ff_mlp(initialEstimate, pfd.prevIllum, pfd.prevFiltered);
     }
 
 

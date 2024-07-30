@@ -107,6 +107,8 @@ namespace
     const float3  dvSigma = float3(dvSigmaL, dvSigmaZ, dvSigmaN);
 
     const float dvWeightFunctionParams[3] {1.0, 1.0, 1.0};
+
+    const int kNumReprojectionMlpWeights = 1192;
 }
 
 template<typename T>
