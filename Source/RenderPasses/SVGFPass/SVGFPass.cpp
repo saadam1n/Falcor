@@ -147,7 +147,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
 
     // set atrous state
     mpAtrousSubpass = make_ref<SVGFAtrousSubpass>(mpDevice, mpUtilities, mpParameterReflector);
-
+    mpKpcnnAtrousSubpass = make_ref<SVGFKpcnnAtrousSubpass>(mpDevice, mpUtilities, mpParameterReflector);
 
     // set final modulate state vars
     mFinalModulateState.pdaIllumination = mpUtilities->createAccumulationBuffer();
@@ -265,6 +265,7 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
 
     mpUtilities->allocateFbos(dim, pRenderContext);
     mpAtrousSubpass->allocateFbos(dim, pRenderContext);
+    mpKpcnnAtrousSubpass->allocateFbos(dim, pRenderContext);
 
     mBuffersNeedClear = true;
 }

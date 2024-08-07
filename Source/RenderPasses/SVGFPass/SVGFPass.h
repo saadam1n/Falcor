@@ -33,6 +33,7 @@
 
 #include "SVGFCommon.h"
 #include "SVGFAtrous.h"
+#include "SVGFKpcnnAtrous.h"
 
 using namespace Falcor;
 
@@ -187,6 +188,7 @@ private:
     } mFilterMomentsState;
 
     ref<SVGFAtrousSubpass> mpAtrousSubpass;
+    ref<SVGFKpcnnAtrousSubpass> mpKpcnnAtrousSubpass;
 
     struct {
         ref<Buffer> pdaIllumination;

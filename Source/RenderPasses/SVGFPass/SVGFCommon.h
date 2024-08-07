@@ -32,6 +32,9 @@ namespace
     const char kFinalModulateShaderS[]        = "RenderPasses/SVGFPass/SVGFFinalModulateS.ps.slang";
     const char kFinalModulateShaderD[]        = "RenderPasses/SVGFPass/SVGFFinalModulateD.ps.slang";
 
+    const char kKpcnnAtrousShaderS[]          = "RenderPasses/SVGFPass/SVGFKpcnnAtrousS.cs.slang";
+    const char kKpcnnAtrousShaderD[]          = "RenderPasses/SVGFPass/SVGFKpcnnAtrousD.cs.slang";
+
     const char kLossShader[]                  = "RenderPasses/SVGFPass/SVGFLoss.ps.slang";
     const char kLossGaussianShaderS[]         = "RenderPasses/SVGFPass/SVGFLossGaussianS.ps.slang";
     const char kLossGaussianShaderD[]         = "RenderPasses/SVGFPass/SVGFLossGaussianD.ps.slang";

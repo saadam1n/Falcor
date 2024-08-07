@@ -25,8 +25,6 @@ private:
     int mFilterIterations = 4;
     int mFeedbackTap = -1;
 
-    ref<FullScreenPass> mpEvaluatePass;
-    ref<FullScreenPass> mpBackPropagatePass;
-
-
+    ref<ComputePass> mpEvaluatePass;
+    ref<ComputePass> mpBackPropagatePass;
 };

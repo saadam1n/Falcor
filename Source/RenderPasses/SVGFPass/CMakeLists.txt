@@ -32,6 +32,10 @@ target_sources(SVGFPass PRIVATE
     SVGFKpcnnAtrous.cpp
     SVGFKpcnnAtrous.h
 
+    SVGFKpcnnAtrousC.slang
+    SVGFKpcnnAtrousD.cs.slang
+    SVGFKpcnnAtrousS.cs.slang
+
     SVGFLoss.ps.slang
     SVGFLossGaussianC.slang
     SVGFLossGaussianD.ps.slang
