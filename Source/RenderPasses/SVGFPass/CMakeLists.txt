@@ -29,6 +29,9 @@ target_sources(SVGFPass PRIVATE
     SVGFFinalModulateD.ps.slang
     SVGFFinalModulateS.ps.slang
 
+    SVGFKpcnnAtrous.cpp
+    SVGFKpcnnAtrous.h
+
     SVGFLoss.ps.slang
     SVGFLossGaussianC.slang
     SVGFLossGaussianD.ps.slang
