@@ -25,7 +25,7 @@ cbuffer PerImageCB
     // paramters
     uint2 gStepSize;
     uint gNumLayers;
-    CnnKernel kernels[][kNumSlices];
+    CnnKernel kernels[1024];
 };
 
 groupshared float cnnS[2][kNumSlices][kKernelSize][kKernelSize];
