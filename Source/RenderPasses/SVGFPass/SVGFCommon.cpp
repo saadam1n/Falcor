@@ -394,7 +394,11 @@ void SVGFTrainingDataset::preloadBitmaps()
 
 bool SVGFTrainingDataset::atValidIndex() const
 {
+    #if 1
     return std::filesystem::exists(getSampleBufferPath(kDatasetColor));
+    #else
+    return (mDatasetIndex < 48); // for reduced RAM usage
+    #endif
 }
 
 bool SVGFTrainingDataset::loadCurrent(RenderContext* pRenderContext)

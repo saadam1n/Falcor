@@ -255,6 +255,7 @@ void d_atrous( FullScreenPassVsOut vsOut, inout DifferentialPair<float [2][2]> v
     float4 dLdSumIllum = dLoss / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination);
     float4 dLdSumW4 = -dLoss * sumIllumination / float4((sumWIllumination * sumWIllumination).xxx, 0.5f * sumWIllumination * sumWIllumination * sumWIllumination);
 
+    #ifdef FILTER_NAN_PROTECT
     for (int i = 0; i < 4; i++)
     {
         if (isnan(sumIllumination[i]))
@@ -263,6 +264,7 @@ void d_atrous( FullScreenPassVsOut vsOut, inout DifferentialPair<float [2][2]> v
             dLdSumW4[i] = 0.0f;
         }
     }
+    #endif
 
     float dLdSumW = dot(dLdSumW4, 1.0f.xxxx);
 
@@ -459,6 +461,7 @@ float4 atrous(FullScreenPassVsOut vsOut, float [2][2] varianceKernel,
         }
     }
 
+    #ifdef FILTER_NAN_PROTECT
     for (int i = 0; i < 4; i++)
     {
         if (isnan(sumIllumination[i]))
@@ -466,6 +469,7 @@ float4 atrous(FullScreenPassVsOut vsOut, float [2][2] varianceKernel,
             sumIllumination[i] = 0.0f;
         }
     }
+    #endif
 
     // renormalization is different for variance, check paper for the formula
     const float4 filteredIllumination = float4(sumIllumination / float4(sumWIllumination.xxx, sumWIllumination * sumWIllumination));

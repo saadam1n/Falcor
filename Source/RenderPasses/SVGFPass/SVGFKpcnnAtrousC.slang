@@ -77,7 +77,7 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
         // clear output layers
         for (int j = 0; j < kNumSlices; j++)
         {
-            cnnS[w][j][offset.y][offset.x] = kernels[i][j].bias;
+            cnnS[w][j][offset.y][offset.x] = kernels[i * kNumSlices + j].bias;
         }
 
         // ensure everything is written before proceeding
@@ -99,7 +99,7 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
                     for (int k = 0; k < kNumSlices; k++) // write index
                     {
                         // todo: figure out how to do this atomically
-                        cnnS[w][k][wP.y][wP.x] += kernels[i][j].w[j][y + 1][x + 1] * cnnS[r][j][curPixel.y][curPixel.x];
+                        cnnS[w][k][wP.y][wP.x] += kernels[i * kNumSlices + j].w[j][y + 1][x + 1] * cnnS[r][j][curPixel.y][curPixel.x];
                     }
                 }
             }
