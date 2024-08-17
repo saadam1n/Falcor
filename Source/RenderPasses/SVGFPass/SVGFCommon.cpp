@@ -367,9 +367,14 @@ void SVGFTrainingDataset::reset()
     mDatasetIndex = 0;
 }
 
+void SVGFTrainingDataset::setCachingState(bool enabled)
+{
+    mCachingEnabled = enabled;
+}
+
 void SVGFTrainingDataset::preloadBitmaps()
 {
-    if(!mPreloaded)
+    if (mCachingEnabled && !mPreloaded)
     {
         mPreloaded = true;
 
@@ -455,11 +460,14 @@ Bitmap::UniqueConstPtr SVGFTrainingDataset::readBitmapFromFile(const std::string
 
 void SVGFTrainingDataset::loadSampleBuffer(RenderContext* pRenderContext, ref<Texture> tex, const std::string& buffer)
 {
+    const void* dataPtr = nullptr;
+
     std::string path = getSampleBufferPath(buffer);
 
+    bool needClearAfterwards = false;
     if(mCachedBitmaps.count(path) == 0)
     {
-        // check if already loaded
+        // if it is preloaded, move to the cache bitmaps and keep it there
         if (mPreloadingBitmaps.count(path) == 1)
         {
             mCachedBitmaps[path] = std::move(mPreloadingBitmaps[path].get());
@@ -467,12 +475,24 @@ void SVGFTrainingDataset::loadSampleBuffer(RenderContext* pRenderContext, ref<Te
         }
         else
         {
-            // manually load
+            // if it is not preloaded, manually load it
+            // we will use the cache as temporary storage. if caching is not enabled, we'll remove it afterwards
+            // otherwise, we will keep it there
             mCachedBitmaps[path] = std::move(readBitmapFromFile(path));
+
+            needClearAfterwards = !mCachingEnabled;
         }
+
+        dataPtr = (const void*)mCachedBitmaps[path]->getData();
     }
 
     if(pRenderContext) {
-        pRenderContext->updateTextureData(tex.get(), (const void*)mCachedBitmaps[path]->getData());
+        pRenderContext->updateTextureData(tex.get(), dataPtr);
+    }
+
+    if (needClearAfterwards)
+    {
+        // this will release it from memory
+        mCachedBitmaps.erase(path);
     }
 }

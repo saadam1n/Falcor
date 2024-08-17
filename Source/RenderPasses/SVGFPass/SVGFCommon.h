@@ -280,9 +280,14 @@ public:
     bool loadPrev(RenderContext* pRenderContext);
     void reset();
 
-    // preload all bitmaps, if not already
+    void setCachingState(bool enabled);
+
+    // preload all bitmaps, if 1) preloading is enabled and 2) bitmaps have not been already preloaded
     void preloadBitmaps();
 private:
+    // allows us to enable/disable caching. useful for low-RAW systems
+    bool mCachingEnabled = false;
+
     // the folder containing the dataset
     std::string mFolder;
     // whatever sample we are reading from
