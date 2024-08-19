@@ -926,7 +926,10 @@ void SVGFPass::updateLossBuffers(RenderContext* pRenderContext, SVGFRenderData& 
 {
     // update the previous textures
     pRenderContext->blit(renderData.pOutputTexture->getSRV(), renderData.pPrevFiltered->getRTV());
+    pRenderContext->blit(renderData.pOutputTexture->getSRV(), renderData.fetchInternalTex("LossPrevOutput")->getRTV());
+
     pRenderContext->blit(renderData.pReferenceTexture->getSRV(), renderData.pPrevReference->getRTV());
+    pRenderContext->blit(renderData.pReferenceTexture->getSRV(), renderData.fetchInternalTex("LossPrevReference")->getRTV());
 }
 
 
