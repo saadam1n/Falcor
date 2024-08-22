@@ -433,7 +433,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 }
 
 
-const int K_NUM_EPOCHS = 8;
+const int K_NUM_EPOCHS = 1;
 const int K_FRAME_SAMPLE_START = 48;
 
 const float K_LRATE_NUMER = 25.0f * 0.0085f; // 0.0085 is a good value
@@ -1147,6 +1147,7 @@ void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext, SVGFRenderD
 
     svgfrd.fetchTexTable("AtrousInputIllumination") = mpPingPongFbo[0]->getColorTexture(0);
 
+    pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), mpFilteredPastFbo->getRenderTargetView(4));
     pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), svgfrd.fetchTexTable("FilteredPast4")->getRTV());
 }
 
@@ -1200,7 +1201,7 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
 {
     FALCOR_PROFILE(pRenderContext, "Reproj");
 
-    svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPastFiltered", mpFilteredPastFbo->getColorTexture(0));
+    //svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPastFiltered", mpFilteredPastFbo->getColorTexture(0));
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevIllum", mpPrevReprojFbo->getColorTexture(0));
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevMoments", mpPrevReprojFbo->getColorTexture(1));
     svgfrd.changeTextureTimeframe(pRenderContext, "ReprojPrevHistoryLength", mpPrevReprojFbo->getColorTexture(2));
@@ -1226,7 +1227,7 @@ void SVGFPass::computeReprojection(RenderContext* pRenderContext, SVGFRenderData
     perImageCB["gPrevLinearZAndNormal"] = svgfrd.pPrevLinearZAndNormalTexture;
     perImageCB["gPrevHistoryLength"] = mpPrevReprojFbo->getColorTexture(2);
 
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 5; i++)
     {
         perImageCB["gPrevFiltered"][i] = mpFilteredPastFbo->getColorTexture(i);
     }

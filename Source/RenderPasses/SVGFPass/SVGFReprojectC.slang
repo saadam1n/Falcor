@@ -856,7 +856,7 @@ void d_reproject( FullScreenPassVsOut vsOut, inout DifferentialPair<float3> lumi
     float4 initialEstimate = lerp(pfd.prevTemporalAccum, float4(illumination, 0), alphaAdjusted);
     DifferentialPair<float4> dLdPrevIllum = diffPair(pfd.prevIllum);
     float4 dLdIllumination = float4(dLoss.OutIllumination.rgb, 0.0f);
-    if (success)
+    if (false && success)
     {
         storePos = ipos;
         __bwd_diff(ff_mlp)(initialEstimate, dLdPrevIllum, pfd.prevFiltered, dLdIllumination);
@@ -968,7 +968,7 @@ REPROJ_OUT reproject( FullScreenPassVsOut vsOut, float3 luminanceParams, float[4
 
     float4 initialEstimate = lerp(pfd.prevTemporalAccum, float4(illumination, 0), alphaAdjusted); ;
     float4 illum = initialEstimate;
-    if (success)
+    if (false && success)
     {
         illum = ff_mlp(initialEstimate, pfd.prevIllum, pfd.prevFiltered);
     }
