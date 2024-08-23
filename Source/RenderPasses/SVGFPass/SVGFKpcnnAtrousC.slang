@@ -3,15 +3,24 @@ import SVGFCommon;
 // I know I have an inconsistent naming scheme but I really couldn't care
 
 // I do not trust uniform variables in slang
-#define kKernelSize 5
-#define kNumPixels (kKernelSize * kKernelSize)
-#define kNumSlices kNumPixels
+#define kMapDim 5
+#define kNumPixels (kMapDim * kMapDim)
+#define kKernelDim 3
+#define kKernelSummationTerms (kKernelDim * kKernelDim)
+#define kOutputMapsPerLayer 8
+#define kRingBufferSize (2 * kOutputMapsPerLayer + kKernelSummationTerms)
+#define kNumLayers 4
 
 struct CnnKernel
 {
     // y first, x second
-    float w[kNumSlices][3][3];
+    float weights[3][3];
     float bias;
+};
+
+struct CnnMap
+{
+    float m[5][5];
 };
 
 cbuffer PerImageCB
@@ -25,10 +34,20 @@ cbuffer PerImageCB
     // paramters
     uint2 gStepSize;
     uint gNumLayers;
-    CnnKernel kernels[1024];
+    CnnKernel kernels[512];
 };
 
-groupshared float cnnS[2][kNumSlices][kKernelSize][kKernelSize];
+groupshared CnnMap rbuf[kRingBufferSize];
+
+void convolve_kernel(int readIdx, int writeIdx, int kernelIdx)
+{
+    
+}
+
+void reduce_accumulation(int writeIdx)
+{
+
+}
 
 void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
 {
@@ -46,7 +65,7 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     float4 illumAtCurPixel = gIllumination[curPixel];
     float4 normalDepthAtCurPixel = gLinearZAndNormal[curPixel];
     float4 worldPosAtCurPixel = gWorldPosition[curPixel];
-    for (int i = 0; i < kNumSlices; i++)
+    for (int i = 0; i < kOutputMapsPerLayer; i++)
     {
         float writeVal;
         if (i < 4)
@@ -66,57 +85,30 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
             writeVal = 0.0f;
         }
 
-        cnnS[0][i][offset.y][offset.x] = writeVal;
+        rbuf[i].m[offset.y][offset.x] = writeVal;
     }
 
     // third step: exectue the kpcnn
-    int r = 0;
-    int w = 1;
-    for (int i = 0; i < gNumLayers; i++)
+    int currentReadIndex = 0;
+    int currentWriteIndex = kOutputMapsPerLayer;
+    int currentKernelIdx = 0;
+
+    for (int layerIndex = 0; layerIndex < kNumLayers; layerIndex++)
     {
-        // clear output layers
-        for (int j = 0; j < kNumSlices; j++)
+        for (int outputMapIndex = 0; outputMapIndex < kOutputMapsPerLayer; outputMapIndex++)
         {
-            cnnS[w][j][offset.y][offset.x] = kernels[i * kNumSlices + j].bias;
+            convolve_kernel(currentReadIndex, currentWriteIndex, currentKernelIdx);
+            reduce_accumulation(currentWriteIndex);
+            currentReadIndex++;
+            currentWriteIndex++;
+            currentKernelIdx++;
         }
-
-        // ensure everything is written before proceeding
-        GroupMemoryBarrierWithGroupSync();
-
-        // use shared memory ops to speed this up
-        for (int j = 0; j < kNumSlices; j++) // read index
-        {
-            for (int x = -1; x <= 1; x++)
-            {
-                for (int y = -1; y <= 1; y++)
-                {
-                    int2 wP = offset + int2(x, y);
-                    if (any(wP < int2(0, 0)) || any(wP >= int2(kKernelSize, kKernelSize)))
-                    {
-                        continue;
-                    }
-
-                    for (int k = 0; k < kNumSlices; k++) // write index
-                    {
-                        // todo: figure out how to do this atomically
-                        cnnS[w][k][wP.y][wP.x] += kernels[i * kNumSlices + j].w[j][y + 1][x + 1] * cnnS[r][j][curPixel.y][curPixel.x];
-                    }
-                }
-            }
-        }
-
-        // sync to apply ReLU
-        GroupMemoryBarrierWithGroupSync();
-        for (int j = 0; j < kNumSlices; j++)
-        {
-            cnnS[w][j][offset.y][offset.x] = max(cnnS[w][j][offset.y][offset.x], 0.0f);
-        }
-
-        // now swap the read and write indices
-        int temp = r;
-        r = w;
-        w = temp;
+        currentReadIndex += kOutputMapsPerLayer;
     }
+
+
+
+
 
     // fourth step: use the generated kernel to convolve the original patch
 
