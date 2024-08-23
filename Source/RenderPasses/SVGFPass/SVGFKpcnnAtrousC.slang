@@ -5,21 +5,24 @@ import SVGFCommon;
 // I do not trust uniform variables in slang
 #define kMapDim 5
 #define kNumPixels (kMapDim * kMapDim)
+#define kKernelDistance 1
 #define kKernelDim 3
 #define kKernelSummationTerms (kKernelDim * kKernelDim)
 #define kOutputMapsPerLayer 8
 #define kRingBufferSize (2 * kOutputMapsPerLayer + kKernelSummationTerms)
 #define kNumLayers 4
+#define kNumOutputWeights 8
 
 struct CnnKernel
 {
-    // y first, x second
-    float weights[3][3];
+    // map, y first, x second
+    float weights[kOutputMapsPerLayer][3][3];
     float bias;
 };
 
 struct CnnMap
 {
+    // indexing: first y, then x
     float m[5][5];
 };
 
@@ -39,14 +42,52 @@ cbuffer PerImageCB
 
 groupshared CnnMap rbuf[kRingBufferSize];
 
-void convolve_kernel(int readIdx, int writeIdx, int kernelIdx)
+void convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
 {
-    
+    // first things first, we need to zero out everything in accumulation block
+    for (int i = 0; i < kKernelSummationTerms; i++)
+    {
+        rbuf[(writeIdx + i) % kRingBufferSize].m[srcPix.y][srcPix.x] = 0.0f;
+    }
+
+    for (int y = -kKernelDistance; y <= kKernelDistance; y++)
+    {
+        for (int x = -kKernelDistance; x <= kKernelDistance; x++)
+        {
+            const uint2 dstPixel = srcPix + int2(x, y);
+            const bool inside = all(dstPixel >= int2(0)) && all(dstPixel < int2(kMapDim));
+
+            if (inside)
+            {
+                float sum = 0.0f;
+                // now, accumulate to our target pixel
+                for (int srcLayer = 0; srcLayer < kOutputMapsPerLayer; srcLayer++)
+                {
+                    float mapVal = rbuf[(readIdx + srcLayer) % kRingBufferSize].m[srcPix.y][srcPix.x];
+                    sum += mapVal * kernels[kernelIdx].weights[srcLayer][y + kKernelDistance][x + kKernelDistance]; 
+                }
+
+                int offsetIdx = kKernelDim * (y + kKernelDistance) + (x + kKernelDistance);
+
+                rbuf[(writeIdx + offsetIdx) % kRingBufferSize].m[srcPix.y][srcPix.x] = sum;
+            }
+        }
+    }
 }
 
-void reduce_accumulation(int writeIdx)
+void reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
 {
+    // no fancy parallel reduction for now, just plain "linear" accumulation
+    int dstIdx = writeIdx % kRingBufferSize;
+    for (int i = 1; i < kKernelSummationTerms; i++)
+    {
+        rbuf[dstIdx].m[offset.y][offset.x] += rbuf[(writeIdx = i) % kRingBufferSize].m[offset.y][offset.x];
+    }
+    // now apply bias
+    rbuf[dstIdx].m[offset.y][offset.x] += kernels[kernelIdx].bias;
 
+    // apply ReLU
+    rbuf[dstIdx].m[offset.y][offset.x] = max(rbuf[dstIdx].m[offset.y][offset.x], 0.0f);
 }
 
 void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
@@ -55,10 +96,10 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     const uint2 interleavedIndex = groupId.xy % gStepSize;
     const uint2 jumpIndex = groupId.xy / gStepSize;
 
-    const uint2 basePixel = interleavedIndex + kKernelSize * jumpIndex;
+    const uint2 basePixel = interleavedIndex + kKernelDim * jumpIndex;
 
     const uint linearId = threadId.z;
-    const uint2 offset = uint2(linearId % kKernelSize, linearId / kKernelSize);
+    const uint2 offset = uint2(linearId % kKernelDim, linearId / kKernelDim);
     const uint2 curPixel = basePixel + offset;
 
     // second step: load in all important information
@@ -97,8 +138,8 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     {
         for (int outputMapIndex = 0; outputMapIndex < kOutputMapsPerLayer; outputMapIndex++)
         {
-            convolve_kernel(currentReadIndex, currentWriteIndex, currentKernelIdx);
-            reduce_accumulation(currentWriteIndex);
+            convolve_kernel(offset, currentReadIndex, currentWriteIndex, currentKernelIdx);
+            reduce_and_activate(offset, currentWriteIndex, currentKernelIdx);
             currentReadIndex++;
             currentWriteIndex++;
             currentKernelIdx++;
@@ -106,36 +147,35 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
         currentReadIndex += kOutputMapsPerLayer;
     }
 
-
-
-
-
     // fourth step: use the generated kernel to convolve the original patch
 
-    // softmax numerical stability trick I stole from "Deep Learning"
+    // softmax numerical stability trick I stole from "Deep Learning", MIT Press
     float maxRawOut = 0.0f;
-    for (int i = 0; i < kNumPixels; i++)
+    for (int i = 0; i < kNumOutputWeights; i++)
     {
-        maxRawOut = max(maxRawOut, cnnS[r][i][offset.y][offset.x]);
+        maxRawOut = max(maxRawOut, rbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x]);
     }
 
     float totalWeight = 0.0f;
-    for (int i = 0; i < kNumPixels; i++)
+    for (int i = 0; i < kNumOutputWeights; i++)
     {
-        cnnS[r][i][offset.y][offset.x] = exp(cnnS[r][i][offset.y][offset.x] - maxRawOut);
-        totalWeight += cnnS[r][i][offset.y][offset.x];
+        rbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] = exp(rbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] - maxRawOut);
+        totalWeight += rbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x];
     }
 
     float4 convIllum = float4(0.0f);
-    for (int i = 0; i < kKernelSize; i++)
+    // TODO: fix this code with a learnable kernels approach 
+    /*
+    for (int i = 0; i < kKernelDim; i++)
     {
-        for (int j = 0; j < kKernelSize; j++)
+        for (int j = 0; j < kKernelDim; j++)
         {
             int2 samplePixel = basePixel + int2(i, j) * gStepSize;
-            float weight = cnnS[r][kKernelSize * j + i][offset.y][offset.x] / totalWeight;
+            float weight = rbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] / totalWeight;
             convIllum += gIllumination[samplePixel] * weight;
         }
     }
+    */
 
     // final step: write the convoluted illum to memory
     gFiltered[curPixel] = convIllum;
