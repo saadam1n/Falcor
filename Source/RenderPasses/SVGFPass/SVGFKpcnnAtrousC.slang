@@ -20,6 +20,12 @@ struct CnnKernel
     float bias;
 };
 
+// alternate name: CnnSummaryKernel
+struct CnnPostconvolutionKernel
+{
+    float weights[kMapDim][kMapDim];
+};
+
 struct CnnMap
 {
     // indexing: first y, then x
@@ -37,10 +43,12 @@ cbuffer PerImageCB
     // paramters
     uint2 gStepSize;
     uint gNumLayers;
+    CnnPostconvolutionKernel postconv[8];
     CnnKernel kernels[512];
 };
 
 groupshared CnnMap rbuf[kRingBufferSize];
+groupshared float4 inputlum[kMapDim][kMapDim];
 
 void convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
 {
@@ -69,10 +77,13 @@ void convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
 
                 int offsetIdx = kKernelDim * (y + kKernelDistance) + (x + kKernelDistance);
 
-                rbuf[(writeIdx + offsetIdx) % kRingBufferSize].m[srcPix.y][srcPix.x] = sum;
+                rbuf[(writeIdx + offsetIdx) % kRingBufferSize].m[dstPixel.y][dstPixel.x] = sum;
             }
         }
     }
+
+    // now sync for future passes
+    GroupMemoryBarrierWithGroupSync();
 }
 
 void reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
@@ -88,6 +99,9 @@ void reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
 
     // apply ReLU
     rbuf[dstIdx].m[offset.y][offset.x] = max(rbuf[dstIdx].m[offset.y][offset.x], 0.0f);
+
+    // resync for next layer
+    GroupMemoryBarrierWithGroupSync();
 }
 
 void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
@@ -106,6 +120,9 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     float4 illumAtCurPixel = gIllumination[curPixel];
     float4 normalDepthAtCurPixel = gLinearZAndNormal[curPixel];
     float4 worldPosAtCurPixel = gWorldPosition[curPixel];
+
+    inputlum[offset.y][offset.x] = illumAtCurPixel;
+
     for (int i = 0; i < kOutputMapsPerLayer; i++)
     {
         float writeVal;
@@ -164,18 +181,20 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     }
 
     float4 convIllum = float4(0.0f);
-    // TODO: fix this code with a learnable kernels approach 
-    /*
-    for (int i = 0; i < kKernelDim; i++)
+    for (int i = 0; i < kNumOutputWeights; i++)
     {
-        for (int j = 0; j < kKernelDim; j++)
+        float4 tempAccumIllum = float4(0.0f);
+        for (int y = 0; y < kMapDim; y++)
         {
-            int2 samplePixel = basePixel + int2(i, j) * gStepSize;
-            float weight = rbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] / totalWeight;
-            convIllum += gIllumination[samplePixel] * weight;
+            for (int x = 0; x < kMapDim; x++)
+            {
+                tempAccumIllum += postconv[i].weights[y][x] * inputlum[y][x];
+            }
         }
+
+        float weight = rbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] / totalWeight;
+        convIllum += weight * tempAccumIllum;
     }
-    */
 
     // final step: write the convoluted illum to memory
     gFiltered[curPixel] = convIllum;
