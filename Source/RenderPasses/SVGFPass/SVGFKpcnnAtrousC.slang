@@ -152,7 +152,7 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
         }
         else if (i < 12)
         {
-            writeVal = worldPosAtCurPixel[i - 8];
+            writeVal = 0.0f;//worldPosAtCurPixel[i - 8];
         }
         else
         {
