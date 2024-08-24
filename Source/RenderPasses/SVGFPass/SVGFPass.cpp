@@ -428,6 +428,13 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    if (!mKpcnnTested)
+    {
+        mpKpcnnAtrousSubpass->runTest(pRenderContext);
+        mKpcnnTested = true;
+    }
+    return;
+
     runTrainingAndTesting(pRenderContext, renderData);
     std::cout.flush();
 }

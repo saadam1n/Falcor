@@ -189,6 +189,7 @@ private:
 
     ref<SVGFAtrousSubpass> mpAtrousSubpass;
     ref<SVGFKpcnnAtrousSubpass> mpKpcnnAtrousSubpass;
+    bool mKpcnnTested = false;
 
     struct {
         ref<Buffer> pdaIllumination;

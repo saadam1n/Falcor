@@ -9,7 +9,7 @@ SVGFKpcnnAtrousSubpass::SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtil
     // create some test stuff
     mpTestIllum = mpDevice->createTexture2D(5, 5, ResourceFormat::RGBA32Float);
     mpTestNormalDepth = mpDevice->createTexture2D(5, 5, ResourceFormat::RGBA32Float);
-    mpTestOutput = mpDevice->createTexture2D(5, 5, ResourceFormat::RGBA32Float);
+    mpTestOutput = mpDevice->createTexture2D(5, 5, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
 }
 
 void SVGFKpcnnAtrousSubpass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
@@ -18,7 +18,6 @@ void SVGFKpcnnAtrousSubpass::allocateFbos(uint2 dim, RenderContext* pRenderConte
 void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
 {
     // run a simple 5x5 patch and verify that our output is in line with what we would expect
-    auto perImageCB = mpEvaluatePass->getRootVar()["PerImageCB"];
 
     // set the test data
     float4 testIllumData[5][5];
@@ -35,10 +34,13 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
     pRenderContext->updateTextureData(mpTestIllum.get(), (const void*)testIllumData);
     pRenderContext->updateTextureData(mpTestNormalDepth.get(), (const void*)testNormalData);
 
+    #if 0
+    auto perImageCB = mpEvaluatePass->getRootVar()["PerImageCB"];
     perImageCB["gIllumination"] = mpTestIllum;
     perImageCB["gLinearZAndNormal"] = mpTestNormalDepth;
     perImageCB["gFiltered"] = mpTestOutput;
-    perImageCB["gStepSize"] = 1;
+    perImageCB["gStepSize"] = uint2(1, 1);
+    #endif
 
     mpEvaluatePass->execute(pRenderContext, uint3(1, 1, 25));
 
