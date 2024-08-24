@@ -21,7 +21,7 @@ struct CnnKernel
 
     float fetch_weight(const int map, const int x, const int y)
     {
-        int linearIdx = kKernelDim * kKernelDim * map + kKernelDim * y + x;
+        const int linearIdx = kKernelDim * kKernelDim * map + kKernelDim * y + x;
         const int elemIdx = linearIdx / 4;
         const int chnlIdx = linearIdx % 4;
         return weights[elemIdx][chnlIdx];
