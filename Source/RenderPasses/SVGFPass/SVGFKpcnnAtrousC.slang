@@ -112,7 +112,7 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     const uint2 basePixel = interleavedIndex + kKernelDim * jumpIndex;
 
     const uint linearId = threadId.z;
-    const uint2 offset = uint2(linearId % kKernelDim, linearId / kKernelDim);
+    const uint2 offset = uint2(linearId % kMapDim, linearId / kMapDim);
     const uint2 curPixel = basePixel + offset;
 
     // second step: load in all important information
@@ -196,6 +196,7 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     }
 
     // final step: write the convoluted illum to memory
+    convIllum = float4(curPixel.x, curPixel.y, 0.0f, 0.0f);
     gFiltered[curPixel] = convIllum;
 }
 

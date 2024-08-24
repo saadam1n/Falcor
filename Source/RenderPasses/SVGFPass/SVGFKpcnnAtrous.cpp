@@ -46,11 +46,27 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
     auto outputBitmap = pRenderContext->readTextureSubresource(mpTestOutput.get(), 0);
     float4(*filteredImage)[5] = (float4(*)[5])outputBitmap.data(); // uh super weird syntax I do not understand
 
-    for (int y = 0; y < 5; y++)
+    for (int y = -1; y < 5; y++)
     {
-        for (int x = 0; x < 5; x++)
+        for (int x = -1; x < 5; x++)
         {
-            std::cout << filteredImage[y][x].r << "\t";
+            if (x == -1 && y == -1)
+            {
+                std::cout << "y/x\t";
+            }
+            else if (y == -1)
+            {
+                std::cout << x << "\t";
+            }
+            else if (x == -1)
+            {
+                std::cout << y << "\t";
+            }
+            else
+            {
+                std::cout << filteredImage[y][x].r << "," << filteredImage[y][x].g << "\t";
+            }
+
         }
         std::cout << "\n";
     }
