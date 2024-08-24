@@ -51,6 +51,7 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
     perImageCB["gStepSize"] = uint2(1, 1);
     perImageCB["postconv"].setBlob(mpPostconvKernels);
 
+
     mpEvaluatePass->execute(pRenderContext, uint3(1, 1, 25));
 
     // now download test data

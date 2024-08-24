@@ -34,6 +34,8 @@ struct CnnMap
 
 cbuffer PerImageCB
 {
+    CnnPostconvolutionKernel postconv[8];
+    CnnKernel kernels[32];
     // input buffers
     texture2D gIllumination;
     texture2D gLinearZAndNormal;
@@ -42,8 +44,7 @@ cbuffer PerImageCB
     RWTexture2D<float4> gFiltered;
     // paramters
     uint2 gStepSize;
-    CnnPostconvolutionKernel postconv[8];
-    CnnKernel kernels[32];
+
 };
 
 groupshared CnnMap rbuf[kRingBufferSize];

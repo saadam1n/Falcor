@@ -65,6 +65,7 @@ void ComputePass::execute(ComputeContext* pContext, uint32_t nThreadX, uint32_t 
 {
     FALCOR_ASSERT(mpVars);
     uint3 threadGroupSize = mpState->getProgram()->getReflector()->getThreadGroupSize();
+    std::cout << "TGS\t" << threadGroupSize.x << "\t" << threadGroupSize.y << "\t" << threadGroupSize.z << std::endl;
     uint3 groups = div_round_up(uint3(nThreadX, nThreadY, nThreadZ), threadGroupSize);
     pContext->dispatch(mpState.get(), mpVars.get(), groups);
 }
