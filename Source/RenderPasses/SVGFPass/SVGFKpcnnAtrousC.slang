@@ -42,7 +42,6 @@ cbuffer PerImageCB
     RWTexture2D<float4> gFiltered;
     // paramters
     uint2 gStepSize;
-    uint gNumLayers;
     CnnPostconvolutionKernel postconv[8];
     CnnKernel kernels[512];
 };

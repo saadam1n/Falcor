@@ -15,6 +15,8 @@ public:
     SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtilitySet> pUtilities, ref<FilterParameterReflector> pParameterReflector);
     void allocateFbos(uint2 dim, RenderContext* pRenderContext);
 
+    void runTest(RenderContext* pRenderContext);
+
     void computeEvaluation(RenderContext* pRenderContext, SVGFRenderData& svgfrd, bool updateInternalBuffers);
     void computeBackPropagation(RenderContext* pRenderContext, SVGFRenderData& svgfrd);
 private:
@@ -27,4 +29,8 @@ private:
 
     ref<ComputePass> mpEvaluatePass;
     ref<ComputePass> mpBackPropagatePass;
+
+    ref<Texture> mpTestIllum;
+    ref<Texture> mpTestNormalDepth;
+    ref<Texture> mpTestOutput;
 };
