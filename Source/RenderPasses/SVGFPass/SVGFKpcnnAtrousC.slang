@@ -16,14 +16,30 @@ import SVGFCommon;
 struct CnnKernel
 {
     // map, y first, x second
-    float weights[kOutputMapsPerLayer][3][3];
+    float4 weights[(kOutputMapsPerLayer * kKernelDim * kKernelDim + 3) / 4];
     float bias;
+
+    float fetch_weight(const int map, const int x, const int y)
+    {
+        int linearIdx = kKernelDim * kKernelDim * map + kKernelDim * y + x;
+        const int elemIdx = linearIdx / 4;
+        const int chnlIdx = linearIdx % 4;
+        return weights[elemIdx][chnlIdx];
+    }
 };
 
 // alternate name: CnnSummaryKernel
 struct CnnPostconvolutionKernel
 {
-    float weights[kMapDim][kMapDim];
+    float4 weights[(kMapDim * kMapDim + 3) / 4];
+
+    float fetch_weight(const int x, const int y)
+    {
+        const int linearIdx = y * 5 + x;
+        const int elemIdx = linearIdx / 4;
+        const int chnlIdx = linearIdx % 4;
+        return weights[elemIdx][chnlIdx];
+    }
 };
 
 struct CnnMap
@@ -72,7 +88,7 @@ void convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
                 for (int srcLayer = 0; srcLayer < kOutputMapsPerLayer; srcLayer++)
                 {
                     float mapVal = rbuf[(readIdx + srcLayer) % kRingBufferSize].m[srcPix.y][srcPix.x];
-                    sum += mapVal * kernels[kernelIdx].weights[srcLayer][y + kKernelDistance][x + kKernelDistance]; 
+                    sum += mapVal * kernels[kernelIdx].fetch_weight(srcLayer, x + kKernelDistance, y + kKernelDistance);
                 }
 
                 int offsetIdx = kKernelDim * (y + kKernelDistance) + (x + kKernelDistance);
@@ -188,7 +204,7 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
         {
             for (int x = 0; x < kMapDim; x++)
             {
-                tempAccumIllum += postconv[i].weights[y][x] * inputlum[y][x];
+                tempAccumIllum += postconv[i].fetch_weight(x, y) * inputlum[y][x];
             }
         }
 

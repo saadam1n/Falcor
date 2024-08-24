@@ -9,6 +9,16 @@
 
 using namespace Falcor;
 
+#define kMapDim 5
+#define kNumPixels (kMapDim * kMapDim)
+#define kKernelDistance 1
+#define kKernelDim 3
+#define kKernelSummationTerms (kKernelDim * kKernelDim)
+#define kOutputMapsPerLayer 8
+#define kRingBufferSize (2 * kOutputMapsPerLayer + kKernelSummationTerms)
+#define kNumLayers 4
+#define kNumOutputWeights 8
+
 class SVGFKpcnnAtrousSubpass : public Object
 {
 public:
@@ -39,7 +49,11 @@ private:
 
     struct PostconvolutionKernel
     {
-        float weights[3][3];
+        union
+        {
+            float weights[5][5];
+            float4 vwght[(kMapDim * kMapDim + 3) / 4];
+        };
     };
 
     PostconvolutionKernel mpPostconvKernels[8];
