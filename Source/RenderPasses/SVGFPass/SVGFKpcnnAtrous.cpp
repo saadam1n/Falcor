@@ -3,8 +3,8 @@
 SVGFKpcnnAtrousSubpass::SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtilitySet> pUtilities, ref<FilterParameterReflector> pParameterReflector)
     : mpDevice(pDevice), mpUtilities(pUtilities), mpParameterReflector(pParameterReflector)
 {
-    mpEvaluatePass = ComputePass::create(mpDevice, kKpcnnAtrousShaderS);
-    mpBackPropagatePass = ComputePass::create(mpDevice, kKpcnnAtrousShaderD);
+    mpEvaluatePass = mpUtilities->createComputePassAndDumpIR(kKpcnnAtrousShaderS);
+    mpBackPropagatePass = mpUtilities->createComputePassAndDumpIR(kKpcnnAtrousShaderD);
 
     // create some test stuff
     mpTestIllum = mpDevice->createTexture2D(5, 5, ResourceFormat::RGBA32Float);
@@ -17,21 +17,20 @@ void SVGFKpcnnAtrousSubpass::allocateFbos(uint2 dim, RenderContext* pRenderConte
 
 void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
 {
+    FALCOR_PROFILE(pRenderContext, "KPCNN Test");
     // run a simple 5x5 patch and verify that our output is in line with what we would expect
-
+    // 
     // set the test data
-    float4 testIllumData[5][5];
-    float4 testNormalData[5][5];
     for (int y = 0; y < 5; y++)
     {
         for (int x = 0; x < 5; x++)
         {
-            testIllumData[y][x] = float4(1.0f, 0.0f, 0.0f, 0.0f);
-            testNormalData[y][x] = float4(0.0f);
+            mpTestIllumData[y][x] = float4(1.0f, 0.0f, 0.0f, 0.0f);
+            mpTestNormalData[y][x] = float4(0.0f);
         }
     }
-    pRenderContext->updateTextureData(mpTestIllum.get(), (const void*)testIllumData);
-    pRenderContext->updateTextureData(mpTestNormalDepth.get(), (const void*)testNormalData);
+    pRenderContext->updateTextureData(mpTestIllum.get(), (const void*)mpTestIllumData);
+    pRenderContext->updateTextureData(mpTestNormalDepth.get(), (const void*)mpTestNormalData);
 
     // set up our variables
     for (int k = 0; k < 8; k++)

@@ -62,6 +62,14 @@ ref<FullScreenPass> SVGFUtilitySet::createFullscreenPassAndDumpIR(const std::str
     return FullScreenPass::create(mpDevice, desc);
 }
 
+ref<ComputePass> SVGFUtilitySet::createComputePassAndDumpIR(const std::string& path)
+{
+    ProgramDesc desc;
+    desc.compilerFlags |= SlangCompilerFlags::DumpIntermediates;
+    desc.addShaderLibrary(path).psEntry("main");
+    return ComputePass::create(mpDevice, desc);
+}
+
 size_t SVGFUtilitySet::getBufferSize(size_t elemSize)
 {
     int2 patchDim = mPatchMaxP - mPatchMinP;

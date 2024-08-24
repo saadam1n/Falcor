@@ -428,7 +428,7 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    if (!mKpcnnTested)
+    if (!mKpcnnTested || mKeepRunningKpcnnTest)
     {
         mpKpcnnAtrousSubpass->runTest(pRenderContext);
         mKpcnnTested = true;
@@ -1471,6 +1471,8 @@ void SVGFPass::renderUI(Gui::Widgets& widget)
     widget.text("    (alpha; 0 = full reuse; 1 = no reuse)");
     dirty |= (int)widget.var("Alpha", mReprojectState.mAlpha.dv, 0.0f, 1.0f, 0.001f);
     dirty |= (int)widget.var("Moments Alpha", mReprojectState.mMomentsAlpha.dv, 0.0f, 1.0f, 0.001f);
+
+    widget.checkbox("Keep running test", mKeepRunningKpcnnTest);
 
     if (dirty)
         mBuffersNeedClear = true;

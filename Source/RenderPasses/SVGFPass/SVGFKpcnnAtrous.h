@@ -34,6 +34,9 @@ private:
     ref<Texture> mpTestNormalDepth;
     ref<Texture> mpTestOutput;
 
+    float4 mpTestIllumData[5][5];
+    float4 mpTestNormalData[5][5];
+
     struct PostconvolutionKernel
     {
         float weights[3][3];
