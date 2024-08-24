@@ -32,8 +32,6 @@ struct CnnMap
     float m[5][5];
 };
 
-
-
 cbuffer PerImageCB
 {
     // input buffers
@@ -47,9 +45,6 @@ cbuffer PerImageCB
     CnnPostconvolutionKernel postconv[8];
     CnnKernel kernels[32];
 };
-
-#if 0
-
 
 groupshared CnnMap rbuf[kRingBufferSize];
 groupshared float4 inputlum[kMapDim][kMapDim];
@@ -208,4 +203,3 @@ void bwd_prop_akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
 {
     // todo: fill in code later
 }
-#endif

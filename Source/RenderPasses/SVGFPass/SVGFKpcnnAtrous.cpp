@@ -34,13 +34,11 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
     pRenderContext->updateTextureData(mpTestIllum.get(), (const void*)testIllumData);
     pRenderContext->updateTextureData(mpTestNormalDepth.get(), (const void*)testNormalData);
 
-    #if 0
     auto perImageCB = mpEvaluatePass->getRootVar()["PerImageCB"];
     perImageCB["gIllumination"] = mpTestIllum;
     perImageCB["gLinearZAndNormal"] = mpTestNormalDepth;
     perImageCB["gFiltered"] = mpTestOutput;
     perImageCB["gStepSize"] = uint2(1, 1);
-    #endif
 
     mpEvaluatePass->execute(pRenderContext, uint3(1, 1, 25));
 
