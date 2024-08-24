@@ -30,15 +30,27 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
             testNormalData[y][x] = float4(0.0f);
         }
     }
-
     pRenderContext->updateTextureData(mpTestIllum.get(), (const void*)testIllumData);
     pRenderContext->updateTextureData(mpTestNormalDepth.get(), (const void*)testNormalData);
+
+    // set up our variables
+    for (int k = 0; k < 8; k++)
+    {
+        for (int i = 0; i < 5; i++)
+        {
+            for (int j = 0; j < 5; j++)
+            {
+                mpPostconvKernels[k].weights[i][j] = 1.0f / 25.0f;
+            }
+        }
+    }
 
     auto perImageCB = mpEvaluatePass->getRootVar()["PerImageCB"];
     perImageCB["gIllumination"] = mpTestIllum;
     perImageCB["gLinearZAndNormal"] = mpTestNormalDepth;
     perImageCB["gFiltered"] = mpTestOutput;
     perImageCB["gStepSize"] = uint2(1, 1);
+    perImageCB["postconv"].setBlob(mpPostconvKernels);
 
     mpEvaluatePass->execute(pRenderContext, uint3(1, 1, 25));
 

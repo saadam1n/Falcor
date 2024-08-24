@@ -196,7 +196,6 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     }
 
     // final step: write the convoluted illum to memory
-    convIllum = float4(curPixel.x, curPixel.y, 0.0f, 0.0f);
     gFiltered[curPixel] = convIllum;
 }
 
