@@ -66,7 +66,7 @@ ref<ComputePass> SVGFUtilitySet::createComputePassAndDumpIR(const std::string& p
 {
     ProgramDesc desc;
     desc.compilerFlags |= SlangCompilerFlags::DumpIntermediates;
-    desc.addShaderLibrary(path).psEntry("main");
+    desc.addShaderLibrary(path).csEntry("main");
     return ComputePass::create(mpDevice, desc);
 }
 
