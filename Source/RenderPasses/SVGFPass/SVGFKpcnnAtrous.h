@@ -44,17 +44,51 @@ private:
     ref<Texture> mpTestNormalDepth;
     ref<Texture> mpTestOutput;
 
-    float4 mpTestIllumData[5][5];
-    float4 mpTestNormalData[5][5];
+
+
+
+    struct ConvolutionKernel
+    {
+        // map, y first, x second
+        union
+        {
+            float weights[kOutputMapsPerLayer][kKernelDim][kKernelDim];
+            float4 packed_weights[(kOutputMapsPerLayer * kKernelDim * kKernelDim + 3) / 4];
+        };
+        float bias;
+
+        float fetch_weight(const int map, const int x, const int y);
+    };
 
     struct PostconvolutionKernel
     {
         union
         {
             float weights[5][5];
-            float4 vwght[(kMapDim * kMapDim + 3) / 4];
+            float4 packed_weights[(kMapDim * kMapDim + 3) / 4];
         };
+
+        float fetch_weight(const int x, const int y);
     };
 
-    PostconvolutionKernel mpPostconvKernels[8];
+    struct ConvolutionMap
+    {
+        // indexing: first y, then x
+        float m[5][5];
+
+        float& get(const int x, const int y);
+    };
+
+    PostconvolutionKernel mPostconvKernels[8];
+    ConvolutionKernel mKernels[32];
+
+    float4 mTestIllumData[5][5];
+    float4 mTestNormalData[5][5];
+    ConvolutionMap mRbuf[kRingBufferSize];
+
+    void print_test_result(float4 grid[][5]);
+    void simulate_thread_group_sequentially(std::function<void(uint2)> func);
+    void simulate_kpcnn();
+    void convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx);
+    void reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx);
 };

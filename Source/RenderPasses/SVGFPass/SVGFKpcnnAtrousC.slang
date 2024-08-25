@@ -35,7 +35,7 @@ struct CnnPostconvolutionKernel
 
     float fetch_weight(const int x, const int y)
     {
-        const int linearIdx = y * 5 + x;
+        const int linearIdx = y * kMapDim + x;
         const int elemIdx = linearIdx / 4;
         const int chnlIdx = linearIdx % 4;
         return weights[elemIdx][chnlIdx];

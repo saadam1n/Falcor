@@ -25,21 +25,21 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
     {
         for (int x = 0; x < 5; x++)
         {
-            mpTestIllumData[y][x] = float4(1.0f, 0.0f, 0.0f, 0.0f);
-            mpTestNormalData[y][x] = float4(0.0f);
+            mTestIllumData[y][x] = float4(1.0f, 0.0f, 0.0f, 0.0f);
+            mTestNormalData[y][x] = float4(0.0f);
         }
     }
-    pRenderContext->updateTextureData(mpTestIllum.get(), (const void*)mpTestIllumData);
-    pRenderContext->updateTextureData(mpTestNormalDepth.get(), (const void*)mpTestNormalData);
+    pRenderContext->updateTextureData(mpTestIllum.get(), (const void*)mTestIllumData);
+    pRenderContext->updateTextureData(mpTestNormalDepth.get(), (const void*)mTestNormalData);
 
     // set up our variables
-    for (int k = 0; k < 8; k++)
+    for (int k = 0; k < kOutputMapsPerLayer; k++)
     {
-        for (int i = 0; i < 5; i++)
+        for (int i = 0; i < kMapDim; i++)
         {
-            for (int j = 0; j < 5; j++)
+            for (int j = 0; j < kMapDim; j++)
             {
-                mpPostconvKernels[k].weights[i][j] = 1.0f / 25.0f;
+                mPostconvKernels[k].weights[i][j] = 1.0f / 25.0f;
             }
         }
     }
@@ -49,7 +49,7 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
     perImageCB["gLinearZAndNormal"] = mpTestNormalDepth;
     perImageCB["gFiltered"] = mpTestOutput;
     perImageCB["gStepSize"] = uint2(1, 1);
-    perImageCB["postconv"].setBlob(mpPostconvKernels);
+    perImageCB["postconv"].setBlob(mPostconvKernels);
 
 
     mpEvaluatePass->execute(pRenderContext, uint3(1, 1, 25));
@@ -58,6 +58,47 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
     auto outputBitmap = pRenderContext->readTextureSubresource(mpTestOutput.get(), 0);
     float4(*filteredImage)[5] = (float4(*)[5])outputBitmap.data(); // uh super weird syntax I do not understand
 
+    std::cout << "GPU Test Result:";
+    print_test_result(filteredImage);
+
+    std::cout << "\t\t\t";
+
+    simulate_kpcnn();
+
+    std::cout.flush();
+}
+
+void SVGFKpcnnAtrousSubpass::computeEvaluation(RenderContext* pRenderContext, SVGFRenderData& svgfrd, bool updateInternalBuffers)
+{
+}
+
+void SVGFKpcnnAtrousSubpass::computeBackPropagation(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
+{}
+
+
+float SVGFKpcnnAtrousSubpass::ConvolutionKernel::fetch_weight(const int map, const int x, const int y)
+{
+    const int linearIdx = kKernelDim * kKernelDim * map + kKernelDim * y + x;
+    const int elemIdx = linearIdx / 4;
+    const int chnlIdx = linearIdx % 4;
+    return packed_weights[elemIdx][chnlIdx];
+}
+
+float SVGFKpcnnAtrousSubpass::PostconvolutionKernel::fetch_weight(const int x, const int y)
+{
+    const int linearIdx = y * kMapDim + x;
+    const int elemIdx = linearIdx / 4;
+    const int chnlIdx = linearIdx % 4;
+    return packed_weights[elemIdx][chnlIdx];
+}
+
+float& SVGFKpcnnAtrousSubpass::ConvolutionMap::get(const int x, const int y)
+{
+    return m[y][x];
+}
+
+void SVGFKpcnnAtrousSubpass::print_test_result(float4 grid[][5])
+{
     for (int y = -1; y < 5; y++)
     {
         for (int x = -1; x < 5; x++)
@@ -76,19 +117,168 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
             }
             else
             {
-                std::cout << filteredImage[y][x].r << "," << filteredImage[y][x].g << "\t";
+                std::cout << grid[y][x].r << "," << grid[y][x].g << "\t";
             }
-
         }
         std::cout << "\n";
     }
     std::cout.flush();
 }
 
-void SVGFKpcnnAtrousSubpass::computeEvaluation(RenderContext* pRenderContext, SVGFRenderData& svgfrd, bool updateInternalBuffers)
+void SVGFKpcnnAtrousSubpass::simulate_thread_group_sequentially(std::function<void(uint2)> func)
 {
+    for (int y = 0; y < 5; y++)
+    {
+        for (int x = 0; x < 5; x++)
+        {
+            uint2 offset = uint2(x, y);
+            func(offset);
+        }
+    }
 }
 
-void SVGFKpcnnAtrousSubpass::computeBackPropagation(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
+void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
 {
+
+    // simulate each "wave" of pixels at a time
+    for (int i = 0; i < kOutputMapsPerLayer; i++)
+    {
+        simulate_thread_group_sequentially([&](uint2 offset) {
+            float writeVal;
+            if (i < 4)
+            {
+                writeVal = mTestIllumData[offset.y][offset.x][i];
+            }
+            else if (i < 8)
+            {
+                writeVal = mTestNormalData[offset.y][offset.x][i];
+            }
+            else if (i < 12)
+            {
+                writeVal = 0.0f; // worldPosAtCurPixel[i - 8];
+            }
+            else
+            {
+                writeVal = 0.0f;
+            }
+
+            mRbuf[i].m[offset.y][offset.x] = writeVal;
+        });
+    }
+
+    int currentReadIndex = 0;
+    int currentWriteIndex = kOutputMapsPerLayer;
+    int currentKernelIdx = 0;
+    for (int layerIndex = 0; layerIndex < kNumLayers; layerIndex++)
+    {
+        for (int outputMapIndex = 0; outputMapIndex < kOutputMapsPerLayer; outputMapIndex++)
+        {
+            simulate_thread_group_sequentially([&](uint2 offset) {
+                convolve_kernel(offset, currentReadIndex, currentWriteIndex, currentKernelIdx);
+            });
+
+            simulate_thread_group_sequentially([&](uint2 offset) {
+                reduce_and_activate(offset, currentWriteIndex, currentKernelIdx);
+            });
+
+            currentReadIndex++;
+            currentWriteIndex++;
+            currentKernelIdx++;
+        }
+        currentReadIndex += kOutputMapsPerLayer;
+    }
+
+    float4 filteredImage[5][5];
+    simulate_thread_group_sequentially([&](uint2 offset) {
+        float maxRawOut = 0.0f;
+        for (int i = 0; i < kNumOutputWeights; i++)
+        {
+            maxRawOut = std::max(maxRawOut, mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x]);
+        }
+
+        float totalWeight = 0.0f;
+        for (int i = 0; i < kNumOutputWeights; i++)
+        {
+            mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] =
+                exp(mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] - maxRawOut);
+            totalWeight += mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x];
+        }
+
+        float4 convIllum = float4(0.0f);
+        for (int i = 0; i < kNumOutputWeights; i++)
+        {
+            float4 tempAccumIllum = float4(0.0f);
+            for (int y = 0; y < kMapDim; y++)
+            {
+                for (int x = 0; x < kMapDim; x++)
+                {
+                    tempAccumIllum += mPostconvKernels[i].fetch_weight(x, y) * mTestIllumData[y][x];
+                }
+            }
+
+            float weight = mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] / totalWeight;
+            convIllum += weight * tempAccumIllum;
+        }
+
+        filteredImage[offset.y][offset.x] = convIllum;
+     });
+
+    std::cout << "CPU KPCNN Result:\n";
+    print_test_result(filteredImage);
 }
+
+void SVGFKpcnnAtrousSubpass::convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
+{
+    // first things first, we need to zero out everything in accumulation block
+    for (int i = 0; i < kKernelSummationTerms; i++)
+    {
+        mRbuf[(writeIdx + i) % kRingBufferSize].m[srcPix.y][srcPix.x] = 0.0f;
+    }
+
+    for (int y = -kKernelDistance; y <= kKernelDistance; y++)
+    {
+        for (int x = -kKernelDistance; x <= kKernelDistance; x++)
+        {
+            const uint2 dstPixel = srcPix + uint2(x, y);
+            const bool inside = (dstPixel.x >= 0 && dstPixel.y >= 0 && dstPixel.x < kMapDim && dstPixel.y < kMapDim);
+
+            if (inside)
+            {
+                float sum = 0.0f;
+                // now, accumulate to our target pixel
+                for (int srcLayer = 0; srcLayer < kOutputMapsPerLayer; srcLayer++)
+                {
+                    float mapVal = mRbuf[(readIdx + srcLayer) % kRingBufferSize].m[srcPix.y][srcPix.x];
+                    sum += mapVal * mKernels[kernelIdx].fetch_weight(srcLayer, x + kKernelDistance, y + kKernelDistance);
+                }
+
+                int offsetIdx = kKernelDim * (y + kKernelDistance) + (x + kKernelDistance);
+
+                mRbuf[(writeIdx + offsetIdx) % kRingBufferSize].m[dstPixel.y][dstPixel.x] = sum;
+            }
+        }
+    }
+
+    // now sync for future passes
+    //GroupMemoryBarrierWithGroupSync();
+}
+
+void SVGFKpcnnAtrousSubpass::reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
+{
+    // no fancy parallel reduction for now, just plain "linear" accumulation
+    int dstIdx = writeIdx % kRingBufferSize;
+    for (int i = 1; i < kKernelSummationTerms; i++)
+    {
+        mRbuf[dstIdx].m[offset.y][offset.x] += mRbuf[(writeIdx = i) % kRingBufferSize].m[offset.y][offset.x];
+    }
+    // now apply bias
+    mRbuf[dstIdx].m[offset.y][offset.x] += mKernels[kernelIdx].bias;
+
+    // apply ReLU
+    mRbuf[dstIdx].m[offset.y][offset.x] = std::max(mRbuf[dstIdx].m[offset.y][offset.x], 0.0f);
+
+    // resync for next layer
+    //GroupMemoryBarrierWithGroupSync();
+}
+
+
