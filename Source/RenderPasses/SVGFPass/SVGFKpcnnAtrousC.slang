@@ -45,13 +45,13 @@ struct CnnPostconvolutionKernel
 struct CnnMap
 {
     // indexing: first y, then x
-    float m[5][5];
+    float m[kMapDim][kMapDim];
 };
 
 cbuffer PerImageCB
 {
-    CnnPostconvolutionKernel postconv[8];
-    CnnKernel kernels[32];
+    CnnPostconvolutionKernel postconv[kNumOutputWeights];
+    CnnKernel kernels[kOutputMapsPerLayer * kNumLayers];
     // input buffers
     texture2D gIllumination;
     texture2D gLinearZAndNormal;

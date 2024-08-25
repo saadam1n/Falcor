@@ -64,7 +64,7 @@ private:
     {
         union
         {
-            float weights[5][5];
+            float weights[kMapDim][kMapDim];
             float4 packed_weights[(kMapDim * kMapDim + 3) / 4];
         };
 
@@ -74,19 +74,19 @@ private:
     struct ConvolutionMap
     {
         // indexing: first y, then x
-        float m[5][5];
+        float m[kMapDim][kMapDim];
 
         float& get(const int x, const int y);
     };
 
-    PostconvolutionKernel mPostconvKernels[8];
-    ConvolutionKernel mKernels[32];
+    PostconvolutionKernel mPostconvKernels[kNumOutputWeights];
+    ConvolutionKernel mKernels[kOutputMapsPerLayer * kNumLayers];
 
-    float4 mTestIllumData[5][5];
-    float4 mTestNormalData[5][5];
+    float4 mTestIllumData[kMapDim][kMapDim];
+    float4 mTestNormalData[kMapDim][kMapDim];
     ConvolutionMap mRbuf[kRingBufferSize];
 
-    void print_test_result(float4 grid[][5]);
+    void print_test_result(float4 grid[][kMapDim]);
     void simulate_thread_group_sequentially(std::function<void(uint2)> func);
     void simulate_kpcnn();
     void convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx);

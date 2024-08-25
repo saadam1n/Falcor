@@ -7,9 +7,11 @@ SVGFKpcnnAtrousSubpass::SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtil
     mpBackPropagatePass = mpUtilities->createComputePassAndDumpIR(kKpcnnAtrousShaderD);
 
     // create some test stuff
-    mpTestIllum = mpDevice->createTexture2D(5, 5, ResourceFormat::RGBA32Float);
-    mpTestNormalDepth = mpDevice->createTexture2D(5, 5, ResourceFormat::RGBA32Float);
-    mpTestOutput = mpDevice->createTexture2D(5, 5, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+    mpTestIllum = mpDevice->createTexture2D(kMapDim, kMapDim, ResourceFormat::RGBA32Float);
+    mpTestNormalDepth = mpDevice->createTexture2D(kMapDim, kMapDim, ResourceFormat::RGBA32Float);
+    mpTestOutput = mpDevice->createTexture2D(
+        kMapDim, kMapDim, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
+    );
 }
 
 void SVGFKpcnnAtrousSubpass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
@@ -21,9 +23,9 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
     // run a simple 5x5 patch and verify that our output is in line with what we would expect
     // 
     // set the test data
-    for (int y = 0; y < 5; y++)
+    for (int y = 0; y < kMapDim; y++)
     {
-        for (int x = 0; x < 5; x++)
+        for (int x = 0; x < kMapDim; x++)
         {
             mTestIllumData[y][x] = float4(1.0f, 0.0f, 0.0f, 0.0f);
             mTestNormalData[y][x] = float4(0.0f);
@@ -33,6 +35,20 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
     pRenderContext->updateTextureData(mpTestNormalDepth.get(), (const void*)mTestNormalData);
 
     // set up our variables
+    for (int k = 0; k < kOutputMapsPerLayer * kNumLayers; k++)
+    {
+        for (int s = 0; s < kOutputMapsPerLayer; s++)
+        {
+            for (int i = 0; i < kKernelDim; i++)
+            {
+                for (int j = 0; j < kKernelDim; j++)
+                {
+                    mKernels[k].weights[s][i][j] = k + s + i + j;
+                }
+            }
+        }
+    }
+
     for (int k = 0; k < kOutputMapsPerLayer; k++)
     {
         for (int i = 0; i < kMapDim; i++)
@@ -50,18 +66,19 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
     perImageCB["gFiltered"] = mpTestOutput;
     perImageCB["gStepSize"] = uint2(1, 1);
     perImageCB["postconv"].setBlob(mPostconvKernels);
+    perImageCB["kernels"].setBlob(mKernels);
 
 
     mpEvaluatePass->execute(pRenderContext, uint3(1, 1, 25));
 
     // now download test data
     auto outputBitmap = pRenderContext->readTextureSubresource(mpTestOutput.get(), 0);
-    float4(*filteredImage)[5] = (float4(*)[5])outputBitmap.data(); // uh super weird syntax I do not understand
+    float4(*filteredImage)[kMapDim] = (float4(*)[kMapDim])outputBitmap.data(); // uh super weird syntax I do not understand
 
-    std::cout << "GPU Test Result:";
+    std::cout << "GPU Test Result:\n";
     print_test_result(filteredImage);
 
-    std::cout << "\t\t\t";
+    std::cout << "\n\n\n";
 
     simulate_kpcnn();
 
@@ -97,11 +114,11 @@ float& SVGFKpcnnAtrousSubpass::ConvolutionMap::get(const int x, const int y)
     return m[y][x];
 }
 
-void SVGFKpcnnAtrousSubpass::print_test_result(float4 grid[][5])
+void SVGFKpcnnAtrousSubpass::print_test_result(float4 grid[][kMapDim])
 {
-    for (int y = -1; y < 5; y++)
+    for (int y = -1; y < kMapDim; y++)
     {
-        for (int x = -1; x < 5; x++)
+        for (int x = -1; x < kMapDim; x++)
         {
             if (x == -1 && y == -1)
             {
@@ -127,9 +144,9 @@ void SVGFKpcnnAtrousSubpass::print_test_result(float4 grid[][5])
 
 void SVGFKpcnnAtrousSubpass::simulate_thread_group_sequentially(std::function<void(uint2)> func)
 {
-    for (int y = 0; y < 5; y++)
+    for (int y = 0; y < kMapDim; y++)
     {
-        for (int x = 0; x < 5; x++)
+        for (int x = 0; x < kMapDim; x++)
         {
             uint2 offset = uint2(x, y);
             func(offset);
@@ -188,7 +205,7 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
         currentReadIndex += kOutputMapsPerLayer;
     }
 
-    float4 filteredImage[5][5];
+    float4 filteredImage[kMapDim][kMapDim];
     simulate_thread_group_sequentially([&](uint2 offset) {
         float maxRawOut = 0.0f;
         for (int i = 0; i < kNumOutputWeights; i++)
@@ -202,7 +219,12 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
             mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] =
                 exp(mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] - maxRawOut);
             totalWeight += mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x];
+
+            std::cout << mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] << "\t";
         }
+        std::cout << "\n";
+
+
 
         float4 convIllum = float4(0.0f);
         for (int i = 0; i < kNumOutputWeights; i++)
