@@ -1,4 +1,5 @@
 import SVGFCommon;
+import Utils.Debug.PixelDebug;
 
 // I know I have an inconsistent naming scheme but I really couldn't care
 
@@ -8,9 +9,9 @@ import SVGFCommon;
 #define kKernelDistance 1
 #define kKernelDim 3
 #define kKernelSummationTerms (kKernelDim * kKernelDim)
-#define kOutputMapsPerLayer 1
+#define kOutputMapsPerLayer 3
 #define kRingBufferSize (2 * kOutputMapsPerLayer + kKernelSummationTerms - 1) // minus one since for the last write index, we can simultaineously store/accum
-#define kNumLayers 8
+#define kNumLayers 2
 #define kNumOutputWeights kOutputMapsPerLayer
 
 struct CnnKernel
@@ -135,6 +136,8 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     const uint2 offset = uint2(linearId % kMapDim, linearId / kMapDim);
     const uint2 curPixel = basePixel + offset;
 
+    print("Hello world ", offset);
+
     // second step: load in all important information
     float4 illumAtCurPixel = gIllumination[curPixel];
     float4 normalDepthAtCurPixel = gLinearZAndNormal[curPixel];
@@ -213,6 +216,7 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
 
         float weight = rbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] / totalWeight;
         convIllum += weight * tempAccumIllum;
+        convIllum[i] = weight;
     }
 
     // final step: write the convoluted illum to memory

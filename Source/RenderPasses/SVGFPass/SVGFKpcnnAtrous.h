@@ -4,6 +4,7 @@
 #include "RenderGraph/RenderPass.h"
 #include "Core/Pass/FullScreenPass.h"
 #include "Utils/Algorithm/ParallelReduction.h"
+#include "Utils/Debug/PixelDebug.h"
 
 #include "SVGFCommon.h"
 
@@ -14,9 +15,9 @@ using namespace Falcor;
 #define kKernelDistance 1
 #define kKernelDim 3
 #define kKernelSummationTerms (kKernelDim * kKernelDim)
-#define kOutputMapsPerLayer 1
+#define kOutputMapsPerLayer 3
 #define kRingBufferSize (2 * kOutputMapsPerLayer + kKernelSummationTerms - 1) // minus one since for the last write index, we can simultaineously store/accum
-#define kNumLayers 8
+#define kNumLayers 2
 #define kNumOutputWeights kOutputMapsPerLayer
 
 class SVGFKpcnnAtrousSubpass : public Object
@@ -29,6 +30,9 @@ public:
 
     void computeEvaluation(RenderContext* pRenderContext, SVGFRenderData& svgfrd, bool updateInternalBuffers);
     void computeBackPropagation(RenderContext* pRenderContext, SVGFRenderData& svgfrd);
+
+    void renderUI(Gui::Widgets& widget);
+
 private:
     ref<Device> mpDevice;
     ref<SVGFUtilitySet> mpUtilities;
@@ -39,6 +43,9 @@ private:
 
     ref<ComputePass> mpEvaluatePass;
     ref<ComputePass> mpBackPropagatePass;
+
+    std::unique_ptr<PixelDebug> mpPixelDebug;
+    
 
     ref<Texture> mpTestIllum;
     ref<Texture> mpTestNormalDepth;

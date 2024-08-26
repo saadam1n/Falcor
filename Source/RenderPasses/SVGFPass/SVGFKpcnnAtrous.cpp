@@ -6,6 +6,9 @@ SVGFKpcnnAtrousSubpass::SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtil
     mpEvaluatePass = mpUtilities->createComputePassAndDumpIR(kKpcnnAtrousShaderS);
     mpBackPropagatePass = mpUtilities->createComputePassAndDumpIR(kKpcnnAtrousShaderD);
 
+    mpPixelDebug = std::make_unique<PixelDebug>(mpDevice);
+    mpPixelDebug->enable();
+
     // create some test stuff
     mpTestIllum = mpDevice->createTexture2D(kMapDim, kMapDim, ResourceFormat::RGBA32Float);
     mpTestNormalDepth = mpDevice->createTexture2D(kMapDim, kMapDim, ResourceFormat::RGBA32Float);
@@ -85,7 +88,7 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
         {
             for (int j = 0; j < kMapDim; j++)
             {
-                mPostconvKernels[k].weights[i][j] = 1.0f / 25.0f;
+                mPostconvKernels[k].weights[i][j] = 1.0f / (kMapDim * kMapDim);
             }
         }
     }
@@ -98,8 +101,10 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
     perImageCB["postconv"].setBlob(mPostconvKernels);
     perImageCB["kernels"].setBlob(mKernels);
 
-
+    mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
+    mpPixelDebug->prepareProgram(mpEvaluatePass->getProgram(), mpEvaluatePass->getRootVar());
     mpEvaluatePass->execute(pRenderContext, uint3(1, 1, 25));
+    mpPixelDebug->endFrame(pRenderContext);
 
     // now download test data
     auto outputBitmap = pRenderContext->readTextureSubresource(mpTestOutput.get(), 0);
@@ -274,6 +279,7 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
 
             float weight = mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] / totalWeight;
             convIllum += weight * tempAccumIllum;
+            convIllum[i] = weight;
         }
 
         filteredImage[offset.y][offset.x] = convIllum;
@@ -340,6 +346,11 @@ void SVGFKpcnnAtrousSubpass::reduce_and_activate(uint2 offset, int writeIdx, int
 
     // resync for next layer
     //GroupMemoryBarrierWithGroupSync();
+}
+
+void SVGFKpcnnAtrousSubpass::renderUI(Gui::Widgets& widget)
+{
+    mpPixelDebug->renderUI(widget);
 }
 
 
