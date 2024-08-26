@@ -86,6 +86,10 @@ private:
         float& get(const int x, const int y);
     };
 
+    uint2 mCurrentCpuDebugPixel = uint2(0, 0);
+    bool mCpuPrintingEnabled = false;
+    void printPixelDebug(const std::string& s, float x);
+
     PostconvolutionKernel mPostconvKernels[kNumOutputWeights];
     ConvolutionKernel mKernels[kOutputMapsPerLayer * kNumLayers];
 

@@ -120,6 +120,8 @@ void reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
     // apply ReLU
     rbuf[dstIdx].m[offset.y][offset.x] = max(rbuf[dstIdx].m[offset.y][offset.x], 0.0f);
 
+    print("Post ReLU ", rbuf[dstIdx].m[offset.y][offset.x]);
+
     // resync for next layer
     GroupMemoryBarrierWithGroupSync();
 }
@@ -136,7 +138,7 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     const uint2 offset = uint2(linearId % kMapDim, linearId / kMapDim);
     const uint2 curPixel = basePixel + offset;
 
-    print("Hello world ", offset);
+    printSetPixel(offset);
 
     // second step: load in all important information
     float4 illumAtCurPixel = gIllumination[curPixel];

@@ -149,6 +149,14 @@ float& SVGFKpcnnAtrousSubpass::ConvolutionMap::get(const int x, const int y)
     return m[y][x];
 }
 
+void SVGFKpcnnAtrousSubpass::printPixelDebug(const std::string& s, float x)
+{
+    if (mCpuPrintingEnabled)
+    {
+        std::cout << s << x << std::endl;
+    }
+}
+
 void SVGFKpcnnAtrousSubpass::print_test_result(float4 grid[][kMapDim])
 {
     for (int y = -1; y < kMapDim; y++)
@@ -184,6 +192,13 @@ void SVGFKpcnnAtrousSubpass::simulate_thread_group_sequentially(std::function<vo
         for (int x = 0; x < kMapDim; x++)
         {
             uint2 offset = uint2(x, y);
+
+            mCpuPrintingEnabled = false;
+            if (offset.x == mCurrentCpuDebugPixel.x && offset.y == mCurrentCpuDebugPixel.y)
+            {
+                mCpuPrintingEnabled = true;
+            }
+
             func(offset);
         }
     }
@@ -341,6 +356,8 @@ void SVGFKpcnnAtrousSubpass::reduce_and_activate(uint2 offset, int writeIdx, int
 
     // apply ReLU
     mRbuf[dstIdx].m[offset.y][offset.x] = std::max(mRbuf[dstIdx].m[offset.y][offset.x], 0.0f);
+
+    printPixelDebug("Post ReLU ", mRbuf[dstIdx].m[offset.y][offset.x]);
 
     //std::cout << offset.x << "\t" << offset.y << "\t" << mRbuf[dstIdx].m[offset.y][offset.x] << "\n";
 
