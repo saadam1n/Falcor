@@ -9,7 +9,7 @@ import Utils.Debug.PixelDebug;
 #define kKernelDistance 1
 #define kKernelDim 3
 #define kKernelSummationTerms (kKernelDim * kKernelDim)
-#define kOutputMapsPerLayer 3
+#define kOutputMapsPerLayer 1
 #define kRingBufferSize (2 * kOutputMapsPerLayer + kKernelSummationTerms - 1) // minus one since for the last write index, we can simultaineously store/accum
 #define kNumLayers 2
 #define kNumOutputWeights kOutputMapsPerLayer
@@ -110,27 +110,27 @@ void reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
 {
     // no fancy parallel reduction for now, just plain "linear" accumulation
     int dstIdx = writeIdx % kRingBufferSize;
-    print("\tTerm  ", rbuf[dstIdx].m[offset.y][offset.x]);
+    //print("\tTerm  ", rbuf[dstIdx].m[offset.y][offset.x]);
 
     for (int i = 1; i < kKernelSummationTerms; i++)
     {
-        print("\tTerm  ", rbuf[(writeIdx + i) % kRingBufferSize].m[offset.y][offset.x]);
+        //print("\tTerm  ", rbuf[(writeIdx + i) % kRingBufferSize].m[offset.y][offset.x]);
 
         rbuf[dstIdx].m[offset.y][offset.x] += rbuf[(writeIdx + i) % kRingBufferSize].m[offset.y][offset.x];
     }
 
-    print("Post Sum ", rbuf[dstIdx].m[offset.y][offset.x]);
+    //print("Post Sum ", rbuf[dstIdx].m[offset.y][offset.x]);
 
     // now apply bias
     rbuf[dstIdx].m[offset.y][offset.x] += kernels[kernelIdx].bias;
 
-    print("Post Bias ", rbuf[dstIdx].m[offset.y][offset.x]);
-    print("\tBias", kernels[kernelIdx].bias);
+    //print("Post Bias ", rbuf[dstIdx].m[offset.y][offset.x]);
+    //print("\tBias", kernels[kernelIdx].bias);
 
     // apply ReLU
     rbuf[dstIdx].m[offset.y][offset.x] = max(rbuf[dstIdx].m[offset.y][offset.x], 0.0f);
 
-    print("Post ReLU ", rbuf[dstIdx].m[offset.y][offset.x]);
+    //print("Post ReLU ", rbuf[dstIdx].m[offset.y][offset.x]);
 
     // resync for next layer
     GroupMemoryBarrierWithGroupSync();
@@ -163,6 +163,7 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
         if (i < 4)
         {
             writeVal = illumAtCurPixel[i];
+
         }
         else if (i < 8)
         {
@@ -178,6 +179,8 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
         }
 
         rbuf[i].m[offset.y][offset.x] = writeVal;
+            break; // ============================================================= DELETE THIS
+
     }
 
     // third step: exectue the kpcnn
@@ -228,6 +231,7 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
 
         float weight = rbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] / totalWeight;
         convIllum += weight * tempAccumIllum;
+        if(i < 4)
         convIllum[i] = weight;
     }
 
