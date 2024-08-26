@@ -40,13 +40,13 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
          float4(0.0f, 0.0f, 0.0f, 0.0f)},
         {float4(0.0f, 0.0f, 0.0f, 0.0f),
          float4(1.0f, 0.0f, 0.0f, 0.0f),
-         float4(1.0f, 0.0f, 0.0f, 0.0f),
-         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, -1.0f, 0.0f, 0.0f),
+         float4(0.0f, -1.0f, 0.0f, 0.0f),
          float4(0.0f, 0.0f, 0.0f, 0.0f)},
         {float4(0.0f, 0.0f, 0.0f, 0.0f),
          float4(0.0f, 0.0f, 0.0f, 0.0f),
-         float4(0.0f, 0.0f, 0.0f, 0.0f),
-         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, -1.0f, 0.0f, 0.0f),
+         float4(0.0f, -1.0f, 0.0f, 0.0f),
          float4(0.0f, 0.0f, 0.0f, 0.0f)},
         {float4(0.0f, 0.0f, 0.0f, 0.0f),
          float4(0.0f, 0.0f, 0.0f, 0.0f),
@@ -208,14 +208,14 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
 {
 
     // simulate each "wave" of pixels at a time
-    for (int i = 0; i < kOutputMapsPerLayer; i++)
-    {
-        simulate_thread_group_sequentially([&](uint2 offset) {
+
+    simulate_thread_group_sequentially([&](uint2 offset) {
+        for (int i = 0; i < kOutputMapsPerLayer; i++)
+        {
             float writeVal;
             if (i < 4)
             {
                 writeVal = mTestIllumData[offset.y][offset.x][i];
-
             }
             else if (i < 8)
             {
@@ -231,11 +231,10 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
             }
 
             mRbuf[i].m[offset.y][offset.x] = writeVal;
-                return; // ============================================================= DELETE THIS
-
-        });
-    }
-
+            if (i == 2)
+                break; // ============================================================= DELETE THIS
+        }
+    });
 
     int currentReadIndex = 0;
     int currentWriteIndex = kOutputMapsPerLayer;
@@ -363,7 +362,7 @@ void SVGFKpcnnAtrousSubpass::reference_convolution(int readIdx, int kernelIdx, C
                 }
 
 
-                tRbuf[dstLayer].m[ydst][xdst] = sum;
+                tRbuf[dstLayer].m[ydst][xdst] = std::max(sum, 0.0f);
             }
         }
     }

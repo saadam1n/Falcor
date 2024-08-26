@@ -9,7 +9,7 @@ import Utils.Debug.PixelDebug;
 #define kKernelDistance 1
 #define kKernelDim 3
 #define kKernelSummationTerms (kKernelDim * kKernelDim)
-#define kOutputMapsPerLayer 1
+#define kOutputMapsPerLayer 2
 #define kRingBufferSize (2 * kOutputMapsPerLayer + kKernelSummationTerms - 1) // minus one since for the last write index, we can simultaineously store/accum
 #define kNumLayers 2
 #define kNumOutputWeights kOutputMapsPerLayer
@@ -179,8 +179,11 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
         }
 
         rbuf[i].m[offset.y][offset.x] = writeVal;
-            break; // ============================================================= DELETE THIS
 
+        if(i == 2)
+        {
+            break;
+        }
     }
 
     // third step: exectue the kpcnn

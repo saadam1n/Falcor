@@ -15,7 +15,7 @@ using namespace Falcor;
 #define kKernelDistance 1
 #define kKernelDim 3
 #define kKernelSummationTerms (kKernelDim * kKernelDim)
-#define kOutputMapsPerLayer 1
+#define kOutputMapsPerLayer 2
 #define kRingBufferSize (2 * kOutputMapsPerLayer + kKernelSummationTerms - 1) // minus one since for the last write index, we can simultaineously store/accum
 #define kNumLayers 2
 #define kNumOutputWeights kOutputMapsPerLayer
