@@ -110,12 +110,22 @@ void reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
 {
     // no fancy parallel reduction for now, just plain "linear" accumulation
     int dstIdx = writeIdx % kRingBufferSize;
+    print("\tTerm  ", rbuf[dstIdx].m[offset.y][offset.x]);
+
     for (int i = 1; i < kKernelSummationTerms; i++)
     {
+        print("\tTerm  ", rbuf[(writeIdx + i) % kRingBufferSize].m[offset.y][offset.x]);
+
         rbuf[dstIdx].m[offset.y][offset.x] += rbuf[(writeIdx + i) % kRingBufferSize].m[offset.y][offset.x];
     }
+
+    print("Post Sum ", rbuf[dstIdx].m[offset.y][offset.x]);
+
     // now apply bias
     rbuf[dstIdx].m[offset.y][offset.x] += kernels[kernelIdx].bias;
+
+    print("Post Bias ", rbuf[dstIdx].m[offset.y][offset.x]);
+    print("\tBias", kernels[kernelIdx].bias);
 
     // apply ReLU
     rbuf[dstIdx].m[offset.y][offset.x] = max(rbuf[dstIdx].m[offset.y][offset.x], 0.0f);

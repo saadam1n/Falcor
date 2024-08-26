@@ -347,22 +347,27 @@ void SVGFKpcnnAtrousSubpass::reduce_and_activate(uint2 offset, int writeIdx, int
 {
     // no fancy parallel reduction for now, just plain "linear" accumulation
     int dstIdx = writeIdx % kRingBufferSize;
+    printPixelDebug("\tTerm  ", mRbuf[dstIdx].m[offset.y][offset.x]);
+
     for (int i = 1; i < kKernelSummationTerms; i++)
     {
+        printPixelDebug("\tTerm  ", mRbuf[(writeIdx + i) % kRingBufferSize].m[offset.y][offset.x]);
+
         mRbuf[dstIdx].m[offset.y][offset.x] += mRbuf[(writeIdx + i) % kRingBufferSize].m[offset.y][offset.x];
     }
+
+    printPixelDebug("Post Sum ", mRbuf[dstIdx].m[offset.y][offset.x]);
+
     // now apply bias
     mRbuf[dstIdx].m[offset.y][offset.x] += mKernels[kernelIdx].bias;
+
+    printPixelDebug("Post Bias ", mRbuf[dstIdx].m[offset.y][offset.x]);
+    printPixelDebug("\tBias", mKernels[kernelIdx].bias);
 
     // apply ReLU
     mRbuf[dstIdx].m[offset.y][offset.x] = std::max(mRbuf[dstIdx].m[offset.y][offset.x], 0.0f);
 
     printPixelDebug("Post ReLU ", mRbuf[dstIdx].m[offset.y][offset.x]);
-
-    //std::cout << offset.x << "\t" << offset.y << "\t" << mRbuf[dstIdx].m[offset.y][offset.x] << "\n";
-
-    // resync for next layer
-    //GroupMemoryBarrierWithGroupSync();
 }
 
 void SVGFKpcnnAtrousSubpass::renderUI(Gui::Widgets& widget)

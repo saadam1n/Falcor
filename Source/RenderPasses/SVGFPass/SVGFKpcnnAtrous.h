@@ -63,6 +63,7 @@ private:
             float4 packed_weights[(kOutputMapsPerLayer * kKernelDim * kKernelDim + 3) / 4];
         };
         float bias;
+        float padding[3];
 
         float fetch_weight(const int map, const int x, const int y);
     };
