@@ -23,11 +23,40 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
     // run a simple 5x5 patch and verify that our output is in line with what we would expect
     // 
     // set the test data
+
+    float4 tempTestIllumData[5][5] = {
+        {float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f)},
+        {float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f)},
+        {float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f)},
+        {float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f)},
+        {float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f)},
+    };
+
     for (int y = 0; y < kMapDim; y++)
     {
         for (int x = 0; x < kMapDim; x++)
         {
-            mTestIllumData[y][x] = float4(1.0f, 0.0f, 0.0f, 0.0f);
+            mTestIllumData[y][x] = tempTestIllumData[y][x];
             mTestNormalData[y][x] = float4(0.0f);
         }
     }
@@ -43,8 +72,7 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
             {
                 for (int j = 0; j < kKernelDim; j++)
                 {
-                    mKernels[k].weights[s][i][j] = 1.0f;
-                    //k + s + i + j;
+                    mKernels[k].weights[s][i][j] = 1.0f / (kKernelDim * kKernelDim);
                 }
                 mKernels[k].bias = 0.0f;
             }
@@ -219,16 +247,16 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
         }
 
         float totalWeight = 0.0f;
-        std::cout << offset.x << "\t" << offset.y << "\t";
+        //std::cout << offset.x << "\t" << offset.y << "\t";
         for (int i = 0; i < kNumOutputWeights; i++)
         {
-            std::cout << mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] - maxRawOut << "\t";
+            //std::cout << mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] - maxRawOut << "\t";
 
             mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] =
                 exp(mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] - maxRawOut);
             totalWeight += mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x];
         }
-        std::cout << "\n";
+        //std::cout << "\n";
 
 
 
@@ -308,7 +336,7 @@ void SVGFKpcnnAtrousSubpass::reduce_and_activate(uint2 offset, int writeIdx, int
     // apply ReLU
     mRbuf[dstIdx].m[offset.y][offset.x] = std::max(mRbuf[dstIdx].m[offset.y][offset.x], 0.0f);
 
-    std::cout << offset.x << "\t" << offset.y << "\t" << mRbuf[dstIdx].m[offset.y][offset.x] << "\n";
+    //std::cout << offset.x << "\t" << offset.y << "\t" << mRbuf[dstIdx].m[offset.y][offset.x] << "\n";
 
     // resync for next layer
     //GroupMemoryBarrierWithGroupSync();
