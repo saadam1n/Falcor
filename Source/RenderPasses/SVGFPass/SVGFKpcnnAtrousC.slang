@@ -9,9 +9,9 @@ import SVGFCommon;
 #define kKernelDim 3
 #define kKernelSummationTerms (kKernelDim * kKernelDim)
 #define kOutputMapsPerLayer 8
-#define kRingBufferSize (2 * kOutputMapsPerLayer + kKernelSummationTerms)
-#define kNumLayers 4
-#define kNumOutputWeights 8
+#define kRingBufferSize (2 * kOutputMapsPerLayer + kKernelSummationTerms - 1) // minus one since for the last write index, we can simultaineously store/accum
+#define kNumLayers 1
+#define kNumOutputWeights kOutputMapsPerLayer
 
 struct CnnKernel
 {
@@ -66,19 +66,22 @@ cbuffer PerImageCB
 groupshared CnnMap rbuf[kRingBufferSize];
 groupshared float4 inputlum[kMapDim][kMapDim];
 
-void convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
+void clear_accumulation_area(uint2 srcPix, int writeIdx)
 {
     // first things first, we need to zero out everything in accumulation block
     for (int i = 0; i < kKernelSummationTerms; i++)
     {
         rbuf[(writeIdx + i) % kRingBufferSize].m[srcPix.y][srcPix.x] = 0.0f;
     }
+}
 
+void convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
+{
     for (int y = -kKernelDistance; y <= kKernelDistance; y++)
     {
         for (int x = -kKernelDistance; x <= kKernelDistance; x++)
         {
-            const uint2 dstPixel = srcPix + int2(x, y);
+            const int2 dstPixel = int2(srcPix) + int2(x, y);
             const bool inside = all(dstPixel >= int2(0)) && all(dstPixel < int2(kMapDim));
 
             if (inside)
@@ -108,7 +111,7 @@ void reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
     int dstIdx = writeIdx % kRingBufferSize;
     for (int i = 1; i < kKernelSummationTerms; i++)
     {
-        rbuf[dstIdx].m[offset.y][offset.x] += rbuf[(writeIdx = i) % kRingBufferSize].m[offset.y][offset.x];
+        rbuf[dstIdx].m[offset.y][offset.x] += rbuf[(writeIdx + i) % kRingBufferSize].m[offset.y][offset.x];
     }
     // now apply bias
     rbuf[dstIdx].m[offset.y][offset.x] += kernels[kernelIdx].bias;
@@ -171,9 +174,9 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     {
         for (int outputMapIndex = 0; outputMapIndex < kOutputMapsPerLayer; outputMapIndex++)
         {
+            clear_accumulation_area(offset, currentWriteIndex);
             convolve_kernel(offset, currentReadIndex, currentWriteIndex, currentKernelIdx);
             reduce_and_activate(offset, currentWriteIndex, currentKernelIdx);
-            currentReadIndex++;
             currentWriteIndex++;
             currentKernelIdx++;
         }

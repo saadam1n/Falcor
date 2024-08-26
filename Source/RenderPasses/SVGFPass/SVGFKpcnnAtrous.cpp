@@ -43,8 +43,10 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
             {
                 for (int j = 0; j < kKernelDim; j++)
                 {
-                    mKernels[k].weights[s][i][j] = k + s + i + j;
+                    mKernels[k].weights[s][i][j] = 1.0f;
+                    //k + s + i + j;
                 }
+                mKernels[k].bias = 0.0f;
             }
         }
     }
@@ -168,7 +170,7 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
             }
             else if (i < 8)
             {
-                writeVal = mTestNormalData[offset.y][offset.x][i];
+                writeVal = mTestNormalData[offset.y][offset.x][i - 4];
             }
             else if (i < 12)
             {
@@ -191,6 +193,10 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
         for (int outputMapIndex = 0; outputMapIndex < kOutputMapsPerLayer; outputMapIndex++)
         {
             simulate_thread_group_sequentially([&](uint2 offset) {
+                clear_accumulation_area(offset, currentWriteIndex);
+            });
+
+            simulate_thread_group_sequentially([&](uint2 offset) {
                 convolve_kernel(offset, currentReadIndex, currentWriteIndex, currentKernelIdx);
             });
 
@@ -198,7 +204,6 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
                 reduce_and_activate(offset, currentWriteIndex, currentKernelIdx);
             });
 
-            currentReadIndex++;
             currentWriteIndex++;
             currentKernelIdx++;
         }
@@ -214,13 +219,14 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
         }
 
         float totalWeight = 0.0f;
+        std::cout << offset.x << "\t" << offset.y << "\t";
         for (int i = 0; i < kNumOutputWeights; i++)
         {
+            std::cout << mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] - maxRawOut << "\t";
+
             mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] =
                 exp(mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] - maxRawOut);
             totalWeight += mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x];
-
-            std::cout << mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] << "\t";
         }
         std::cout << "\n";
 
@@ -249,19 +255,22 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
     print_test_result(filteredImage);
 }
 
-void SVGFKpcnnAtrousSubpass::convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
+void SVGFKpcnnAtrousSubpass::clear_accumulation_area(uint2 srcPix, int writeIdx)
 {
     // first things first, we need to zero out everything in accumulation block
     for (int i = 0; i < kKernelSummationTerms; i++)
     {
         mRbuf[(writeIdx + i) % kRingBufferSize].m[srcPix.y][srcPix.x] = 0.0f;
     }
+}
 
+void SVGFKpcnnAtrousSubpass::convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
+{
     for (int y = -kKernelDistance; y <= kKernelDistance; y++)
     {
         for (int x = -kKernelDistance; x <= kKernelDistance; x++)
         {
-            const uint2 dstPixel = srcPix + uint2(x, y);
+            const int2 dstPixel = int2(srcPix) + int2(x, y);
             const bool inside = (dstPixel.x >= 0 && dstPixel.y >= 0 && dstPixel.x < kMapDim && dstPixel.y < kMapDim);
 
             if (inside)
@@ -291,13 +300,15 @@ void SVGFKpcnnAtrousSubpass::reduce_and_activate(uint2 offset, int writeIdx, int
     int dstIdx = writeIdx % kRingBufferSize;
     for (int i = 1; i < kKernelSummationTerms; i++)
     {
-        mRbuf[dstIdx].m[offset.y][offset.x] += mRbuf[(writeIdx = i) % kRingBufferSize].m[offset.y][offset.x];
+        mRbuf[dstIdx].m[offset.y][offset.x] += mRbuf[(writeIdx + i) % kRingBufferSize].m[offset.y][offset.x];
     }
     // now apply bias
     mRbuf[dstIdx].m[offset.y][offset.x] += mKernels[kernelIdx].bias;
 
     // apply ReLU
     mRbuf[dstIdx].m[offset.y][offset.x] = std::max(mRbuf[dstIdx].m[offset.y][offset.x], 0.0f);
+
+    std::cout << offset.x << "\t" << offset.y << "\t" << mRbuf[dstIdx].m[offset.y][offset.x] << "\n";
 
     // resync for next layer
     //GroupMemoryBarrierWithGroupSync();

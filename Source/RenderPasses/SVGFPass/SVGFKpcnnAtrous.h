@@ -15,9 +15,9 @@ using namespace Falcor;
 #define kKernelDim 3
 #define kKernelSummationTerms (kKernelDim * kKernelDim)
 #define kOutputMapsPerLayer 8
-#define kRingBufferSize (2 * kOutputMapsPerLayer + kKernelSummationTerms)
-#define kNumLayers 4
-#define kNumOutputWeights 8
+#define kRingBufferSize (2 * kOutputMapsPerLayer + kKernelSummationTerms - 1) // minus one since for the last write index, we can simultaineously store/accum
+#define kNumLayers 1
+#define kNumOutputWeights kOutputMapsPerLayer
 
 class SVGFKpcnnAtrousSubpass : public Object
 {
@@ -89,6 +89,7 @@ private:
     void print_test_result(float4 grid[][kMapDim]);
     void simulate_thread_group_sequentially(std::function<void(uint2)> func);
     void simulate_kpcnn();
+    void clear_accumulation_area(uint2 srcPix, int writeIdx);
     void convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx);
     void reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx);
 };
