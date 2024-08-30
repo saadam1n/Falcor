@@ -15,9 +15,12 @@ using namespace Falcor;
 #define kKernelDistance 1
 #define kKernelDim 3
 #define kKernelSummationTerms (kKernelDim * kKernelDim)
-#define kOutputMapsPerLayer 2
-#define kRingBufferSize (2 * kOutputMapsPerLayer + kKernelSummationTerms - 1) // minus one since for the last write index, we can simultaineously store/accum
-#define kNumLayers 2
+#define kOutputMapsPerLayer 8
+#define kRingBufferDebugAdditionalSize 500
+#define kRingBufferSize \
+    (2 * kOutputMapsPerLayer + kKernelSummationTerms - 1 + kRingBufferDebugAdditionalSize) // minus one since for the last write index, we
+                                                                                           // can simultaineously store/accum
+#define kNumLayers 4
 #define kNumOutputWeights kOutputMapsPerLayer
 
 class SVGFKpcnnAtrousSubpass : public Object

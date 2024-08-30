@@ -213,6 +213,7 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
         for (int i = 0; i < kOutputMapsPerLayer; i++)
         {
             float writeVal;
+            #if 0
             if (i < 4)
             {
                 writeVal = mTestIllumData[offset.y][offset.x][i];
@@ -229,10 +230,20 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
             {
                 writeVal = 0.0f;
             }
+            #else
+            if (i < 4)
+            {
+                writeVal = mTestIllumData[offset.y][offset.x][i];
+            }
+            else
+            {
+                writeVal = 0.0f;
+            }
+            #endif
+
+
 
             mRbuf[i].m[offset.y][offset.x] = writeVal;
-            if (i == 2)
-                break; // ============================================================= DELETE THIS
         }
     });
 
@@ -283,6 +294,8 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
         std::cout << "\n";
     }
 
+    std::cout << "Outputs are stored at index starting " << currentReadIndex << std::endl;
+
     float4 filteredImage[kMapDim][kMapDim];
     simulate_thread_group_sequentially([&](uint2 offset) {
         float maxRawOut = 0.0f;
@@ -318,9 +331,18 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
             }
 
             float weight = mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] / totalWeight;
-            convIllum += weight * tempAccumIllum;
+
             if (i < 4)
-            convIllum[i] = weight;
+            {
+                convIllum[i] = weight;
+            }
+            else
+            {
+                break;
+            }
+            continue;
+
+            convIllum += weight * tempAccumIllum;
         }
 
         filteredImage[offset.y][offset.x] = convIllum;

@@ -9,9 +9,9 @@ import Utils.Debug.PixelDebug;
 #define kKernelDistance 1
 #define kKernelDim 3
 #define kKernelSummationTerms (kKernelDim * kKernelDim)
-#define kOutputMapsPerLayer 2
+#define kOutputMapsPerLayer 8
 #define kRingBufferSize (2 * kOutputMapsPerLayer + kKernelSummationTerms - 1) // minus one since for the last write index, we can simultaineously store/accum
-#define kNumLayers 2
+#define kNumLayers 4
 #define kNumOutputWeights kOutputMapsPerLayer
 
 struct CnnKernel
@@ -160,6 +160,7 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     for (int i = 0; i < kOutputMapsPerLayer; i++)
     {
         float writeVal;
+#if 0
         if (i < 4)
         {
             writeVal = illumAtCurPixel[i];
@@ -178,12 +179,18 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
             writeVal = 0.0f;
         }
 
-        rbuf[i].m[offset.y][offset.x] = writeVal;
-
-        if(i == 2)
+#else
+        if (i < 4)
         {
-            break;
+            writeVal = illumAtCurPixel[i];
         }
+        else
+        {
+            writeVal = 0.0f;
+        }
+#endif
+
+        rbuf[i].m[offset.y][offset.x] = writeVal;
     }
 
     // third step: exectue the kpcnn
@@ -233,9 +240,18 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
         }
 
         float weight = rbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] / totalWeight;
+
+        if (i < 4)
+        {
+            convIllum[i] = weight;
+        }
+        else
+        {
+            break;
+        }
+        continue;
+
         convIllum += weight * tempAccumIllum;
-        if(i < 4)
-        convIllum[i] = weight;
     }
 
     // final step: write the convoluted illum to memory
