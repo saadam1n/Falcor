@@ -252,8 +252,10 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
     int currentKernelIdx = 0;
     for (int layerIndex = 0; layerIndex < kNumLayers; layerIndex++)
     {
+        #ifdef DO_REFERENCE_CONV
         ConvolutionMap tRbuf[kOutputMapsPerLayer];
         reference_convolution(currentReadIndex, currentKernelIdx, tRbuf);
+        #endif
 
 
         for (int outputMapIndex = 0; outputMapIndex < kOutputMapsPerLayer; outputMapIndex++)
@@ -276,13 +278,14 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
 
         currentReadIndex += kOutputMapsPerLayer;
 
+        #ifdef DO_REFERENCE_CONV
         for (int i = 0; i < kOutputMapsPerLayer; i++)
         {
             for (int y = 0; y < kMapDim; y++)
             {
                 for (int x = 0; x < kMapDim; x++)
                 {
-                    float calc = mRbuf[(currentReadIndex + i) % kRingBufferSize].m[y][x];
+                    float calc = arbuf(currentReadIndex + i).m[y][x];
                     float ref = tRbuf[i].m[y][x];
 
                     float err = abs(calc - ref);
@@ -292,6 +295,7 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
             }
         }
         std::cout << "\n";
+        #endif
     }
 
     std::cout << "Outputs are stored at index starting " << currentReadIndex << std::endl;
@@ -301,20 +305,18 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
         float maxRawOut = 0.0f;
         for (int i = 0; i < kNumOutputWeights; i++)
         {
-            maxRawOut = std::max(maxRawOut, mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x]);
+            maxRawOut = std::max(maxRawOut, arbuf(currentReadIndex + i).m[offset.y][offset.x]);
         }
 
+        #ifndef GET_RAW_WEIGHTS
         float totalWeight = 0.0f;
-        //std::cout << offset.x << "\t" << offset.y << "\t";
         for (int i = 0; i < kNumOutputWeights; i++)
         {
-            //std::cout << mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] - maxRawOut << "\t";
-
-            mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] =
-                exp(mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] - maxRawOut);
-            totalWeight += mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x];
+            arbuf(currentReadIndex + i).m[offset.y][offset.x] =
+                exp(arbuf(currentReadIndex + i).m[offset.y][offset.x] - maxRawOut);
+            totalWeight += arbuf(currentReadIndex + i).m[offset.y][offset.x];
         }
-        //std::cout << "\n";
+        #endif
 
 
 
@@ -330,8 +332,12 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
                 }
             }
 
-            float weight = mRbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] / totalWeight;
+            float weight = arbuf(currentReadIndex + i).m[offset.y][offset.x];
 
+            #ifndef GET_RAW_WEIGHTS
+            weight /= totalWeight;
+            convIllum += weight * tempAccumIllum;
+            #else
             if (i < 4)
             {
                 convIllum[i] = weight;
@@ -340,9 +346,7 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
             {
                 break;
             }
-            continue;
-
-            convIllum += weight * tempAccumIllum;
+            #endif
         }
 
         filteredImage[offset.y][offset.x] = convIllum;
@@ -376,7 +380,7 @@ void SVGFKpcnnAtrousSubpass::reference_convolution(int readIdx, int kernelIdx, C
                                 continue;
                             }
 
-                            float sourcev = mRbuf[(readIdx + srcLayer) % kRingBufferSize].m[ysrc][xsrc];
+                            float sourcev = arbuf(readIdx + srcLayer).m[ysrc][xsrc];
                             sum += mKernels[kernelIdx + dstLayer].fetch_weight(dstLayer, xoff + kKernelDistance, yoff + kKernelDistance) *
                                    sourcev;
                         }
@@ -395,7 +399,7 @@ void SVGFKpcnnAtrousSubpass::clear_accumulation_area(uint2 srcPix, int writeIdx)
     // first things first, we need to zero out everything in accumulation block
     for (int i = 0; i < kKernelSummationTerms; i++)
     {
-        mRbuf[(writeIdx + i) % kRingBufferSize].m[srcPix.y][srcPix.x] = 0.0f;
+        arbuf(writeIdx + i).m[srcPix.y][srcPix.x] = 0.0f;
     }
 }
 
@@ -414,13 +418,13 @@ void SVGFKpcnnAtrousSubpass::convolve_kernel(uint2 srcPix, int readIdx, int writ
                 // now, accumulate to our target pixel
                 for (int srcLayer = 0; srcLayer < kOutputMapsPerLayer; srcLayer++)
                 {
-                    float mapVal = mRbuf[(readIdx + srcLayer) % kRingBufferSize].m[srcPix.y][srcPix.x];
+                    float mapVal = arbuf(readIdx + srcLayer).m[srcPix.y][srcPix.x];
                     sum += mapVal * mKernels[kernelIdx].fetch_weight(srcLayer, x + kKernelDistance, y + kKernelDistance);
                 }
 
                 int offsetIdx = kKernelDim * (y + kKernelDistance) + (x + kKernelDistance);
 
-                mRbuf[(writeIdx + offsetIdx) % kRingBufferSize].m[dstPixel.y][dstPixel.x] = sum;
+                arbuf(writeIdx + offsetIdx).m[dstPixel.y][dstPixel.x] = sum;
             }
         }
     }
@@ -432,28 +436,21 @@ void SVGFKpcnnAtrousSubpass::convolve_kernel(uint2 srcPix, int readIdx, int writ
 void SVGFKpcnnAtrousSubpass::reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
 {
     // no fancy parallel reduction for now, just plain "linear" accumulation
-    int dstIdx = writeIdx % kRingBufferSize;
-    //printPixelDebug("\tTerm  ", mRbuf[dstIdx].m[offset.y][offset.x]);
+    int dstIdx = getRingBufferIndex(writeIdx);
 
     for (int i = 1; i < kKernelSummationTerms; i++)
     {
-        //printPixelDebug("\tTerm  ", mRbuf[(writeIdx + i) % kRingBufferSize].m[offset.y][offset.x]);
-
-        mRbuf[dstIdx].m[offset.y][offset.x] += mRbuf[(writeIdx + i) % kRingBufferSize].m[offset.y][offset.x];
+        mRbuf[dstIdx].m[offset.y][offset.x] += arbuf(writeIdx + i).m[offset.y][offset.x];
     }
-
-    //printPixelDebug("Post Sum ", mRbuf[dstIdx].m[offset.y][offset.x]);
 
     // now apply bias
     mRbuf[dstIdx].m[offset.y][offset.x] += mKernels[kernelIdx].bias;
 
-    //printPixelDebug("Post Bias ", mRbuf[dstIdx].m[offset.y][offset.x]);
-    //printPixelDebug("\tBias", mKernels[kernelIdx].bias);
-
     // apply ReLU
     mRbuf[dstIdx].m[offset.y][offset.x] = std::max(mRbuf[dstIdx].m[offset.y][offset.x], 0.0f);
 
-    //printPixelDebug("Post ReLU ", mRbuf[dstIdx].m[offset.y][offset.x]);
+    // resync for next layer
+    //GroupMemoryBarrierWithGroupSync();
 }
 
 void SVGFKpcnnAtrousSubpass::renderUI(Gui::Widgets& widget)

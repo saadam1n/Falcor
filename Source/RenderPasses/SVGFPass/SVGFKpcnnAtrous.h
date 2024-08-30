@@ -16,12 +16,15 @@ using namespace Falcor;
 #define kKernelDim 3
 #define kKernelSummationTerms (kKernelDim * kKernelDim)
 #define kOutputMapsPerLayer 8
-#define kRingBufferDebugAdditionalSize 500
+#define kRingBufferDebugAdditionalSize 0
 #define kRingBufferSize \
     (2 * kOutputMapsPerLayer + kKernelSummationTerms - 1 + kRingBufferDebugAdditionalSize) // minus one since for the last write index, we
                                                                                            // can simultaineously store/accum
 #define kNumLayers 4
 #define kNumOutputWeights kOutputMapsPerLayer
+#define getRingBufferIndex(x) ((x) % kRingBufferSize)
+#define arbuf(x) mRbuf[getRingBufferIndex(x)]
+//#define GET_RAW_WEIGHTS
 
 class SVGFKpcnnAtrousSubpass : public Object
 {

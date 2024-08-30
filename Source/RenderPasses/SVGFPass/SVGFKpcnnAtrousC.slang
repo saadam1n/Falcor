@@ -13,6 +13,9 @@ import Utils.Debug.PixelDebug;
 #define kRingBufferSize (2 * kOutputMapsPerLayer + kKernelSummationTerms - 1) // minus one since for the last write index, we can simultaineously store/accum
 #define kNumLayers 4
 #define kNumOutputWeights kOutputMapsPerLayer
+#define getRingBufferIndex(x) ((x) % kRingBufferSize)
+#define arbuf(x) rbuf[getRingBufferIndex(x)]
+//#define GET_RAW_WEIGHTS
 
 struct CnnKernel
 {
@@ -72,7 +75,7 @@ void clear_accumulation_area(uint2 srcPix, int writeIdx)
     // first things first, we need to zero out everything in accumulation block
     for (int i = 0; i < kKernelSummationTerms; i++)
     {
-        rbuf[(writeIdx + i) % kRingBufferSize].m[srcPix.y][srcPix.x] = 0.0f;
+        arbuf(writeIdx + i).m[srcPix.y][srcPix.x] = 0.0f;
     }
 }
 
@@ -91,13 +94,13 @@ void convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
                 // now, accumulate to our target pixel
                 for (int srcLayer = 0; srcLayer < kOutputMapsPerLayer; srcLayer++)
                 {
-                    float mapVal = rbuf[(readIdx + srcLayer) % kRingBufferSize].m[srcPix.y][srcPix.x];
+                    float mapVal = arbuf(readIdx + srcLayer).m[srcPix.y][srcPix.x];
                     sum += mapVal * kernels[kernelIdx].fetch_weight(srcLayer, x + kKernelDistance, y + kKernelDistance);
                 }
 
                 int offsetIdx = kKernelDim * (y + kKernelDistance) + (x + kKernelDistance);
 
-                rbuf[(writeIdx + offsetIdx) % kRingBufferSize].m[dstPixel.y][dstPixel.x] = sum;
+                arbuf(writeIdx + offsetIdx).m[dstPixel.y][dstPixel.x] = sum;
             }
         }
     }
@@ -109,28 +112,18 @@ void convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
 void reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
 {
     // no fancy parallel reduction for now, just plain "linear" accumulation
-    int dstIdx = writeIdx % kRingBufferSize;
-    //print("\tTerm  ", rbuf[dstIdx].m[offset.y][offset.x]);
+    int dstIdx = getRingBufferIndex(writeIdx);
 
     for (int i = 1; i < kKernelSummationTerms; i++)
     {
-        //print("\tTerm  ", rbuf[(writeIdx + i) % kRingBufferSize].m[offset.y][offset.x]);
-
-        rbuf[dstIdx].m[offset.y][offset.x] += rbuf[(writeIdx + i) % kRingBufferSize].m[offset.y][offset.x];
+        rbuf[dstIdx].m[offset.y][offset.x] += arbuf(writeIdx + i).m[offset.y][offset.x];
     }
-
-    //print("Post Sum ", rbuf[dstIdx].m[offset.y][offset.x]);
 
     // now apply bias
     rbuf[dstIdx].m[offset.y][offset.x] += kernels[kernelIdx].bias;
 
-    //print("Post Bias ", rbuf[dstIdx].m[offset.y][offset.x]);
-    //print("\tBias", kernels[kernelIdx].bias);
-
     // apply ReLU
     rbuf[dstIdx].m[offset.y][offset.x] = max(rbuf[dstIdx].m[offset.y][offset.x], 0.0f);
-
-    //print("Post ReLU ", rbuf[dstIdx].m[offset.y][offset.x]);
 
     // resync for next layer
     GroupMemoryBarrierWithGroupSync();
@@ -217,15 +210,17 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     float maxRawOut = 0.0f;
     for (int i = 0; i < kNumOutputWeights; i++)
     {
-        maxRawOut = max(maxRawOut, rbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x]);
+        maxRawOut = max(maxRawOut, arbuf(currentReadIndex + i).m[offset.y][offset.x]);
     }
 
+#ifndef GET_RAW_WEIGHTS
     float totalWeight = 0.0f;
     for (int i = 0; i < kNumOutputWeights; i++)
     {
-        rbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] = exp(rbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] - maxRawOut);
-        totalWeight += rbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x];
+        arbuf(currentReadIndex + i).m[offset.y][offset.x] = exp(arbuf(currentReadIndex + i).m[offset.y][offset.x] - maxRawOut);
+        totalWeight += arbuf(currentReadIndex + i).m[offset.y][offset.x];
     }
+#endif
 
     float4 convIllum = float4(0.0f);
     for (int i = 0; i < kNumOutputWeights; i++)
@@ -239,8 +234,12 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
             }
         }
 
-        float weight = rbuf[(currentReadIndex + i) % kRingBufferSize].m[offset.y][offset.x] / totalWeight;
+        float weight = arbuf(currentReadIndex + i).m[offset.y][offset.x];
 
+#ifndef GET_RAW_WEIGHTS
+        weight /= totalWeight;
+        convIllum += weight * tempAccumIllum;
+#else
         if (i < 4)
         {
             convIllum[i] = weight;
@@ -249,9 +248,7 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
         {
             break;
         }
-        continue;
-
-        convIllum += weight * tempAccumIllum;
+#endif
     }
 
     // final step: write the convoluted illum to memory
