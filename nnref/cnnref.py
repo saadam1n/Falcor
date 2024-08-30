@@ -54,7 +54,7 @@ class CnnTest(nn.Module):
                         ])
                     rawkernel.append(singlechannel)
 
-                convmaps = F.conv2d(convmaps, torch.tensor(rawkernel), padding=1)
+                convmaps = F.relu(F.conv2d(convmaps, torch.tensor(rawkernel), padding=1))
 
         return convmaps
 
@@ -104,7 +104,10 @@ for y in range(5):
 
         ppRW = torch.tensor(ppRWList);
 
-        ppW = nn.Softmax()(ppRW)
+        if False:
+            ppW = nn.Softmax()(ppRW)
+        else:
+            ppW = ppRW
 
         print(ppW)
 
