@@ -15,7 +15,14 @@ import Utils.Debug.PixelDebug;
 #define kNumOutputWeights kOutputMapsPerLayer
 #define getRingBufferIndex(x) ((x) % kRingBufferSize)
 #define arbuf(x) rbuf[getRingBufferIndex(x)]
-//#define GET_RAW_WEIGHTS
+#define GET_RAW_WEIGHTS
+#define GET_PIXEL_PARAMS \
+    const uint2 interleavedIndex = groupId.xy % gStepSize; \
+    const uint2 jumpIndex = groupId.xy / gStepSize; \
+    const uint2 basePixel = interleavedIndex + kKernelDim * jumpIndex; \
+    const uint linearId = threadId.z; \
+    const uint2 offset = uint2(linearId % kMapDim, linearId / kMapDim); \
+    const uint2 curPixel = basePixel + offset;
 
 struct CnnKernel
 {
@@ -129,21 +136,8 @@ void reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
     GroupMemoryBarrierWithGroupSync();
 }
 
-void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
+void setup_network_inputs(const uint2 offset, const uint2 curPixel)
 {
-    // first step: we need to figure out which kernel we are operating upon
-    const uint2 interleavedIndex = groupId.xy % gStepSize;
-    const uint2 jumpIndex = groupId.xy / gStepSize;
-
-    const uint2 basePixel = interleavedIndex + kKernelDim * jumpIndex;
-
-    const uint linearId = threadId.z;
-    const uint2 offset = uint2(linearId % kMapDim, linearId / kMapDim);
-    const uint2 curPixel = basePixel + offset;
-
-    printSetPixel(offset);
-
-    // second step: load in all important information
     float4 illumAtCurPixel = gIllumination[curPixel];
     float4 normalDepthAtCurPixel = gLinearZAndNormal[curPixel];
     float4 worldPosAtCurPixel = gWorldPosition[curPixel];
@@ -185,8 +179,49 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
 
         rbuf[i].m[offset.y][offset.x] = writeVal;
     }
+}
 
-    // third step: exectue the kpcnn
+float softmax_unorm_weights(const uint2 offset, int currentReadIndex)
+{
+    // softmax numerical stability trick I stole from "Deep Learning", MIT Press
+    float maxRawOut = 0.0f;
+    for (int i = 0; i < kNumOutputWeights; i++)
+    {
+        maxRawOut = max(maxRawOut, arbuf(currentReadIndex + i).m[offset.y][offset.x]);
+    }
+
+    float totalWeight;
+
+#ifndef GET_RAW_WEIGHTS
+    totalWeight = 0.0f;
+    for (int i = 0; i < kNumOutputWeights; i++)
+    {
+        arbuf(currentReadIndex + i).m[offset.y][offset.x] = exp(arbuf(currentReadIndex + i).m[offset.y][offset.x] - maxRawOut);
+        totalWeight += arbuf(currentReadIndex + i).m[offset.y][offset.x];
+    }
+#else
+    totalWeight = 1.0f;
+#endif
+
+    return totalWeight;
+}
+
+float4 calc_postconv(int pcIndex)
+{
+    float4 tempAccumIllum = float4(0.0f);
+    for (int y = 0; y < kMapDim; y++)
+    {
+        for (int x = 0; x < kMapDim; x++)
+        {
+            tempAccumIllum += postconv[pcIndex].fetch_weight(x, y) * inputlum[y][x];
+        }
+    }
+
+    return tempAccumIllum;
+}
+
+int execute_cnn(const uint2 offset)
+{
     int currentReadIndex = 0;
     int currentWriteIndex = kOutputMapsPerLayer;
     int currentKernelIdx = 0;
@@ -204,40 +239,20 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
         currentReadIndex += kOutputMapsPerLayer;
     }
 
-    // fourth step: use the generated kernel to convolve the original patch
+    return currentReadIndex;
+}
 
-    // softmax numerical stability trick I stole from "Deep Learning", MIT Press
-    float maxRawOut = 0.0f;
-    for (int i = 0; i < kNumOutputWeights; i++)
-    {
-        maxRawOut = max(maxRawOut, arbuf(currentReadIndex + i).m[offset.y][offset.x]);
-    }
-
-#ifndef GET_RAW_WEIGHTS
-    float totalWeight = 0.0f;
-    for (int i = 0; i < kNumOutputWeights; i++)
-    {
-        arbuf(currentReadIndex + i).m[offset.y][offset.x] = exp(arbuf(currentReadIndex + i).m[offset.y][offset.x] - maxRawOut);
-        totalWeight += arbuf(currentReadIndex + i).m[offset.y][offset.x];
-    }
-#endif
+float4 filter_luminances(const uint2 offset, int weightIndex, float weightNorm)
+{
 
     float4 convIllum = float4(0.0f);
     for (int i = 0; i < kNumOutputWeights; i++)
     {
-        float4 tempAccumIllum = float4(0.0f);
-        for (int y = 0; y < kMapDim; y++)
-        {
-            for (int x = 0; x < kMapDim; x++)
-            {
-                tempAccumIllum += postconv[i].fetch_weight(x, y) * inputlum[y][x];
-            }
-        }
+        float4 tempAccumIllum = calc_postconv(i);
 
-        float weight = arbuf(currentReadIndex + i).m[offset.y][offset.x];
+        float weight = arbuf(weightIndex + i).m[offset.y][offset.x] / weightNorm;
 
 #ifndef GET_RAW_WEIGHTS
-        weight /= totalWeight;
         convIllum += weight * tempAccumIllum;
 #else
         if (i < 4)
@@ -250,6 +265,26 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
         }
 #endif
     }
+
+    return convIllum;
+}
+
+void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
+{
+    // first step: we need to figure out which kernel we are operating upon
+    GET_PIXEL_PARAMS;
+
+    printSetPixel(offset);
+
+    // second step: load in all important information
+    setup_network_inputs(offset, curPixel);
+
+    // third step: exectue the kpcnn
+    int weightIndex = execute_cnn(offset);
+
+    // fourth step: use the generated kernel to convolve the original patch
+    float totalWeight = softmax_unorm_weights(offset, weightIndex);
+    float4 convIllum = filter_luminances(offset, weightIndex, totalWeight);
 
     // final step: write the convoluted illum to memory
     gFiltered[curPixel] = convIllum;

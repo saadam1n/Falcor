@@ -24,7 +24,7 @@ using namespace Falcor;
 #define kNumOutputWeights kOutputMapsPerLayer
 #define getRingBufferIndex(x) ((x) % kRingBufferSize)
 #define arbuf(x) mRbuf[getRingBufferIndex(x)]
-//#define GET_RAW_WEIGHTS
+#define GET_RAW_WEIGHTS
 
 class SVGFKpcnnAtrousSubpass : public Object
 {
