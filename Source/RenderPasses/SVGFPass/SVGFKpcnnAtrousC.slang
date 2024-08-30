@@ -77,6 +77,51 @@ cbuffer PerImageCB
 groupshared CnnMap rbuf[kRingBufferSize];
 groupshared float4 inputlum[kMapDim][kMapDim];
 
+void setup_network_inputs(const uint2 offset, const uint2 curPixel)
+{
+    float4 illumAtCurPixel = gIllumination[curPixel];
+    float4 normalDepthAtCurPixel = gLinearZAndNormal[curPixel];
+    float4 worldPosAtCurPixel = gWorldPosition[curPixel];
+
+    inputlum[offset.y][offset.x] = illumAtCurPixel;
+
+    for (int i = 0; i < kOutputMapsPerLayer; i++)
+    {
+        float writeVal;
+#if 0
+        if (i < 4)
+        {
+            writeVal = illumAtCurPixel[i];
+
+        }
+        else if (i < 8)
+        {
+            writeVal = normalDepthAtCurPixel[i - 4];
+        }
+        else if (i < 12)
+        {
+            writeVal = 0.0f;//worldPosAtCurPixel[i - 8];
+        }
+        else
+        {
+            writeVal = 0.0f;
+        }
+
+#else
+        if (i < 4)
+        {
+            writeVal = illumAtCurPixel[i];
+        }
+        else
+        {
+            writeVal = 0.0f;
+        }
+#endif
+
+        rbuf[i].m[offset.y][offset.x] = writeVal;
+    }
+}
+
 void clear_accumulation_area(uint2 srcPix, int writeIdx)
 {
     // first things first, we need to zero out everything in accumulation block
@@ -136,49 +181,26 @@ void reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
     GroupMemoryBarrierWithGroupSync();
 }
 
-void setup_network_inputs(const uint2 offset, const uint2 curPixel)
+int execute_cnn(const uint2 offset)
 {
-    float4 illumAtCurPixel = gIllumination[curPixel];
-    float4 normalDepthAtCurPixel = gLinearZAndNormal[curPixel];
-    float4 worldPosAtCurPixel = gWorldPosition[curPixel];
+    int currentReadIndex = 0;
+    int currentWriteIndex = kOutputMapsPerLayer;
+    int currentKernelIdx = 0;
 
-    inputlum[offset.y][offset.x] = illumAtCurPixel;
-
-    for (int i = 0; i < kOutputMapsPerLayer; i++)
+    for (int layerIndex = 0; layerIndex < kNumLayers; layerIndex++)
     {
-        float writeVal;
-#if 0
-        if (i < 4)
+        for (int outputMapIndex = 0; outputMapIndex < kOutputMapsPerLayer; outputMapIndex++)
         {
-            writeVal = illumAtCurPixel[i];
-
+            clear_accumulation_area(offset, currentWriteIndex);
+            convolve_kernel(offset, currentReadIndex, currentWriteIndex, currentKernelIdx);
+            reduce_and_activate(offset, currentWriteIndex, currentKernelIdx);
+            currentWriteIndex++;
+            currentKernelIdx++;
         }
-        else if (i < 8)
-        {
-            writeVal = normalDepthAtCurPixel[i - 4];
-        }
-        else if (i < 12)
-        {
-            writeVal = 0.0f;//worldPosAtCurPixel[i - 8];
-        }
-        else
-        {
-            writeVal = 0.0f;
-        }
-
-#else
-        if (i < 4)
-        {
-            writeVal = illumAtCurPixel[i];
-        }
-        else
-        {
-            writeVal = 0.0f;
-        }
-#endif
-
-        rbuf[i].m[offset.y][offset.x] = writeVal;
+        currentReadIndex += kOutputMapsPerLayer;
     }
+
+    return currentReadIndex;
 }
 
 float softmax_unorm_weights(const uint2 offset, int currentReadIndex)
@@ -220,28 +242,6 @@ float4 calc_postconv(int pcIndex)
     return tempAccumIllum;
 }
 
-int execute_cnn(const uint2 offset)
-{
-    int currentReadIndex = 0;
-    int currentWriteIndex = kOutputMapsPerLayer;
-    int currentKernelIdx = 0;
-
-    for (int layerIndex = 0; layerIndex < kNumLayers; layerIndex++)
-    {
-        for (int outputMapIndex = 0; outputMapIndex < kOutputMapsPerLayer; outputMapIndex++)
-        {
-            clear_accumulation_area(offset, currentWriteIndex);
-            convolve_kernel(offset, currentReadIndex, currentWriteIndex, currentKernelIdx);
-            reduce_and_activate(offset, currentWriteIndex, currentKernelIdx);
-            currentWriteIndex++;
-            currentKernelIdx++;
-        }
-        currentReadIndex += kOutputMapsPerLayer;
-    }
-
-    return currentReadIndex;
-}
-
 float4 filter_luminances(const uint2 offset, int weightIndex, float weightNorm)
 {
 
@@ -269,6 +269,14 @@ float4 filter_luminances(const uint2 offset, int weightIndex, float weightNorm)
     return convIllum;
 }
 
+float4 execute_final_filtering(const uint2 offset, const int weightIndex)
+{
+    float totalWeight = softmax_unorm_weights(offset, weightIndex);
+    float4 convIllum = filter_luminances(offset, weightIndex, totalWeight);
+
+    return convIllum;
+}
+
 void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
 {
     // first step: we need to figure out which kernel we are operating upon
@@ -283,8 +291,7 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     int weightIndex = execute_cnn(offset);
 
     // fourth step: use the generated kernel to convolve the original patch
-    float totalWeight = softmax_unorm_weights(offset, weightIndex);
-    float4 convIllum = filter_luminances(offset, weightIndex, totalWeight);
+    float4 convIllum = execute_final_filtering(offset, weightIndex);
 
     // final step: write the convoluted illum to memory
     gFiltered[curPixel] = convIllum;

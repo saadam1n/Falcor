@@ -93,9 +93,7 @@ private:
         float& get(const int x, const int y);
     };
 
-    uint2 mCurrentCpuDebugPixel = uint2(0, 0);
-    bool mCpuPrintingEnabled = false;
-    void printPixelDebug(const std::string& s, float x);
+
 
     PostconvolutionKernel mPostconvKernels[kNumOutputWeights];
     ConvolutionKernel mKernels[kOutputMapsPerLayer * kNumLayers];
@@ -104,11 +102,29 @@ private:
     float4 mTestNormalData[kMapDim][kMapDim];
     ConvolutionMap mRbuf[kRingBufferSize];
 
-    void print_test_result(float4 grid[][kMapDim]);
-    void simulate_thread_group_sequentially(std::function<void(uint2)> func);
     void simulate_kpcnn();
-    void reference_convolution(int readIdx, int kernelIdx, ConvolutionMap tRbuf[]);
+
+    void setup_network_inputs();
+
     void clear_accumulation_area(uint2 srcPix, int writeIdx);
     void convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx);
     void reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx);
+    int execute_cnn();
+
+    float softmax_unorm_weights(const uint2 offset, int currentReadIndex);
+    float4 calc_postconv(int pcIndex);
+    float4 filter_luminances(const uint2 offset, int weightIndex, float weightNorm);
+    float4 execute_final_filtering(const uint2 offset, int weightIndex);
+    void final_filtering_cpu_wrapper(int weightIndex, float4 output[][kMapDim]);
+
+    uint2 mCurrentCpuDebugPixel = uint2(0, 0);
+    bool mCpuPrintingEnabled = false;
+    void printPixelDebug(const std::string& s, float x);
+
+    void print_test_result(float4 grid[][kMapDim]);
+    // simulate each "wave" of pixels at a time
+    void simulate_thread_group_sequentially(std::function<void(uint2)> func);
+    void reference_convolution(int readIdx, int kernelIdx, ConvolutionMap tRbuf[]);
+
+
 };

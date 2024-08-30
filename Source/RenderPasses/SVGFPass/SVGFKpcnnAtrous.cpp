@@ -149,71 +149,28 @@ float& SVGFKpcnnAtrousSubpass::ConvolutionMap::get(const int x, const int y)
     return m[y][x];
 }
 
-void SVGFKpcnnAtrousSubpass::printPixelDebug(const std::string& s, float x)
-{
-    if (mCpuPrintingEnabled)
-    {
-        std::cout << s << x << std::endl;
-    }
-}
-
-void SVGFKpcnnAtrousSubpass::print_test_result(float4 grid[][kMapDim])
-{
-    for (int y = -1; y < kMapDim; y++)
-    {
-        for (int x = -1; x < kMapDim; x++)
-        {
-            if (x == -1 && y == -1)
-            {
-                std::cout << "y/x\t";
-            }
-            else if (y == -1)
-            {
-                std::cout << x << "\t";
-            }
-            else if (x == -1)
-            {
-                std::cout << y << "\t";
-            }
-            else
-            {
-                std::cout << grid[y][x].r << "," << grid[y][x].g << "\t";
-            }
-        }
-        std::cout << "\n";
-    }
-    std::cout.flush();
-}
-
-void SVGFKpcnnAtrousSubpass::simulate_thread_group_sequentially(std::function<void(uint2)> func)
-{
-    for (int y = 0; y < kMapDim; y++)
-    {
-        for (int x = 0; x < kMapDim; x++)
-        {
-            uint2 offset = uint2(x, y);
-
-            mCpuPrintingEnabled = false;
-            if (offset.x == mCurrentCpuDebugPixel.x && offset.y == mCurrentCpuDebugPixel.y)
-            {
-                mCpuPrintingEnabled = true;
-            }
-
-            func(offset);
-        }
-    }
-}
-
 void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
 {
+    setup_network_inputs();
 
-    // simulate each "wave" of pixels at a time
+    int weightIndex = execute_cnn();
 
+    float4 filteredImage[kMapDim][kMapDim];
+    final_filtering_cpu_wrapper(weightIndex, filteredImage);
+
+    std::cout << "CPU KPCNN Result:\n";
+    print_test_result(filteredImage);
+}
+
+
+
+void SVGFKpcnnAtrousSubpass::setup_network_inputs()
+{
     simulate_thread_group_sequentially([&](uint2 offset) {
         for (int i = 0; i < kOutputMapsPerLayer; i++)
         {
             float writeVal;
-            #if 0
+#if 0
             if (i < 4)
             {
                 writeVal = mTestIllumData[offset.y][offset.x][i];
@@ -230,7 +187,7 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
             {
                 writeVal = 0.0f;
             }
-            #else
+#else
             if (i < 4)
             {
                 writeVal = mTestIllumData[offset.y][offset.x][i];
@@ -239,159 +196,11 @@ void SVGFKpcnnAtrousSubpass::simulate_kpcnn()
             {
                 writeVal = 0.0f;
             }
-            #endif
-
-
+#endif
 
             mRbuf[i].m[offset.y][offset.x] = writeVal;
         }
     });
-
-    int currentReadIndex = 0;
-    int currentWriteIndex = kOutputMapsPerLayer;
-    int currentKernelIdx = 0;
-    for (int layerIndex = 0; layerIndex < kNumLayers; layerIndex++)
-    {
-        #ifdef DO_REFERENCE_CONV
-        ConvolutionMap tRbuf[kOutputMapsPerLayer];
-        reference_convolution(currentReadIndex, currentKernelIdx, tRbuf);
-        #endif
-
-
-        for (int outputMapIndex = 0; outputMapIndex < kOutputMapsPerLayer; outputMapIndex++)
-        {
-            simulate_thread_group_sequentially([&](uint2 offset) {
-                clear_accumulation_area(offset, currentWriteIndex);
-            });
-
-            simulate_thread_group_sequentially([&](uint2 offset) {
-                convolve_kernel(offset, currentReadIndex, currentWriteIndex, currentKernelIdx);
-            });
-
-            simulate_thread_group_sequentially([&](uint2 offset) {
-                reduce_and_activate(offset, currentWriteIndex, currentKernelIdx);
-            });
-
-            currentWriteIndex++;
-            currentKernelIdx++;
-        }
-
-        currentReadIndex += kOutputMapsPerLayer;
-
-        #ifdef DO_REFERENCE_CONV
-        for (int i = 0; i < kOutputMapsPerLayer; i++)
-        {
-            for (int y = 0; y < kMapDim; y++)
-            {
-                for (int x = 0; x < kMapDim; x++)
-                {
-                    float calc = arbuf(currentReadIndex + i).m[y][x];
-                    float ref = tRbuf[i].m[y][x];
-
-                    float err = abs(calc - ref);
-                    std::cout << err << "\t";
-
-                }
-            }
-        }
-        std::cout << "\n";
-        #endif
-    }
-
-    std::cout << "Outputs are stored at index starting " << currentReadIndex << std::endl;
-
-    float4 filteredImage[kMapDim][kMapDim];
-    simulate_thread_group_sequentially([&](uint2 offset) {
-        float maxRawOut = 0.0f;
-        for (int i = 0; i < kNumOutputWeights; i++)
-        {
-            maxRawOut = std::max(maxRawOut, arbuf(currentReadIndex + i).m[offset.y][offset.x]);
-        }
-
-        #ifndef GET_RAW_WEIGHTS
-        float totalWeight = 0.0f;
-        for (int i = 0; i < kNumOutputWeights; i++)
-        {
-            arbuf(currentReadIndex + i).m[offset.y][offset.x] =
-                exp(arbuf(currentReadIndex + i).m[offset.y][offset.x] - maxRawOut);
-            totalWeight += arbuf(currentReadIndex + i).m[offset.y][offset.x];
-        }
-        #endif
-
-
-
-        float4 convIllum = float4(0.0f);
-        for (int i = 0; i < kNumOutputWeights; i++)
-        {
-            float4 tempAccumIllum = float4(0.0f);
-            for (int y = 0; y < kMapDim; y++)
-            {
-                for (int x = 0; x < kMapDim; x++)
-                {
-                    tempAccumIllum += mPostconvKernels[i].fetch_weight(x, y) * mTestIllumData[y][x];
-                }
-            }
-
-            float weight = arbuf(currentReadIndex + i).m[offset.y][offset.x];
-
-            #ifndef GET_RAW_WEIGHTS
-            weight /= totalWeight;
-            convIllum += weight * tempAccumIllum;
-            #else
-            if (i < 4)
-            {
-                convIllum[i] = weight;
-            }
-            else
-            {
-                break;
-            }
-            #endif
-        }
-
-        filteredImage[offset.y][offset.x] = convIllum;
-     });
-
-    std::cout << "CPU KPCNN Result:\n";
-    print_test_result(filteredImage);
-}
-
-void SVGFKpcnnAtrousSubpass::reference_convolution(int readIdx, int kernelIdx, ConvolutionMap tRbuf[])
-{
-    for (int dstLayer = 0; dstLayer < kOutputMapsPerLayer; dstLayer++)
-    {
-        for (int ydst = 0; ydst < kMapDim; ydst++)
-        {
-            for (int xdst = 0; xdst < kMapDim; xdst++)
-            {
-                float sum = mKernels[kernelIdx + dstLayer].bias;
-
-                for (int srcLayer = 0; srcLayer < kOutputMapsPerLayer; srcLayer++)
-                {
-                    for (int yoff = -kKernelDistance; yoff <= kKernelDistance; yoff++)
-                    {
-                        for (int xoff = -kKernelDistance; xoff <= kKernelDistance; xoff++)
-                        {
-                            int xsrc = xdst + xoff;
-                            int ysrc = ydst + yoff;
-
-                            if (xsrc < 0 || ysrc < 0 || xsrc >= kMapDim || ysrc >= kMapDim)
-                            {
-                                continue;
-                            }
-
-                            float sourcev = arbuf(readIdx + srcLayer).m[ysrc][xsrc];
-                            sum += mKernels[kernelIdx + dstLayer].fetch_weight(dstLayer, xoff + kKernelDistance, yoff + kKernelDistance) *
-                                   sourcev;
-                        }
-                    }
-                }
-
-
-                tRbuf[dstLayer].m[ydst][xdst] = std::max(sum, 0.0f);
-            }
-        }
-    }
 }
 
 void SVGFKpcnnAtrousSubpass::clear_accumulation_area(uint2 srcPix, int writeIdx)
@@ -451,6 +260,229 @@ void SVGFKpcnnAtrousSubpass::reduce_and_activate(uint2 offset, int writeIdx, int
 
     // resync for next layer
     //GroupMemoryBarrierWithGroupSync();
+}
+
+int SVGFKpcnnAtrousSubpass::execute_cnn()
+{
+    int currentReadIndex = 0;
+    int currentWriteIndex = kOutputMapsPerLayer;
+    int currentKernelIdx = 0;
+    for (int layerIndex = 0; layerIndex < kNumLayers; layerIndex++)
+    {
+#ifdef DO_REFERENCE_CONV
+        ConvolutionMap tRbuf[kOutputMapsPerLayer];
+        reference_convolution(currentReadIndex, currentKernelIdx, tRbuf);
+#endif
+
+        for (int outputMapIndex = 0; outputMapIndex < kOutputMapsPerLayer; outputMapIndex++)
+        {
+            simulate_thread_group_sequentially([&](uint2 offset) { clear_accumulation_area(offset, currentWriteIndex); });
+
+            simulate_thread_group_sequentially([&](uint2 offset)
+                                               { convolve_kernel(offset, currentReadIndex, currentWriteIndex, currentKernelIdx); });
+
+            simulate_thread_group_sequentially([&](uint2 offset) { reduce_and_activate(offset, currentWriteIndex, currentKernelIdx); });
+
+            currentWriteIndex++;
+            currentKernelIdx++;
+        }
+
+        currentReadIndex += kOutputMapsPerLayer;
+
+#ifdef DO_REFERENCE_CONV
+        for (int i = 0; i < kOutputMapsPerLayer; i++)
+        {
+            for (int y = 0; y < kMapDim; y++)
+            {
+                for (int x = 0; x < kMapDim; x++)
+                {
+                    float calc = arbuf(currentReadIndex + i).m[y][x];
+                    float ref = tRbuf[i].m[y][x];
+
+                    float err = abs(calc - ref);
+                    std::cout << err << "\t";
+                }
+            }
+        }
+        std::cout << "\n";
+#endif
+    }
+
+    return currentReadIndex;
+}
+
+float SVGFKpcnnAtrousSubpass::softmax_unorm_weights(const uint2 offset, int currentReadIndex)
+{
+    // softmax numerical stability trick I stole from "Deep Learning", MIT Press
+    float maxRawOut = 0.0f;
+    for (int i = 0; i < kNumOutputWeights; i++)
+    {
+        maxRawOut = std::max(maxRawOut, arbuf(currentReadIndex + i).m[offset.y][offset.x]);
+    }
+
+    float totalWeight;
+
+#ifndef GET_RAW_WEIGHTS
+    totalWeight = 0.0f;
+    for (int i = 0; i < kNumOutputWeights; i++)
+    {
+        arbuf(currentReadIndex + i).m[offset.y][offset.x] = exp(arbuf(currentReadIndex + i).m[offset.y][offset.x] - maxRawOut);
+        totalWeight += arbuf(currentReadIndex + i).m[offset.y][offset.x];
+    }
+#else
+    totalWeight = 1.0f;
+#endif
+
+    return totalWeight;
+}
+
+float4 SVGFKpcnnAtrousSubpass::calc_postconv(int pcIndex)
+{
+    float4 tempAccumIllum = float4(0.0f);
+    for (int y = 0; y < kMapDim; y++)
+    {
+        for (int x = 0; x < kMapDim; x++)
+        {
+            tempAccumIllum += mPostconvKernels[pcIndex].fetch_weight(x, y) * mTestIllumData[y][x];
+        }
+    }
+
+    return tempAccumIllum;
+}
+
+float4 SVGFKpcnnAtrousSubpass::filter_luminances(const uint2 offset, int weightIndex, float weightNorm)
+{
+    float4 convIllum = float4(0.0f);
+    for (int i = 0; i < kNumOutputWeights; i++)
+    {
+        float4 tempAccumIllum = calc_postconv(i);
+
+        float weight = arbuf(weightIndex + i).m[offset.y][offset.x] / weightNorm;
+
+#ifndef GET_RAW_WEIGHTS
+        convIllum += weight * tempAccumIllum;
+#else
+        if (i < 4)
+        {
+            convIllum[i] = weight;
+        }
+        else
+        {
+            break;
+        }
+#endif
+    }
+
+    return convIllum;
+}
+
+float4 SVGFKpcnnAtrousSubpass::execute_final_filtering(const uint2 offset, int weightIndex)
+{
+    float totalWeight = softmax_unorm_weights(offset, weightIndex);
+    float4 convIllum = filter_luminances(offset, weightIndex, totalWeight);
+
+    return convIllum;
+}
+
+void SVGFKpcnnAtrousSubpass::final_filtering_cpu_wrapper(int weightIndex, float4 output[][kMapDim])
+{
+    simulate_thread_group_sequentially([&](uint2 offset) {
+        float4 convIllum = execute_final_filtering(offset, weightIndex);
+        output[offset.y][offset.x] = convIllum;
+    });
+}
+
+
+void SVGFKpcnnAtrousSubpass::printPixelDebug(const std::string& s, float x)
+{
+    if (mCpuPrintingEnabled)
+    {
+        std::cout << s << x << std::endl;
+    }
+}
+
+void SVGFKpcnnAtrousSubpass::print_test_result(float4 grid[][kMapDim])
+{
+    for (int y = -1; y < kMapDim; y++)
+    {
+        for (int x = -1; x < kMapDim; x++)
+        {
+            if (x == -1 && y == -1)
+            {
+                std::cout << "y/x\t";
+            }
+            else if (y == -1)
+            {
+                std::cout << x << "\t";
+            }
+            else if (x == -1)
+            {
+                std::cout << y << "\t";
+            }
+            else
+            {
+                std::cout << grid[y][x].r << "," << grid[y][x].g << "\t";
+            }
+        }
+        std::cout << "\n";
+    }
+    std::cout.flush();
+}
+
+void SVGFKpcnnAtrousSubpass::simulate_thread_group_sequentially(std::function<void(uint2)> func)
+{
+    for (int y = 0; y < kMapDim; y++)
+    {
+        for (int x = 0; x < kMapDim; x++)
+        {
+            uint2 offset = uint2(x, y);
+
+            mCpuPrintingEnabled = false;
+            if (offset.x == mCurrentCpuDebugPixel.x && offset.y == mCurrentCpuDebugPixel.y)
+            {
+                mCpuPrintingEnabled = true;
+            }
+
+            func(offset);
+        }
+    }
+}
+
+void SVGFKpcnnAtrousSubpass::reference_convolution(int readIdx, int kernelIdx, ConvolutionMap tRbuf[])
+{
+    for (int dstLayer = 0; dstLayer < kOutputMapsPerLayer; dstLayer++)
+    {
+        for (int ydst = 0; ydst < kMapDim; ydst++)
+        {
+            for (int xdst = 0; xdst < kMapDim; xdst++)
+            {
+                float sum = mKernels[kernelIdx + dstLayer].bias;
+
+                for (int srcLayer = 0; srcLayer < kOutputMapsPerLayer; srcLayer++)
+                {
+                    for (int yoff = -kKernelDistance; yoff <= kKernelDistance; yoff++)
+                    {
+                        for (int xoff = -kKernelDistance; xoff <= kKernelDistance; xoff++)
+                        {
+                            int xsrc = xdst + xoff;
+                            int ysrc = ydst + yoff;
+
+                            if (xsrc < 0 || ysrc < 0 || xsrc >= kMapDim || ysrc >= kMapDim)
+                            {
+                                continue;
+                            }
+
+                            float sourcev = arbuf(readIdx + srcLayer).m[ysrc][xsrc];
+                            sum += mKernels[kernelIdx + dstLayer].fetch_weight(dstLayer, xoff + kKernelDistance, yoff + kKernelDistance) *
+                                   sourcev;
+                        }
+                    }
+                }
+
+                tRbuf[dstLayer].m[ydst][xdst] = std::max(sum, 0.0f);
+            }
+        }
+    }
 }
 
 void SVGFKpcnnAtrousSubpass::renderUI(Gui::Widgets& widget)
