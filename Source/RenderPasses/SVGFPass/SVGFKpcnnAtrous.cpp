@@ -3,8 +3,8 @@
 SVGFKpcnnAtrousSubpass::SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtilitySet> pUtilities, ref<FilterParameterReflector> pParameterReflector)
     : mpDevice(pDevice), mpUtilities(pUtilities), mpParameterReflector(pParameterReflector)
 {
-    mpEvaluatePass = mpUtilities->createComputePassAndDumpIR(kKpcnnAtrousShaderS);
-    mpBackPropagatePass = mpUtilities->createComputePassAndDumpIR(kKpcnnAtrousShaderD);
+    mpEvaluatePass = mpUtilities->createComputePassAndDumpIR(kKpcnnAtrousShaderS, NETWORK_PASS_TYPE_FORWARD);
+    mpBackPropagatePass = mpUtilities->createComputePassAndDumpIR(kKpcnnAtrousShaderD, NETWORK_PASS_TYPE_BACKWARD);
 
     mpPixelDebug = std::make_unique<PixelDebug>(mpDevice);
     mpPixelDebug->enable();

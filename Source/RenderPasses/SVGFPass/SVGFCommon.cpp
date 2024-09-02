@@ -3,8 +3,6 @@
 
 using namespace Falcor;
 
-
-
 SVGFUtilitySet::SVGFUtilitySet(ref<Device> pDevice, int minX, int minY, int maxX, int maxY) : mpDevice(pDevice), mPatchMinP(minX, minY), mPatchMaxP(maxX, maxY)
 {
     // set some general utility states
@@ -54,20 +52,28 @@ ref<Texture> SVGFUtilitySet::createFullscreenTexture(ResourceFormat fmt)
     return make_ref<Texture>(mpDevice, Resource::Type::Texture2D, fmt, screenWidth, screenHeight,  1, 1, 1, 1, ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, nullptr);
 }
 
-ref<FullScreenPass> SVGFUtilitySet::createFullscreenPassAndDumpIR(const std::string& path)
+ref<FullScreenPass> SVGFUtilitySet::createFullscreenPassAndDumpIR(
+    const std::string& path,
+    NetworkPassType npt,
+    const DefineList& dl = DefineList()
+)
 {
     ProgramDesc desc;
     desc.compilerFlags |= SlangCompilerFlags::DumpIntermediates;
     desc.addShaderLibrary(path).psEntry("main");
-    return FullScreenPass::create(mpDevice, desc);
+    return FullScreenPass::create(mpDevice, desc, createPassBasedDefineList(dl, npt));
 }
 
-ref<ComputePass> SVGFUtilitySet::createComputePassAndDumpIR(const std::string& path)
+ref<ComputePass> SVGFUtilitySet::createComputePassAndDumpIR(
+    const std::string& path,
+    NetworkPassType npt,
+    const DefineList& dl = DefineList()
+)
 {
     ProgramDesc desc;
     desc.compilerFlags |= SlangCompilerFlags::DumpIntermediates;
     desc.addShaderLibrary(path).csEntry("main");
-    return ComputePass::create(mpDevice, desc);
+    return ComputePass::create(mpDevice, desc, createPassBasedDefineList(dl, npt));
 }
 
 size_t SVGFUtilitySet::getBufferSize(size_t elemSize)
@@ -136,6 +142,22 @@ void SVGFUtilitySet::setPatchingState(ref<FullScreenPass> fsPass)
 
     patchInfo["patchMinP"] = mPatchMinP;
     patchInfo["patchMaxP"] = mPatchMaxP;
+}
+
+DefineList SVGFUtilitySet::createPassBasedDefineList(const DefineList& dl, NetworkPassType npt)
+{
+    DefineList dl2 = dl;
+
+    if (npt == NETWORK_PASS_TYPE_FORWARD)
+    {
+        dl2.add("FWD_PASS");
+    }
+    else if (npt == NETWORK_PASS_TYPE_BACKWARD)
+    {
+        dl2.add("BWD_PASS");
+    }
+
+    return dl2;
 }
 
 FilterParameterReflector::FilterParameterReflector(ref<SVGFUtilitySet> pUtilities) : mpUtilities(pUtilities) {}

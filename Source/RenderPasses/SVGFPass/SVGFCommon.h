@@ -126,6 +126,13 @@ struct SVGFParameter
     }
 };
 
+enum NetworkPassType
+{
+    NETWORK_PASS_TYPE_NONE, // for stuff that isn't part of a nestwork
+    NETWORK_PASS_TYPE_FORWARD,
+    NETWORK_PASS_TYPE_BACKWARD,
+};
+
 class SVGFUtilitySet : public Object
 {
 public:
@@ -134,8 +141,16 @@ public:
 
     ref<Buffer> createAccumulationBuffer(int bytes_per_elem = sizeof(float4), bool need_reaback = false);
     ref<Texture> createFullscreenTexture(ResourceFormat fmt = ResourceFormat::RGBA32Float);
-    ref<FullScreenPass> createFullscreenPassAndDumpIR(const std::string& path);
-    ref<ComputePass> createComputePassAndDumpIR(const std::string& path);
+    ref<FullScreenPass> createFullscreenPassAndDumpIR(
+        const std::string& path,
+        NetworkPassType npt = NETWORK_PASS_TYPE_NONE,
+        const DefineList& dl = DefineList()
+    );
+    ref<ComputePass> createComputePassAndDumpIR(
+        const std::string& path,
+        NetworkPassType npt = NETWORK_PASS_TYPE_NONE,
+        const DefineList& dl = DefineList()
+    );
     size_t getBufferSize(size_t elemSize);
 
     ref<Fbo> getDummyFullscreenFbo();
@@ -162,6 +177,7 @@ private:
 
     ref<FullScreenPass> mpCompactingPass;
 
+    DefineList createPassBasedDefineList(const DefineList& dl, NetworkPassType npt);
 public:
     int2 mPatchMinP;
     int2 mPatchMaxP;
