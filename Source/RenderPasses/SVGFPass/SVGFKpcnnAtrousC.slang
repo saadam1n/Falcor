@@ -118,6 +118,7 @@ groupshared float4 dLdInputlum[kMapDim][kMapDim];
 groupshared CnnPostconvolutionKernel dLdPostconv[kNumOutputWeights];
 groupshared CnnKernel dLdKernel[kOutputMapsPerLayer * kNumLayers];
 groupshared float4 propaccum[kMapDim][kMapDim][kMapDim][kMapDim];
+groupshared float kernelaccum[kOutputMapsPerLayer][kKernelDim][kKernelDim][kKernelSummationTerms];
 
 static uint2 accumIndex;
 #endif
@@ -252,14 +253,14 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
 {
     for (int i = 0; i < kOutputMapsPerLayer; i++)
     {
-        for (int y = 0; y < kMapDim; y++)
+        drbuf(readIdx + i).m[srcPix.y][srcPix.x] = 0.0f;
+
+        for (int j = 0; j < kKernelSummationTerms; j++)
         {
-            for (int x = 0; x < kMapDim; x++)
-            {
-                drbuf(readIdx + i).m[y][x] = 0.0f;
-            }
+            kernelaccum[i][srcPix.y][srcPix.x][j] = 0.0f;
         }
     }
+
 
     for (int y = -kKernelDistance; y <= kKernelDistance; y++)
     {
@@ -275,7 +276,6 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
 
                 // float sum = 0.0f;
                 //  now, accumulate to our target pixel
-                float dLdKernel = 0.0F;
 
                 for (int srcLayer = 0; srcLayer < kOutputMapsPerLayer; srcLayer++)
                 {
@@ -283,12 +283,13 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
                     //sum += mapVal * kernels[kernelIdx].fetch_weight(srcLayer, x + kKernelDistance, y + kKernelDistance);
 
                     float dLdMapVal = dLoss * kernels[kernelIdx].fetch_weight(srcLayer, x + kKernelDistance, y + kKernelDistance);
-                    dLdKernel += dLoss * mapVal;
+                    float dLdKernelWeight = dLoss * mapVal;
+
+                    kernelaccum[srcLayer][srcPix.y][srcPix.x][offsetIdx] = dLdKernelWeight;
 
                     drbuf(readIdx + srcLayer).m[srcPix.y][srcPix.x] += dLdMapVal;
                 }
 
-                propaccum[y + kKernelDistance][x + kKernelDistance][srcPix.y][srcPix.x].x = dLdKernel;
                 //arbuf(writeIdx + offsetIdx).m[dstPixel.y][dstPixel.x] = sum;
             }
         }
@@ -301,16 +302,22 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
     // accum the kernel terms
     if (srcPix.x < 3 && srcPix.y < 3)
     {
-        float dLsum = 0.0f;
-        for (int y = 0; y < kMapDim; y++)
+        for (int srcLayer = 0; srcLayer < kOutputMapsPerLayer; srcLayer++)
         {
-            for (int x = 0; x < kMapDim; x++)
+            float dLsum = 0.0f;
+            int offsetIdx = kKernelDim * (srcPix.y) + (srcPix.x);
+
+            for (int y = 0; y < kMapDim; y++)
             {
-                dLsum += propaccum[srcPix.y][srcPix.x][y][x].x;
+                for (int x = 0; x < kMapDim; x++)
+                {
+                    dLsum += kernelaccum[srcLayer][y][x][offsetIdx];
+                }
             }
+
+            dLdKernel[kernelIdx].save_bwd_prop(srcLayer, srcPix.y, srcPix.x, dLsum);
         }
 
-        //dLdKernel[kernelIdx].save_bwd_prop(srcPix.y, srcPix.x, dLsum);
     }
 }
 #endif
