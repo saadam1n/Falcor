@@ -37,6 +37,8 @@ import Utils.Debug.PixelDebug;
 #define kWeightIndexOffset kNumOutputWeights
 #endif
 
+// #define ILLUM_ONLY_INPUT
+
 struct CnnKernel
 {
     // map, y first, x second
@@ -52,7 +54,7 @@ struct CnnKernel
     }
 
     [mutating]
-    float save_bwd_prop(const int x, const int y, float w)
+    float save_bwd_prop(const int map, const int x, const int y, float w)
     {
         const int linearIdx = kKernelDim * kKernelDim * map + kKernelDim * y + x;
         const int elemIdx = linearIdx / 4;
@@ -104,6 +106,7 @@ cbuffer PerImageCB
     uint2 gStepSize;
 
     RWByteAddressBuffer drIllum;
+    RWByteAddressBuffer daIllum;
 };
 
 groupshared CnnMap rbuf[kRingBufferSize];
@@ -115,7 +118,6 @@ groupshared float4 dLdInputlum[kMapDim][kMapDim];
 groupshared CnnPostconvolutionKernel dLdPostconv[kNumOutputWeights];
 groupshared CnnKernel dLdKernel[kOutputMapsPerLayer * kNumLayers];
 groupshared float4 propaccum[kMapDim][kMapDim][kMapDim][kMapDim];
-groupshared CnnMap dLdMaps[kOutputMapsPerLayer];
 
 static uint2 accumIndex;
 #endif
@@ -131,7 +133,9 @@ void setup_network_inputs(const uint2 offset, const uint2 curPixel)
     for (int i = 0; i < kOutputMapsPerLayer; i++)
     {
         float writeVal;
-#if 0
+#ifdef ILLUM_ONLY_INPUT
+#error need to set this up
+
         if (i < 4)
         {
             writeVal = illumAtCurPixel[i];
@@ -163,6 +167,45 @@ void setup_network_inputs(const uint2 offset, const uint2 curPixel)
 
         rbuf[i].m[offset.y][offset.x] = writeVal;
     }
+}
+
+void bwd_setup_network_inputs(const uint2 offset, const uint2 curPixel)
+{
+    float4 dLdIllum;
+    for (int i = 0; i < kOutputMapsPerLayer; i++)
+    {
+#ifdef ILLUM_ONLY_INPUT
+#error need to set this up
+        if (i < 4)
+        {
+            writeVal = illumAtCurPixel[i];
+
+        }
+        else if (i < 8)
+        {
+            writeVal = normalDepthAtCurPixel[i - 4];
+        }
+        else if (i < 12)
+        {
+            writeVal = 0.0f;//worldPosAtCurPixel[i - 8];
+        }
+        else
+        {
+            writeVal = 0.0f;
+        }
+
+#else
+        if (i < 4)
+        {
+            dLdIllum[i] = rbuf[i].m[offset.y][offset.x];
+        }
+        else
+        {
+        }
+#endif
+    }
+
+    accumDerivBuf4(daIllum, curPixel, dLdIllum, gIllumination);
 }
 
 void clear_accumulation_area(uint2 srcPix, int writeIdx)
@@ -267,7 +310,7 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
             }
         }
 
-        dLdKernel[kernelIdx].save_bwd_prop(srcPix.y, srcPix.x, dLsum);
+        //dLdKernel[kernelIdx].save_bwd_prop(srcPix.y, srcPix.x, dLsum);
     }
 }
 #endif
