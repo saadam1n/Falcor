@@ -54,7 +54,7 @@ struct CnnKernel
     }
 
     [mutating]
-    float save_bwd_prop(const int map, const int x, const int y, float w)
+    void save_bwd_prop(const int map, const int x, const int y, float w)
     {
         const int linearIdx = kKernelDim * kKernelDim * map + kKernelDim * y + x;
         const int elemIdx = linearIdx / 4;
@@ -77,7 +77,7 @@ struct CnnPostconvolutionKernel
     }
 
     [mutating]
-    float save_bwd_prop(const int x, const int y, float w)
+    void save_bwd_prop(const int x, const int y, float w)
     {
         const int linearIdx = y * kMapDim + x;
         const int elemIdx = linearIdx / 4;
@@ -113,12 +113,90 @@ groupshared CnnMap rbuf[kRingBufferSize];
 groupshared float4 inputlum[kMapDim][kMapDim];
 
 #ifdef BWD_PASS
+struct MultiAccum
+{
+    float memory[kMapDim * kMapDim * kMapDim * kMapDim * 4];
+
+    int get_prop_idx(int a0, int a1, int a2, int a3)
+    {
+        int idx = (kMapDim * kMapDim * kMapDim) * a0 +
+                  (kMapDim * kMapDim) * a1 +
+                  (kMapDim)*a2 +
+                  a3;
+
+        return idx;
+    }
+
+    int get_kernel_idx(int a0, int a1, int a2, int a3)
+    {
+        int idx = (kKernelDim * kKernelDim * kKernelSummationTerms) * a0 +
+                  (kKernelDim * kKernelSummationTerms) * a1 +
+                  (kKernelSummationTerms)*a2 +
+                  a3;
+
+        return idx;
+    }
+
+    [mutating]
+    void save_prop(int a0, int a1, int a2, int a3, float x)
+    {
+        int idx = get_prop_idx(a0, a1, a2, a3);
+
+        memory[idx] = x;
+    }
+
+    float read_prop(int a0, int a1, int a2, int a3)
+    {
+        int idx = get_prop_idx(a0, a1, a2, a3);
+
+        return memory[idx];
+    }
+
+    [mutating]
+    void save_prop4(int a0, int a1, int a2, int a3, float4 x)
+    {
+        int idx = get_prop_idx(a0, a1, a2, a3) * 4;
+
+        for (int i = 0; i < 4; i++)
+        {
+            memory[idx + i] = x[i];
+        }
+    }
+
+    float4 read_prop4(int a0, int a1, int a2, int a3)
+    {
+        int idx = get_prop_idx(a0, a1, a2, a3) * 4;
+
+        float4 x;
+        for (int i = 0; i < 4; i++)
+        {
+            x[i] = memory[idx + i];
+        }
+
+        return x;
+    }
+
+    [mutating]
+    void save_kernel(int a0, int a1, int a2, int a3, float x)
+    {
+        int idx = get_kernel_idx(a0, a1, a2, a3);
+
+        memory[idx] = x;
+    }
+
+    float read_kernel(int a0, int a1, int a2, int a3)
+    {
+        int idx = get_kernel_idx(a0, a1, a2, a3);
+
+        return memory[idx];
+    }
+};
+
 groupshared CnnMap dbuf[kRingBufferSize];
 groupshared float4 dLdInputlum[kMapDim][kMapDim];
 groupshared CnnPostconvolutionKernel dLdPostconv[kNumOutputWeights];
 groupshared CnnKernel dLdKernel[kOutputMapsPerLayer * kNumLayers];
-groupshared float4 propaccum[kMapDim][kMapDim][kMapDim][kMapDim];
-groupshared float kernelaccum[kOutputMapsPerLayer][kKernelDim][kKernelDim][kKernelSummationTerms];
+groupshared MultiAccum multiaccum;
 
 static uint2 accumIndex;
 #endif
@@ -257,7 +335,7 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
 
         for (int j = 0; j < kKernelSummationTerms; j++)
         {
-            kernelaccum[i][srcPix.y][srcPix.x][j] = 0.0f;
+            multiaccum.save_kernel(i, srcPix.y, srcPix.x, j, 0.0f);
         }
     }
 
@@ -285,7 +363,7 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
                     float dLdMapVal = dLoss * kernels[kernelIdx].fetch_weight(srcLayer, x + kKernelDistance, y + kKernelDistance);
                     float dLdKernelWeight = dLoss * mapVal;
 
-                    kernelaccum[srcLayer][srcPix.y][srcPix.x][offsetIdx] = dLdKernelWeight;
+                    multiaccum.save_kernel(srcLayer, srcPix.y, srcPix.x, offsetIdx, dLdKernelWeight);
 
                     drbuf(readIdx + srcLayer).m[srcPix.y][srcPix.x] += dLdMapVal;
                 }
@@ -311,7 +389,7 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
             {
                 for (int x = 0; x < kMapDim; x++)
                 {
-                    dLsum += kernelaccum[srcLayer][y][x][offsetIdx];
+                    dLsum += multiaccum.read_kernel(srcLayer, y, x, offsetIdx);
                 }
             }
 
@@ -357,7 +435,7 @@ void bwd_reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
     }
 
     // now apply bias
-    propaccum[0][0][offset.y][offset.x].x = dLoss;
+    multiaccum.save_prop(0, 0, offset.y, offset.x, dLoss);
 
     // ensure everything has been written
     GroupMemoryBarrierWithGroupSync();
@@ -368,7 +446,7 @@ void bwd_reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
         {
             for (int x = 0; x < kMapDim; x++)
             {
-                dLdBias += propaccum[0][0][y][x].x;
+                dLdBias += multiaccum.read_prop(0, 0, offset.y, offset.x);
             }
         }
         dLdKernel[kernelIdx].bias = dLdBias;
@@ -487,7 +565,7 @@ void bwd_calc_postconv(int pcIndex, float4 dLoss)
         for (int x = 0; x < kMapDim; x++)
         {
             float dLdWxy = dot(dLoss * inputlum[y][x], 1.0f.xxxx);
-            propaccum[y][x][accumIndex.y][accumIndex.x].x = dLdWxy;
+            multiaccum.save_prop(y, x, accumIndex.y, accumIndex.x, dLdWxy);
         }
     }
 
@@ -498,7 +576,7 @@ void bwd_calc_postconv(int pcIndex, float4 dLoss)
     {
         for (int x = 0; x < kMapDim; x++)
         {
-            dLdW += propaccum[accumIndex.y][accumIndex.x][x][y].x;
+            dLdW += multiaccum.read_prop(accumIndex.y, accumIndex.x, y, x);
         }
     }
     dLdPostconv[pcIndex].save_bwd_prop(accumIndex.y, accumIndex.x, dLdW);
@@ -508,7 +586,7 @@ void bwd_calc_postconv(int pcIndex, float4 dLoss)
         for (int x = 0; x < kMapDim; x++)
         {
             float4 dLdLumxy = dLoss * postconv[pcIndex].fetch_weight(x, y);
-            propaccum[y][x][accumIndex.y][accumIndex.x] = dLdLumxy;
+            multiaccum.save_prop4(y, x, accumIndex.y, accumIndex.x, dLdLumxy);
         }
     }
 
@@ -519,7 +597,7 @@ void bwd_calc_postconv(int pcIndex, float4 dLoss)
     {
         for (int x = 0; x < kMapDim; x++)
         {
-            dLdLum += propaccum[accumIndex.y][accumIndex.x][x][y];
+            dLdLum += multiaccum.read_prop4(accumIndex.y, accumIndex.x, y, x);
         }
     }
 
