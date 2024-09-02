@@ -50,6 +50,15 @@ struct CnnKernel
         const int chnlIdx = linearIdx % 4;
         return weights[elemIdx][chnlIdx];
     }
+
+    [mutating]
+    float save_bwd_prop(const int x, const int y, float w)
+    {
+        const int linearIdx = kKernelDim * kKernelDim * map + kKernelDim * y + x;
+        const int elemIdx = linearIdx / 4;
+        const int chnlIdx = linearIdx % 4;
+        weights[elemIdx][chnlIdx] = w;
+    }
 };
 
 // alternate name: CnnSummaryKernel
@@ -104,7 +113,9 @@ groupshared float4 inputlum[kMapDim][kMapDim];
 groupshared CnnMap dbuf[kRingBufferSize];
 groupshared float4 dLdInputlum[kMapDim][kMapDim];
 groupshared CnnPostconvolutionKernel dLdPostconv[kNumOutputWeights];
+groupshared CnnKernel dLdKernel[kOutputMapsPerLayer * kNumLayers];
 groupshared float4 propaccum[kMapDim][kMapDim][kMapDim][kMapDim];
+groupshared CnnMap dLdMaps[kOutputMapsPerLayer];
 
 static uint2 accumIndex;
 #endif
@@ -193,6 +204,74 @@ void convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
     GroupMemoryBarrierWithGroupSync();
 }
 
+#ifdef BWD_PASS
+void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
+{
+    for (int i = 0; i < kOutputMapsPerLayer; i++)
+    {
+        for (int y = 0; y < kMapDim; y++)
+        {
+            for (int x = 0; x < kMapDim; x++)
+            {
+                drbuf(readIdx + i).m[y][x] = 0.0f;
+            }
+        }
+    }
+
+    for (int y = -kKernelDistance; y <= kKernelDistance; y++)
+    {
+        for (int x = -kKernelDistance; x <= kKernelDistance; x++)
+        {
+            const int2 dstPixel = int2(srcPix) + int2(x, y);
+            const bool inside = all(dstPixel >= int2(0)) && all(dstPixel < int2(kMapDim));
+
+            if (inside)
+            {
+                int offsetIdx = kKernelDim * (y + kKernelDistance) + (x + kKernelDistance);
+                float dLoss = drbuf(writeIdx + offsetIdx).m[dstPixel.y][dstPixel.x];
+
+                // float sum = 0.0f;
+                //  now, accumulate to our target pixel
+                float dLdKernel = 0.0F;
+
+                for (int srcLayer = 0; srcLayer < kOutputMapsPerLayer; srcLayer++)
+                {
+                    float mapVal = arbuf(readIdx + srcLayer).m[srcPix.y][srcPix.x];
+                    //sum += mapVal * kernels[kernelIdx].fetch_weight(srcLayer, x + kKernelDistance, y + kKernelDistance);
+
+                    float dLdMapVal = dLoss * kernels[kernelIdx].fetch_weight(srcLayer, x + kKernelDistance, y + kKernelDistance);
+                    dLdKernel += dLoss * mapVal;
+
+                    drbuf(readIdx + srcLayer).m[srcPix.y][srcPix.x] += dLdMapVal;
+                }
+
+                propaccum[y + kKernelDistance][x + kKernelDistance][srcPix.y][srcPix.x].x = dLdKernel;
+                //arbuf(writeIdx + offsetIdx).m[dstPixel.y][dstPixel.x] = sum;
+            }
+        }
+    }
+
+    // now sync for future passes
+    GroupMemoryBarrierWithGroupSync();
+
+
+    // accum the kernel terms
+    if (srcPix.x < 3 && srcPix.y < 3)
+    {
+        float dLsum = 0.0f;
+        for (int y = 0; y < kMapDim; y++)
+        {
+            for (int x = 0; x < kMapDim; x++)
+            {
+                dLsum += propaccum[srcPix.y][srcPix.x][y][x].x;
+            }
+        }
+
+        dLdKernel[kernelIdx].save_bwd_prop(srcPix.y, srcPix.x, dLsum);
+    }
+}
+#endif
+
 void reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
 {
     // no fancy parallel reduction for now, just plain "linear" accumulation
@@ -212,6 +291,43 @@ void reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
     // resync for next layer
     GroupMemoryBarrierWithGroupSync();
 }
+
+#ifdef BWD_PASS
+void bwd_reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
+{
+    // no fancy parallel reduction for now, just plain "linear" accumulation
+    int dstIdx = getRingBufferIndex(writeIdx);
+
+    // expand the loss if ReLU didn't zero out our loss
+    float dLoss = (rbuf[dstIdx].m[offset.y][offset.x] > 0.0f ? dbuf[dstIdx].m[offset.y][offset.x] : 0.0f);
+
+    for (int i = 0; i < kKernelSummationTerms; i++)
+    {
+        drbuf(writeIdx + i).m[offset.y][offset.x] = dLoss;
+    }
+
+    // now apply bias
+    propaccum[0][0][offset.y][offset.x].x = dLoss;
+
+    // ensure everything has been written
+    GroupMemoryBarrierWithGroupSync();
+    if (offset.x == 0 && offset.y == 0)
+    {
+        float dLdBias = 0.0f;
+        for (int y = 0; y < kMapDim; y++)
+        {
+            for (int x = 0; x < kMapDim; x++)
+            {
+                dLdBias += propaccum[0][0][y][x].x;
+            }
+        }
+        dLdKernel[kernelIdx].bias = dLdBias;
+    }
+
+    // resync for next layer
+    GroupMemoryBarrierWithGroupSync();
+}
+#endif
 
 int execute_cnn(const uint2 offset)
 {
@@ -234,6 +350,29 @@ int execute_cnn(const uint2 offset)
 
     return currentReadIndex;
 }
+
+#ifdef BWD_PASS
+void bwd_execute_cnn(const uint2 offset)
+{
+    int currentReadIndex = kNumLayers * kOutputMapsPerLayer;
+    int currentWriteIndex = kOutputMapsPerLayer;
+    int currentKernelIdx = kNumLayers * kOutputMapsPerLayer;
+
+    for (int layerIndex = kNumLayers - 1; layerIndex >= 0; layerIndex--)
+    {
+        currentReadIndex -= kOutputMapsPerLayer;
+
+        for (int outputMapIndex = kOutputMapsPerLayer - 1; outputMapIndex >= 0; outputMapIndex--)
+        {
+            currentKernelIdx--;
+            currentWriteIndex--;
+
+            bwd_reduce_and_activate(offset, currentWriteIndex, currentKernelIdx);
+            bwd_convolve_kernel(offset, currentReadIndex, currentWriteIndex, currentKernelIdx);
+        }
+    }
+}
+#endif
 
 float softmax_unorm_weights(const uint2 offset, int currentReadIndex)
 {
@@ -261,6 +400,7 @@ float softmax_unorm_weights(const uint2 offset, int currentReadIndex)
     return totalWeight;
 }
 
+#ifdef BWD_PASS
 void bwd_softmax_unorm_weights(const uint2 offset, int currentReadIndex, float dLdTotalWeight)
 {
     for (int i = 0; i < kNumOutputWeights; i++)
@@ -273,6 +413,7 @@ void bwd_softmax_unorm_weights(const uint2 offset, int currentReadIndex, float d
         drbuf(currentReadIndex + i).m[offset.y][offset.x] = dLdExpW;
     }
 }
+#endif
 
 float4 calc_postconv(int pcIndex)
 {
@@ -288,6 +429,7 @@ float4 calc_postconv(int pcIndex)
     return tempAccumIllum;
 }
 
+#ifdef BWD_PASS
 void bwd_calc_postconv(int pcIndex, float4 dLoss)
 {
     for (int y = 0; y < kMapDim; y++)
@@ -334,6 +476,7 @@ void bwd_calc_postconv(int pcIndex, float4 dLoss)
     dLdInputlum[accumIndex.y][accumIndex.x] += dLdLum;
     GroupMemoryBarrierWithGroupSync(); // resync to prevent any issues
 }
+#endif
 
 float4 filter_luminances(const uint2 offset, int weightIndex, float weightNorm)
 {
@@ -362,6 +505,7 @@ float4 filter_luminances(const uint2 offset, int weightIndex, float weightNorm)
     return convIllum;
 }
 
+#ifdef BWD_PASS
 void bwd_filter_luminances(const uint2 offset, int weightIndex, float weightNorm, out float dLdWeightNorm, float4 dLoss)
 {
     dLdWeightNorm = 0.0f;
@@ -383,6 +527,7 @@ void bwd_filter_luminances(const uint2 offset, int weightIndex, float weightNorm
         bwd_calc_postconv(i, dLdTempAccumIllum);
     }
 }
+#endif
 
 float4 execute_final_filtering(const uint2 offset, const int weightIndex)
 {
@@ -392,6 +537,7 @@ float4 execute_final_filtering(const uint2 offset, const int weightIndex)
     return convIllum;
 }
 
+#ifdef BWD_PASS
 void bwd_execute_final_filtering(const uint2 offset, const int weightIndex, float4 dLoss)
 {
     float totalWeight = 0.0f;
@@ -404,6 +550,7 @@ void bwd_execute_final_filtering(const uint2 offset, const int weightIndex, floa
     bwd_filter_luminances(offset, weightIndex, totalWeight, dLdTotalWeight, dLoss);
     bwd_softmax_unorm_weights(offset, weightIndex, dLdTotalWeight);
 }
+#endif
 
 void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
 {
@@ -425,6 +572,7 @@ void akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     gFiltered[curPixel] = convIllum;
 }
 
+#ifdef BWD_PASS
 void bwd_prop_akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
 {
     // first do foward pass, saving inputs as we go
@@ -445,6 +593,6 @@ void bwd_prop_akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     float4 dLoss = readDerivBuf4(drIllum, curPixel, gIllumination);
 
     bwd_execute_final_filtering(offset, weightIndex, dLoss);
-
-
+    bwd_execute_cnn(offset);
 }
+#endif

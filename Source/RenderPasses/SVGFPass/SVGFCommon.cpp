@@ -55,7 +55,7 @@ ref<Texture> SVGFUtilitySet::createFullscreenTexture(ResourceFormat fmt)
 ref<FullScreenPass> SVGFUtilitySet::createFullscreenPassAndDumpIR(
     const std::string& path,
     NetworkPassType npt,
-    const DefineList& dl = DefineList()
+    const DefineList& dl
 )
 {
     ProgramDesc desc;
@@ -67,7 +67,7 @@ ref<FullScreenPass> SVGFUtilitySet::createFullscreenPassAndDumpIR(
 ref<ComputePass> SVGFUtilitySet::createComputePassAndDumpIR(
     const std::string& path,
     NetworkPassType npt,
-    const DefineList& dl = DefineList()
+    const DefineList& dl
 )
 {
     ProgramDesc desc;
