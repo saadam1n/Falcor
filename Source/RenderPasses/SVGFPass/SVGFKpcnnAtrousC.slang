@@ -711,6 +711,7 @@ void bwd_prop_akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     int weightIndex = execute_cnn(offset);
     float4 convIllum = execute_final_filtering(offset, weightIndex);
 
+
     // now, backward pass time
     accumIndex = offset;
 
@@ -722,5 +723,6 @@ void bwd_prop_akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
 
     bwd_execute_final_filtering(offset, weightIndex, dLoss);
     bwd_execute_cnn(offset);
+    bwd_setup_network_inputs(offset, curPixel);
 }
 #endif

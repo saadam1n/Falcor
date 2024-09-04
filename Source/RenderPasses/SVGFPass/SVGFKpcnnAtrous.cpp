@@ -93,7 +93,7 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
         }
     }
 
-    auto perImageCB = mpEvaluatePass->getRootVar()["PerImageCB"];
+    auto perImageCB = mpBackPropagatePass->getRootVar()["PerImageCB"]; ///////////// EVALUATE PASS
     perImageCB["gIllumination"] = mpTestIllum;
     perImageCB["gLinearZAndNormal"] = mpTestNormalDepth;
     perImageCB["gFiltered"] = mpTestOutput;
@@ -103,7 +103,7 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
 
     mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
     mpPixelDebug->prepareProgram(mpEvaluatePass->getProgram(), mpEvaluatePass->getRootVar());
-    mpEvaluatePass->execute(pRenderContext, uint3(1, 1, 25));
+    mpBackPropagatePass->execute(pRenderContext, uint3(1, 1, 25));
     mpPixelDebug->endFrame(pRenderContext);
 
     // now download test data
