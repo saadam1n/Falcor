@@ -15,6 +15,34 @@ SVGFKpcnnAtrousSubpass::SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtil
     mpTestOutput = mpDevice->createTexture2D(
         kMapDim, kMapDim, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
     );
+
+    // set up our variables
+    for (int k = 0; k < kOutputMapsPerLayer * kNumLayers; k++)
+    {
+        for (int s = 0; s < kOutputMapsPerLayer; s++)
+        {
+            for (int i = 0; i < kKernelDim; i++)
+            {
+                for (int j = 0; j < kKernelDim; j++)
+                {
+                    mKernels[k].weights[s][i][j] = 1.0f / (kKernelDim * kKernelDim);
+                }
+                mKernels[k].bias = 0.0f;
+            }
+        }
+    }
+
+    REGISTER_PARAMETER(mpParameterReflector, mPostconvKernels);
+    for (int k = 0; k < kOutputMapsPerLayer; k++)
+    {
+        for (int i = 0; i < kMapDim; i++)
+        {
+            for (int j = 0; j < kMapDim; j++)
+            {
+                mPostconvKernels.dv[k].weights[i][j] = 1.0f / (kMapDim * kMapDim);
+            }
+        }
+    }
 }
 
 void SVGFKpcnnAtrousSubpass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
@@ -26,7 +54,72 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
     // run a simple 5x5 patch and verify that our output is in line with what we would expect
     // 
     // set the test data
+    set_and_update_test_data(pRenderContext);
 
+
+    auto perImageCB = mpEvaluatePass->getRootVar()["PerImageCB"]; ///////////// EVALUATE PASS
+    set_common_parameters(perImageCB);
+
+    mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
+    mpPixelDebug->prepareProgram(mpEvaluatePass->getProgram(), mpEvaluatePass->getRootVar());
+    mpEvaluatePass->execute(pRenderContext, uint3(1, 1, 25));
+    mpPixelDebug->endFrame(pRenderContext);
+
+    return;
+
+    // now download test data
+    std::cout << "GPU Test Result:\n";
+
+    auto outputBitmap = pRenderContext->readTextureSubresource(mpTestOutput.get(), 0);
+    float4(*filteredImage)[kMapDim] = (float4(*)[kMapDim])outputBitmap.data(); // uh super weird syntax I do not understand
+    print_test_result(filteredImage);
+
+    std::cout << "\n\n\n";
+
+    simulate_kpcnn();
+
+    std::cout.flush();
+}
+
+void SVGFKpcnnAtrousSubpass::computeEvaluation(RenderContext* pRenderContext, SVGFRenderData& svgfrd, bool updateInternalBuffers)
+{
+    set_and_update_test_data(pRenderContext);
+
+    auto perImageCB = mpEvaluatePass->getRootVar()["PerImageCB"];
+    set_common_parameters(perImageCB);
+
+    mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
+    mpPixelDebug->prepareProgram(mpEvaluatePass->getProgram(), mpEvaluatePass->getRootVar());
+    mpEvaluatePass->execute(pRenderContext, uint3(1, 1, 25));
+    mpPixelDebug->endFrame(pRenderContext);
+}
+
+void SVGFKpcnnAtrousSubpass::computeBackPropagation(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
+{
+    set_and_update_test_data(pRenderContext);
+
+    auto perImageCB = mpBackPropagatePass->getRootVar()["PerImageCB"];
+    set_common_parameters(perImageCB);
+
+
+    mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
+    mpPixelDebug->prepareProgram(mpBackPropagatePass->getProgram(), mpBackPropagatePass->getRootVar());
+    mpBackPropagatePass->execute(pRenderContext, uint3(1, 1, 25));
+    mpPixelDebug->endFrame(pRenderContext);
+}
+
+void SVGFKpcnnAtrousSubpass::set_common_parameters(ShaderVar& perImageCB)
+{
+    perImageCB["gIllumination"] = mpTestIllum;
+    perImageCB["gLinearZAndNormal"] = mpTestNormalDepth;
+    perImageCB["gFiltered"] = mpTestOutput;
+    perImageCB["gStepSize"] = uint2(1, 1);
+    perImageCB["postconv"].setBlob(mPostconvKernels);
+    perImageCB["kernels"].setBlob(mKernels);
+}
+
+void SVGFKpcnnAtrousSubpass::set_and_update_test_data(RenderContext* pRenderContext)
+{
     float4 tempTestIllumData[5][5] = {
         {float4(0.0f, 0.0f, 0.0f, 0.0f),
          float4(0.0f, 0.0f, 0.0f, 0.0f),
@@ -65,67 +158,14 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
     }
     pRenderContext->updateTextureData(mpTestIllum.get(), (const void*)mTestIllumData);
     pRenderContext->updateTextureData(mpTestNormalDepth.get(), (const void*)mTestNormalData);
-
-    // set up our variables
-    for (int k = 0; k < kOutputMapsPerLayer * kNumLayers; k++)
-    {
-        for (int s = 0; s < kOutputMapsPerLayer; s++)
-        {
-            for (int i = 0; i < kKernelDim; i++)
-            {
-                for (int j = 0; j < kKernelDim; j++)
-                {
-                    mKernels[k].weights[s][i][j] = 1.0f / (kKernelDim * kKernelDim);
-                }
-                mKernels[k].bias = 0.0f;
-            }
-        }
-    }
-
-    for (int k = 0; k < kOutputMapsPerLayer; k++)
-    {
-        for (int i = 0; i < kMapDim; i++)
-        {
-            for (int j = 0; j < kMapDim; j++)
-            {
-                mPostconvKernels[k].weights[i][j] = 1.0f / (kMapDim * kMapDim);
-            }
-        }
-    }
-
-    auto perImageCB = mpBackPropagatePass->getRootVar()["PerImageCB"]; ///////////// EVALUATE PASS
-    perImageCB["gIllumination"] = mpTestIllum;
-    perImageCB["gLinearZAndNormal"] = mpTestNormalDepth;
-    perImageCB["gFiltered"] = mpTestOutput;
-    perImageCB["gStepSize"] = uint2(1, 1);
-    perImageCB["postconv"].setBlob(mPostconvKernels);
-    perImageCB["kernels"].setBlob(mKernels);
-
-    mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
-    mpPixelDebug->prepareProgram(mpEvaluatePass->getProgram(), mpEvaluatePass->getRootVar());
-    mpBackPropagatePass->execute(pRenderContext, uint3(1, 1, 25));
-    mpPixelDebug->endFrame(pRenderContext);
-
-    // now download test data
-    auto outputBitmap = pRenderContext->readTextureSubresource(mpTestOutput.get(), 0);
-    float4(*filteredImage)[kMapDim] = (float4(*)[kMapDim])outputBitmap.data(); // uh super weird syntax I do not understand
-
-    std::cout << "GPU Test Result:\n";
-    print_test_result(filteredImage);
-
-    std::cout << "\n\n\n";
-
-    simulate_kpcnn();
-
-    std::cout.flush();
 }
 
-void SVGFKpcnnAtrousSubpass::computeEvaluation(RenderContext* pRenderContext, SVGFRenderData& svgfrd, bool updateInternalBuffers)
+void SVGFKpcnnAtrousSubpass::download_and_print_patch(RenderContext* pRenderContext, ref<Texture> tex)
 {
+    auto outputBitmap = pRenderContext->readTextureSubresource(tex.get(), 0);
+    float4(*filteredImage)[kMapDim] = (float4(*)[kMapDim])outputBitmap.data(); // uh super weird syntax I do not understand
+    print_test_result(filteredImage);
 }
-
-void SVGFKpcnnAtrousSubpass::computeBackPropagation(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
-{}
 
 
 float SVGFKpcnnAtrousSubpass::ConvolutionKernel::fetch_weight(const int map, const int x, const int y)
@@ -343,7 +383,7 @@ float4 SVGFKpcnnAtrousSubpass::calc_postconv(int pcIndex)
     {
         for (int x = 0; x < kMapDim; x++)
         {
-            tempAccumIllum += mPostconvKernels[pcIndex].fetch_weight(x, y) * mTestIllumData[y][x];
+            tempAccumIllum += mPostconvKernels.dv[pcIndex].fetch_weight(x, y) * mTestIllumData[y][x];
         }
     }
 
@@ -489,5 +529,7 @@ void SVGFKpcnnAtrousSubpass::renderUI(Gui::Widgets& widget)
 {
     mpPixelDebug->renderUI(widget);
 }
+
+
 
 

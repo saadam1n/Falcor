@@ -107,6 +107,8 @@ cbuffer PerImageCB
 
     RWByteAddressBuffer drIllum;
     RWByteAddressBuffer daIllum;
+
+    RWByteAddressBuffer daPostConv;
 };
 
 groupshared CnnMap rbuf[kRingBufferSize];
@@ -197,6 +199,7 @@ groupshared float4 dLdInputlum[kMapDim][kMapDim];
 groupshared CnnPostconvolutionKernel dLdPostconv[kNumOutputWeights];
 groupshared CnnKernel dLdKernel[kOutputMapsPerLayer * kNumLayers];
 groupshared MultiAccum multiaccum;
+groupshared float writeStaging[(kMapDim * kMapDim - 1) / 4 + 1]; // idk if staging is the write word
 
 static uint2 accumIndex;
 #endif
@@ -579,7 +582,23 @@ void bwd_calc_postconv(int pcIndex, float4 dLoss)
             dLdW += multiaccum.read_prop(accumIndex.y, accumIndex.x, y, x);
         }
     }
-    dLdPostconv[pcIndex].save_bwd_prop(accumIndex.y, accumIndex.x, dLdW);
+
+    int linearIdx = accumIndex.y * kMapDim + accumIndex.x;
+    writeStaging[linearIdx] = dLdW;
+    GroupMemoryBarrierWithGroupSync();
+
+    if (linearIdx % 4 == 0)
+    {
+        float4 dump;
+        for (int i = 0; i < 4; i++)
+        {
+            dump[i] = writeStaging[i];
+        }
+
+        const int pcStride = (25 - 1) / 4 + 1;
+        storeDerivBuf4(daPostConv, int2(0, 0), dump, gIllumination, pcStride * pcIndex + linearIdx / 4);
+    }
+
 
     for (int y = 0; y < kMapDim; y++)
     {
@@ -719,9 +738,10 @@ void bwd_prop_akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     dLdInputlum[accumIndex.y][accumIndex.x] = float4(0.0f);
     GroupMemoryBarrierWithGroupSync();
 
-    float4 dLoss = readDerivBuf4(drIllum, curPixel, gIllumination);
+    float4 dLoss = float4(1.0f.xxx, 0.0f);//readDerivBuf4(drIllum, curPixel, gIllumination);
 
     bwd_execute_final_filtering(offset, weightIndex, dLoss);
+    return;
     bwd_execute_cnn(offset);
     bwd_setup_network_inputs(offset, curPixel);
 }

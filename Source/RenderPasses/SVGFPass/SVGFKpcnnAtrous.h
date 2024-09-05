@@ -58,7 +58,9 @@ private:
     ref<Texture> mpTestOutput;
 
 
-
+    void set_common_parameters(ShaderVar& perImageCB);
+    void set_and_update_test_data(RenderContext* pRenderContext);
+    void download_and_print_patch(RenderContext* pRenderContext, ref<Texture> tex);
 
     struct ConvolutionKernel
     {
@@ -95,7 +97,7 @@ private:
 
 
 
-    PostconvolutionKernel mPostconvKernels[kNumOutputWeights];
+    SVGFParameter<PostconvolutionKernel[kNumOutputWeights]> mPostconvKernels;
     ConvolutionKernel mKernels[kOutputMapsPerLayer * kNumLayers];
 
     float4 mTestIllumData[kMapDim][kMapDim];

@@ -190,6 +190,15 @@ void storeDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Textu
     rwaddrbuff.Store4(base_addr, a);
 }
 
+void testStoreDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, float4 val, Texture2D tex, int idx = 0, int offset = 0) {
+    const uint base_addr = sizeof(float4) * idx;
+
+    const int4 a = reinterpret<int4>(val);
+
+    int status;
+    rwaddrbuff.Store4(base_addr, a);
+}
+
 const float4 readDerivBuf4(RWByteAddressBuffer rwaddrbuff, int2 ipos, Texture2D tex, int idx = 0, int offset = 0) {
     const uint base_addr = getBufIdx4(ipos, tex, idx) + offset;
 
