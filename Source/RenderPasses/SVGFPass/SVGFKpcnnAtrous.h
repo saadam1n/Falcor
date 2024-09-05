@@ -52,11 +52,10 @@ private:
 
     std::unique_ptr<PixelDebug> mpPixelDebug;
     
-
+public: // for testing
     ref<Texture> mpTestIllum;
     ref<Texture> mpTestNormalDepth;
     ref<Texture> mpTestOutput;
-
 
     void set_common_parameters(ShaderVar& perImageCB);
     void set_and_update_test_data(RenderContext* pRenderContext);

@@ -35,6 +35,8 @@
 #include "SVGFAtrous.h"
 #include "SVGFKpcnnAtrous.h"
 
+#define KPCNN_TESTING
+
 using namespace Falcor;
 
 class SVGFPass : public RenderPass

@@ -44,7 +44,11 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 
 SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     RenderPass(pDevice),
+    #ifdef KPCNN_TESTING
+    mpUtilities(make_ref<SVGFUtilitySet>(pDevice, 0, 0, 1920, 1080)),
+    #else
     mpUtilities(make_ref<SVGFUtilitySet>(pDevice, 200, 200, 800, 800)),
+    #endif
     mpParameterReflector(make_ref<FilterParameterReflector>(mpUtilities)),
     mRenderData(pDevice, mpUtilities),
     mTrainingDataset(pDevice, mpUtilities, "C:/FalcorFiles/Dataset0/")
@@ -354,6 +358,12 @@ void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, SVGFRenderData& rend
 {
     FALCOR_PROFILE(pRenderContext, "SVGF Filter");
 
+    #ifdef KPCNN_TESTING
+    mpKpcnnAtrousSubpass->computeEvaluation(pRenderContext, renderData, updateInternalBuffers);
+    pRenderContext->blit(mpKpcnnAtrousSubpass->mpTestOutput->getSRV(), mpFinalFbo->getRenderTargetView(0));
+    return;
+    #endif
+
     if (mBuffersNeedClear)
     {
         clearBuffers(pRenderContext, renderData);
@@ -420,7 +430,8 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
     float4* ptr = (float4*)v.data();
 
     double sum = 0.0;
-    for(int i = 0; i < numPixels; i++)
+    int texPixelCount = tex->getWidth() * tex->getHeight();
+    for (int i = 0; i < texPixelCount; i++)
         sum += (double)ptr[i].x;
 
     return sum;
@@ -428,6 +439,12 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+#ifdef KPCNN_TESTING
+    runDerivativeTest(pRenderContext, renderData);
+    return;
+    #endif
+
+
     if (!mKpcnnTested || mKeepRunningKpcnnTest)
     {
         mpKpcnnAtrousSubpass->runTest(pRenderContext);
@@ -860,20 +877,22 @@ void SVGFPass::printLoss(RenderContext* pRenderContext, int sampledFrames)
 
 void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData& renderData)
 {
+#ifndef KPCNN_TESTING
     if(!pScene) return;
+    #endif
 
     mRenderData.copyTextureReferences(renderData);
 
     mDelta = 0.05f;
 
-    float& valToChange = mpAtrousSubpass->mIterationState[mDerivativeIteration].mSigmaL.dv[2][2];
+    //float& valToChange = mpAtrousSubpass->mIterationState[mDerivativeIteration].mSigmaL.dv[2][2];
+    float& valToChange = mpKpcnnAtrousSubpass->mPostconvKernels.dv[0].weights[0][0];
     float oldval = valToChange;
 
     valToChange = oldval - mDelta;
     runSvgfFilter(pRenderContext, mRenderData, false);
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), mpFuncOutputLower->getRTV());
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), renderData.getTexture(kOutputFuncLower)->getRTV());
-
 
     valToChange = oldval + mDelta;
     runSvgfFilter(pRenderContext, mRenderData, false);
@@ -910,7 +929,7 @@ void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVG
 
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 
-    perImageCB["drBackwardsDiffBuffer"] = mpAtrousSubpass->mIterationState[mDerivativeIteration].mSigmaL.da;
+    perImageCB["drBackwardsDiffBuffer"] = mpKpcnnAtrousSubpass->mPostconvKernels.da;
     perImageCB["gFuncOutputLower"] = mpFuncOutputLower;
     perImageCB["gFuncOutputUpper"] = mpFuncOutputUpper;
     perImageCB["delta"] = mDelta;
@@ -944,6 +963,12 @@ void SVGFPass::updateLossBuffers(RenderContext* pRenderContext, SVGFRenderData& 
 void SVGFPass::computeDerivatives(RenderContext* pRenderContext, SVGFRenderData& renderData, bool useLoss)
 {
     FALCOR_PROFILE(pRenderContext, "Bwd Pass");
+
+    #ifdef KPCNN_TESTING
+    mpKpcnnAtrousSubpass->computeBackPropagation(pRenderContext, renderData);
+    return;
+    #endif
+
 
     ref<Texture> pIllumTexture = mpPingPongFbo[0]->getColorTexture(0);
 

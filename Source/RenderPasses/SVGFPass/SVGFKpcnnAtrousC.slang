@@ -592,13 +592,13 @@ void bwd_calc_postconv(int pcIndex, float4 dLoss)
         float4 dump;
         for (int i = 0; i < 4; i++)
         {
-            dump[i] = writeStaging[i];
+            dump[i] = 1.0f;//writeStaging[linearIdx + i];
         }
 
         const int pcStride = (25 - 1) / 4 + 1;
         storeDerivBuf4(daPostConv, int2(0, 0), dump, gIllumination, pcStride * pcIndex + linearIdx / 4);
     }
-
+    return;
 
     for (int y = 0; y < kMapDim; y++)
     {

@@ -65,7 +65,7 @@ void SVGFKpcnnAtrousSubpass::runTest(RenderContext* pRenderContext)
     mpEvaluatePass->execute(pRenderContext, uint3(1, 1, 25));
     mpPixelDebug->endFrame(pRenderContext);
 
-    return;
+    //return;
 
     // now download test data
     std::cout << "GPU Test Result:\n";
@@ -92,6 +92,12 @@ void SVGFKpcnnAtrousSubpass::computeEvaluation(RenderContext* pRenderContext, SV
     mpPixelDebug->prepareProgram(mpEvaluatePass->getProgram(), mpEvaluatePass->getRootVar());
     mpEvaluatePass->execute(pRenderContext, uint3(1, 1, 25));
     mpPixelDebug->endFrame(pRenderContext);
+
+    std::cout << "GPU Test Result:\n";
+
+    auto outputBitmap = pRenderContext->readTextureSubresource(mpTestOutput.get(), 0);
+    float4(*filteredImage)[kMapDim] = (float4(*)[kMapDim])outputBitmap.data(); // uh super weird syntax I do not understand
+    print_test_result(filteredImage);
 }
 
 void SVGFKpcnnAtrousSubpass::computeBackPropagation(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
@@ -101,6 +107,7 @@ void SVGFKpcnnAtrousSubpass::computeBackPropagation(RenderContext* pRenderContex
     auto perImageCB = mpBackPropagatePass->getRootVar()["PerImageCB"];
     set_common_parameters(perImageCB);
 
+    perImageCB["daPostConv"] = mPostconvKernels.da;
 
     mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
     mpPixelDebug->prepareProgram(mpBackPropagatePass->getProgram(), mpBackPropagatePass->getRootVar());
