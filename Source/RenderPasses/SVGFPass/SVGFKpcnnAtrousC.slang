@@ -94,6 +94,9 @@ struct CnnMap
 
 cbuffer PerImageCB
 {
+    // paramters
+    uint2 gStepSize;
+
     CnnPostconvolutionKernel postconv[kNumOutputWeights];
     CnnKernel kernels[kOutputMapsPerLayer * kNumLayers];
     // input buffers
@@ -102,8 +105,6 @@ cbuffer PerImageCB
     texture2D gWorldPosition;
     // output buffer
     RWTexture2D<float4> gFiltered;
-    // paramters
-    uint2 gStepSize;
 
     RWByteAddressBuffer drIllum;
     RWByteAddressBuffer daIllum;

@@ -94,7 +94,7 @@ public: // for testing
         float& get(const int x, const int y);
     };
 
-
+    uint2 mCurrentStepSize;
 
     SVGFParameter<PostconvolutionKernel[kNumOutputWeights]> mPostconvKernels;
     ConvolutionKernel mKernels[kOutputMapsPerLayer * kNumLayers];

@@ -117,11 +117,12 @@ void SVGFKpcnnAtrousSubpass::computeBackPropagation(RenderContext* pRenderContex
 
 void SVGFKpcnnAtrousSubpass::set_common_parameters(ShaderVar& perImageCB)
 {
+    mCurrentStepSize = uint2(1, 1);
     perImageCB["gIllumination"] = mpTestIllum;
     perImageCB["gLinearZAndNormal"] = mpTestNormalDepth;
     perImageCB["gFiltered"] = mpTestOutput;
-    perImageCB["gStepSize"] = uint2(1, 1);
-    perImageCB["postconv"].setBlob(mPostconvKernels);
+    perImageCB["gStepSize"] = mCurrentStepSize;
+    perImageCB["postconv"].setBlob(mPostconvKernels.dv);
     perImageCB["kernels"].setBlob(mKernels);
 }
 
