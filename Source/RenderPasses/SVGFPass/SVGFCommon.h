@@ -92,8 +92,8 @@ namespace
     const std::string kDatasetMotionVector = "MotionVec";
 
     // set common stuff first
-    const size_t screenWidth = 1920;
-    const size_t screenHeight = 1080;
+    const size_t screenWidth = 5;
+    const size_t screenHeight = 5;
     const size_t numPixels = screenWidth * screenHeight;
 
     const float3 dvLuminanceParams = float3(0.2126f, 0.7152f, 0.0722f);
@@ -166,6 +166,8 @@ public:
     ref<Buffer> mpdrCombinedBuffer[2];
 
     void setPatchingState(ref<FullScreenPass> fsPass);
+    void setPatchingState(ref<ComputePass> csPass);
+
 private:
     ref<Device> mpDevice;
 
@@ -178,6 +180,9 @@ private:
     ref<FullScreenPass> mpCompactingPass;
 
     DefineList createPassBasedDefineList(const DefineList& dl, NetworkPassType npt);
+
+    void setPatchingState(ShaderVar patchInfo);
+
 public:
     int2 mPatchMinP;
     int2 mPatchMaxP;

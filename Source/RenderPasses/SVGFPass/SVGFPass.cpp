@@ -45,7 +45,8 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     RenderPass(pDevice),
     #ifdef KPCNN_TESTING
-    mpUtilities(make_ref<SVGFUtilitySet>(pDevice, 0, 0, 1920, 1080)),
+    mpUtilities(make_ref<SVGFUtilitySet>(pDevice, 0, 0, kMapDim, kMapDim))
+    ,
     #else
     mpUtilities(make_ref<SVGFUtilitySet>(pDevice, 200, 200, 800, 800)),
     #endif
@@ -195,6 +196,11 @@ void SVGFPass::clearBuffers(RenderContext* pRenderContext, const SVGFRenderData&
 
 void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
 {
+    #ifdef KPCNN_TESTING
+    dim = uint2(kMapDim, kMapDim);
+    #endif
+
+
     {
         // Screen-size FBOs with 3 MRTs: one that is RGBA32F, one that is
         // RG32F for the luminance moments, and one that is R16F.
@@ -889,18 +895,26 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
     float& valToChange = mpKpcnnAtrousSubpass->mPostconvKernels.dv[0].weights[0][0];
     float oldval = valToChange;
 
+    uint4 dstRect;
+    #ifdef KPCNN_TESTING
+    dstRect = uint4(0, 0, kMapDim, kMapDim);
+    #else
+    dstRect = RenderContext::kMaxRect;
+    #endif
+
     valToChange = oldval - mDelta;
     runSvgfFilter(pRenderContext, mRenderData, false);
-    pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), mpFuncOutputLower->getRTV());
+    pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), mpFuncOutputLower->getRTV(), RenderContext::kMaxRect, dstRect);
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), renderData.getTexture(kOutputFuncLower)->getRTV());
 
     valToChange = oldval + mDelta;
     runSvgfFilter(pRenderContext, mRenderData, false);
-    pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), mpFuncOutputUpper->getRTV());
+    pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), mpFuncOutputUpper->getRTV(), RenderContext::kMaxRect, dstRect);
     pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(),  renderData.getTexture(kOutputFuncUpper)->getRTV());
 
     valToChange = oldval;
 
+    clearTrainingBuffers(pRenderContext);
     runSvgfFilter(pRenderContext, mRenderData, true);
     computeDerivatives(pRenderContext, mRenderData, false);
     computeDerivVerification(pRenderContext, mRenderData);
@@ -926,6 +940,8 @@ void SVGFPass::runDerivativeTest(RenderContext* pRenderContext, const RenderData
 void SVGFPass::computeDerivVerification(RenderContext* pRenderContext, const SVGFRenderData& renderData)
 {
     FALCOR_PROFILE(pRenderContext, "Derivative Verif");
+
+    mpUtilities->setPatchingState(mpDerivativeVerify);
 
     auto perImageCB = mpDerivativeVerify->getRootVar()["PerImageCB"];
 

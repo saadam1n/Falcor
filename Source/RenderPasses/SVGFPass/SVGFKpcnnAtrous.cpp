@@ -87,6 +87,7 @@ void SVGFKpcnnAtrousSubpass::computeEvaluation(RenderContext* pRenderContext, SV
 
     auto perImageCB = mpEvaluatePass->getRootVar()["PerImageCB"];
     set_common_parameters(perImageCB);
+    mpUtilities->setPatchingState(mpEvaluatePass);
 
     mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
     mpPixelDebug->prepareProgram(mpEvaluatePass->getProgram(), mpEvaluatePass->getRootVar());
@@ -106,6 +107,7 @@ void SVGFKpcnnAtrousSubpass::computeBackPropagation(RenderContext* pRenderContex
 
     auto perImageCB = mpBackPropagatePass->getRootVar()["PerImageCB"];
     set_common_parameters(perImageCB);
+    mpUtilities->setPatchingState(mpBackPropagatePass);
 
     perImageCB["daPostConv"] = mPostconvKernels.da;
 
@@ -129,7 +131,7 @@ void SVGFKpcnnAtrousSubpass::set_common_parameters(ShaderVar& perImageCB)
 void SVGFKpcnnAtrousSubpass::set_and_update_test_data(RenderContext* pRenderContext)
 {
     float4 tempTestIllumData[5][5] = {
-        {float4(0.0f, 0.0f, 0.0f, 0.0f),
+        {float4(1.0f, 0.0f, 0.0f, 0.0f),
          float4(0.0f, 0.0f, 0.0f, 0.0f),
          float4(0.0f, 0.0f, 0.0f, 0.0f),
          float4(0.0f, 0.0f, 0.0f, 0.0f),

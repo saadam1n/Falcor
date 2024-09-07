@@ -140,8 +140,14 @@ void SVGFUtilitySet::setPatchingState(ref<FullScreenPass> fsPass)
 {
     auto patchInfo = fsPass->getRootVar()["PatchInfo"];
 
-    patchInfo["patchMinP"] = mPatchMinP;
-    patchInfo["patchMaxP"] = mPatchMaxP;
+    setPatchingState(patchInfo);
+}
+
+void SVGFUtilitySet::setPatchingState(ref<ComputePass> csPass)
+{
+    auto patchInfo = csPass->getRootVar()["PatchInfo"];
+
+    setPatchingState(patchInfo);
 }
 
 DefineList SVGFUtilitySet::createPassBasedDefineList(const DefineList& dl, NetworkPassType npt)
@@ -158,6 +164,12 @@ DefineList SVGFUtilitySet::createPassBasedDefineList(const DefineList& dl, Netwo
     }
 
     return dl2;
+}
+
+void SVGFUtilitySet::setPatchingState(ShaderVar patchInfo)
+{
+    patchInfo["patchMinP"] = mPatchMinP;
+    patchInfo["patchMaxP"] = mPatchMaxP;
 }
 
 FilterParameterReflector::FilterParameterReflector(ref<SVGFUtilitySet> pUtilities) : mpUtilities(pUtilities) {}

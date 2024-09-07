@@ -22,7 +22,7 @@ struct PS_OUT
     float4 bdcol : SV_TARGET2;
 };
 
-PS_OUT main(FullScreenPassVsOut vsOut) 
+PS_OUT main(FullScreenPassVsOut vsOut)
 {
     const int2 ipos = int2(vsOut.posH.xy);
     const int2 texSize = getTextureDims(gFuncOutputLower, 0);
@@ -92,6 +92,8 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     output.col = col;
     output.fdcol = fdcol;
     output.bdcol = bdcol;
+
+    //output.bdcol.y = getBufIdx4(ipos, gFuncOutputLower, 0);
 
     return output;
 

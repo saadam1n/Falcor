@@ -22,7 +22,7 @@ import Utils.Debug.PixelDebug;
 #ifdef BWD_PASS
 #define drbuf(x) dbuf[getRingBufferIndex(x)]
 #endif
-#define GET_RAW_WEIGHTS
+//#define GET_RAW_WEIGHTS
 #define GET_PIXEL_PARAMS \
     const uint2 interleavedIndex = groupId.xy % gStepSize; \
     const uint2 jumpIndex = groupId.xy / gStepSize; \
@@ -593,7 +593,7 @@ void bwd_calc_postconv(int pcIndex, float4 dLoss)
         float4 dump;
         for (int i = 0; i < 4; i++)
         {
-            dump[i] = 1.0f;//writeStaging[linearIdx + i];
+            dump[i] = writeStaging[linearIdx + i];
         }
 
         const int pcStride = (25 - 1) / 4 + 1;
@@ -725,6 +725,7 @@ void bwd_prop_akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
 {
     // first do foward pass, saving inputs as we go
     GET_PIXEL_PARAMS;
+
 
     printSetPixel(offset);
     setup_network_inputs(offset, curPixel);
