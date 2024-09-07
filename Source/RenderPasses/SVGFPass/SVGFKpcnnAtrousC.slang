@@ -564,12 +564,27 @@ float4 calc_postconv(int pcIndex)
 #ifdef BWD_PASS
 void bwd_calc_postconv(int pcIndex, float4 dLoss)
 {
+    if (pcIndex == 0)
+        print("AI ", accumIndex);
+
     for (int y = 0; y < kMapDim; y++)
     {
         for (int x = 0; x < kMapDim; x++)
         {
             float dLdWxy = dot(dLoss * inputlum[y][x], 1.0f.xxxx);
-            multiaccum.save_prop(y, x, accumIndex.y, accumIndex.x, dLdWxy);
+            if (pcIndex == 0 && multiaccum.get_prop_idx(y, x, accumIndex.y, accumIndex.x) < kMapDim * kMapDim)
+            {
+                printSetPixel(uint2(0, 0));
+
+                float2 pv;
+                pv.x = (float)multiaccum.get_prop_idx(y, x, accumIndex.y, accumIndex.x);
+                pv.y = dLdWxy;
+
+                print("\tWr ", pv);
+                printSetPixel(accumIndex);
+            }
+            //multiaccum.save_prop(y, x, accumIndex.y, accumIndex.x, dLdWxy);
+            multiaccum.memory[multiaccum.get_prop_idx(y, x, accumIndex.y, accumIndex.x)] = dLdWxy;
         }
     }
 
@@ -580,7 +595,16 @@ void bwd_calc_postconv(int pcIndex, float4 dLoss)
     {
         for (int x = 0; x < kMapDim; x++)
         {
-            dLdW += multiaccum.read_prop(accumIndex.y, accumIndex.x, y, x);
+            float dLdWxy = multiaccum.read_prop(accumIndex.y, accumIndex.x, y, x);
+            if (pcIndex == 0)
+            {
+                float2 pv;
+                pv.x = (float)multiaccum.get_prop_idx(accumIndex.y, accumIndex.x, y, x);
+                pv.y = dLdWxy;
+                print("\tRd ", pv);
+            }
+
+            dLdW += dLdWxy;
         }
     }
 
