@@ -45,22 +45,28 @@ struct CnnKernel
     float4 weights[(kOutputMapsPerLayer * kKernelDim * kKernelDim + 3) / 4];
     float bias;
 
-    float fetch_weight(const int map, const int x, const int y)
+    int2 get_index(const int map, const int x, const int y)
     {
         const int linearIdx = kKernelDim * kKernelDim * map + kKernelDim * y + x;
         const int elemIdx = linearIdx / 4;
         const int chnlIdx = linearIdx % 4;
-        return weights[elemIdx][chnlIdx];
+        return int2(elemIdx, chnlIdx);
     }
 
+    float fetch_weight(const int map, const int x, const int y)
+    {
+        const int2 idx = get_index(map, x, y);
+        return weights[idx[0]][idx[1]];
+    }
+
+    /*
     [mutating]
     void save_bwd_prop(const int map, const int x, const int y, float w)
     {
-        const int linearIdx = kKernelDim * kKernelDim * map + kKernelDim * y + x;
-        const int elemIdx = linearIdx / 4;
-        const int chnlIdx = linearIdx % 4;
-        weights[elemIdx][chnlIdx] = w;
+        const int2 idx = get_index(map, x, y);
+        weights[idx[0]][idx[1]] = w;
     }
+    */
 };
 
 // alternate name: CnnSummaryKernel
@@ -76,6 +82,7 @@ struct CnnPostconvolutionKernel
         return weights[elemIdx][chnlIdx];
     }
 
+    /*
     [mutating]
     void save_bwd_prop(const int x, const int y, float w)
     {
@@ -84,6 +91,7 @@ struct CnnPostconvolutionKernel
         const int chnlIdx = linearIdx % 4;
         weights[elemIdx][chnlIdx] = w;
     }
+    */
 };
 
 struct CnnMap
@@ -140,6 +148,7 @@ struct MultiAccum
         return idx;
     }
 
+    /*
     [mutating]
     void save_prop(int a0, int a1, int a2, int a3, float x)
     {
@@ -147,6 +156,7 @@ struct MultiAccum
 
         memory[idx] = x;
     }
+    */
 
     float read_prop(int a0, int a1, int a2, int a3)
     {
@@ -155,6 +165,7 @@ struct MultiAccum
         return memory[idx];
     }
 
+    /*
     [mutating]
     void save_prop4(int a0, int a1, int a2, int a3, float4 x)
     {
@@ -165,6 +176,7 @@ struct MultiAccum
             memory[idx + i] = x[i];
         }
     }
+    */
 
     float4 read_prop4(int a0, int a1, int a2, int a3)
     {
@@ -179,6 +191,7 @@ struct MultiAccum
         return x;
     }
 
+    /*
     [mutating]
     void save_kernel(int a0, int a1, int a2, int a3, float x)
     {
@@ -186,6 +199,7 @@ struct MultiAccum
 
         memory[idx] = x;
     }
+    */
 
     float read_kernel(int a0, int a1, int a2, int a3)
     {
@@ -201,6 +215,10 @@ groupshared CnnPostconvolutionKernel dLdPostconv[kNumOutputWeights];
 groupshared CnnKernel dLdKernel[kOutputMapsPerLayer * kNumLayers];
 groupshared MultiAccum multiaccum;
 groupshared float writeStaging[(kMapDim * kMapDim - 1) / 4 + 1]; // idk if staging is the write word
+
+#define STORE_PROP(a0, a1, a2, a3, x) multiaccum.memory[multiaccum.get_prop_idx(a0, a1, a2, a3)] = x
+#define STORE_PROP4(a0, a1, a2, a3, x) { int idx = multiaccum.get_prop_idx(a0, a1, a2, a3) * 4; for (int i = 0; i < 4; i++) { multiaccum.memory[idx + i] = x[i]; }}
+#define STORE_KERNEL(a0, a1, a2, a3, x) multiaccum.memory[multiaccum.get_kernel_idx(a0, a1, a2, a3)] = x
 
 static uint2 accumIndex;
 #endif
@@ -339,7 +357,7 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
 
         for (int j = 0; j < kKernelSummationTerms; j++)
         {
-            multiaccum.save_kernel(i, srcPix.y, srcPix.x, j, 0.0f);
+            STORE_KERNEL(i, srcPix.y, srcPix.x, j, 0.0f);
         }
     }
 
@@ -367,7 +385,7 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
                     float dLdMapVal = dLoss * kernels[kernelIdx].fetch_weight(srcLayer, x + kKernelDistance, y + kKernelDistance);
                     float dLdKernelWeight = dLoss * mapVal;
 
-                    multiaccum.save_kernel(srcLayer, srcPix.y, srcPix.x, offsetIdx, dLdKernelWeight);
+                    STORE_KERNEL(srcLayer, srcPix.y, srcPix.x, offsetIdx, dLdKernelWeight);
 
                     drbuf(readIdx + srcLayer).m[srcPix.y][srcPix.x] += dLdMapVal;
                 }
@@ -397,7 +415,10 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
                 }
             }
 
-            dLdKernel[kernelIdx].save_bwd_prop(srcLayer, srcPix.y, srcPix.x, dLsum);
+            // dLdKernel[kernelIdx].save_bwd_prop(srcLayer, srcPix.y, srcPix.x, dLsum);
+            //  hooray for abstraction!
+            int2 kidx = dLdKernel[kernelIdx].get_index(srcLayer, srcPix.x, srcPix.x);
+            dLdKernel[kernelIdx].weights[kidx[0]][kidx[1]] = dLsum;
         }
 
     }
@@ -439,7 +460,7 @@ void bwd_reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
     }
 
     // now apply bias
-    multiaccum.save_prop(0, 0, offset.y, offset.x, dLoss);
+    STORE_PROP(0, 0, offset.y, offset.x, dLoss);
 
     // ensure everything has been written
     GroupMemoryBarrierWithGroupSync();
@@ -564,27 +585,13 @@ float4 calc_postconv(int pcIndex)
 #ifdef BWD_PASS
 void bwd_calc_postconv(int pcIndex, float4 dLoss)
 {
-    if (pcIndex == 0)
-        print("AI ", accumIndex);
-
     for (int y = 0; y < kMapDim; y++)
     {
         for (int x = 0; x < kMapDim; x++)
         {
             float dLdWxy = dot(dLoss * inputlum[y][x], 1.0f.xxxx);
-            if (pcIndex == 0 && multiaccum.get_prop_idx(y, x, accumIndex.y, accumIndex.x) < kMapDim * kMapDim)
-            {
-                printSetPixel(uint2(0, 0));
-
-                float2 pv;
-                pv.x = (float)multiaccum.get_prop_idx(y, x, accumIndex.y, accumIndex.x);
-                pv.y = dLdWxy;
-
-                print("\tWr ", pv);
-                printSetPixel(accumIndex);
-            }
             //multiaccum.save_prop(y, x, accumIndex.y, accumIndex.x, dLdWxy);
-            multiaccum.memory[multiaccum.get_prop_idx(y, x, accumIndex.y, accumIndex.x)] = dLdWxy;
+            STORE_PROP(y, x, accumIndex.y, accumIndex.x, dLdWxy);
         }
     }
 
@@ -596,14 +603,6 @@ void bwd_calc_postconv(int pcIndex, float4 dLoss)
         for (int x = 0; x < kMapDim; x++)
         {
             float dLdWxy = multiaccum.read_prop(accumIndex.y, accumIndex.x, y, x);
-            if (pcIndex == 0)
-            {
-                float2 pv;
-                pv.x = (float)multiaccum.get_prop_idx(accumIndex.y, accumIndex.x, y, x);
-                pv.y = dLdWxy;
-                print("\tRd ", pv);
-            }
-
             dLdW += dLdWxy;
         }
     }
@@ -630,7 +629,7 @@ void bwd_calc_postconv(int pcIndex, float4 dLoss)
         for (int x = 0; x < kMapDim; x++)
         {
             float4 dLdLumxy = dLoss * postconv[pcIndex].fetch_weight(x, y);
-            multiaccum.save_prop4(y, x, accumIndex.y, accumIndex.x, dLdLumxy);
+            STORE_PROP4(y, x, accumIndex.y, accumIndex.x, dLdLumxy);
         }
     }
 
@@ -645,7 +644,7 @@ void bwd_calc_postconv(int pcIndex, float4 dLoss)
         }
     }
 
-    dLdInputlum[accumIndex.y][accumIndex.x] += dLdLum;
+    dLdInputlum[accumIndex.y][accumIndex.x] = dLdLum;
     GroupMemoryBarrierWithGroupSync(); // resync to prevent any issues
 }
 #endif
@@ -767,7 +766,6 @@ void bwd_prop_akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     float4 dLoss = float4(1.0f.xxx, 0.0f);//readDerivBuf4(drIllum, curPixel, gIllumination);
 
     bwd_execute_final_filtering(offset, weightIndex, dLoss);
-    return;
     bwd_execute_cnn(offset);
     bwd_setup_network_inputs(offset, curPixel);
 }
