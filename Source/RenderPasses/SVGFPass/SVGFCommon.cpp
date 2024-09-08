@@ -42,6 +42,11 @@ ref<Buffer> SVGFUtilitySet::createAccumulationBuffer(int bytes_per_elem, bool ne
     int2 patchDim = mPatchMaxP - mPatchMinP;
     int patchNumPixels = patchDim.x * patchDim.y;
 
+    if (need_reaback)
+    {
+        patchNumPixels = 1024 * 1024;
+    }
+
     mBufferMemUsage += patchNumPixels * bytes_per_elem;
     return make_ref<Buffer>(mpDevice, bytes_per_elem * patchNumPixels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, need_reaback ? MemoryType::ReadBack : MemoryType::DeviceLocal, nullptr);
 }
@@ -441,10 +446,10 @@ void SVGFTrainingDataset::preloadBitmaps()
 
 bool SVGFTrainingDataset::atValidIndex() const
 {
-    #if 1
+    #if 0
     return std::filesystem::exists(getSampleBufferPath(kDatasetColor));
     #else
-    return (mDatasetIndex < 48); // for reduced RAM usage
+    return (mDatasetIndex < 1); 
     #endif
 }
 
@@ -455,6 +460,8 @@ bool SVGFTrainingDataset::loadCurrent(RenderContext* pRenderContext)
     {
         return false;
     }
+
+    return true; // uh I'll end up shooting myself in the foot later
 
     // continue with loading of samples
     for(auto [buffer, tex] : mTextureNameMappings)

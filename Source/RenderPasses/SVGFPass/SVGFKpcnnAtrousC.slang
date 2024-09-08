@@ -622,7 +622,6 @@ void bwd_calc_postconv(int pcIndex, float4 dLoss)
         const int pcStride = (25 - 1) / 4 + 1;
         storeDerivBuf4(daPostConv, int2(0, 0), dump, gIllumination, pcStride * pcIndex + linearIdx / 4);
     }
-    return;
 
     for (int y = 0; y < kMapDim; y++)
     {
@@ -763,7 +762,7 @@ void bwd_prop_akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     dLdInputlum[accumIndex.y][accumIndex.x] = float4(0.0f);
     GroupMemoryBarrierWithGroupSync();
 
-    float4 dLoss = float4(1.0f.xxx, 0.0f);//readDerivBuf4(drIllum, curPixel, gIllumination);
+    float4 dLoss = float4(1.0f, 0.0f, 0.0f, 0.0f);//readDerivBuf4(drIllum, curPixel, gIllumination);
 
     bwd_execute_final_filtering(offset, weightIndex, dLoss);
     bwd_execute_cnn(offset);

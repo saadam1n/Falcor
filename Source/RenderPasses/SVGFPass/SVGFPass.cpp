@@ -445,6 +445,7 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    #if 0
 #ifdef KPCNN_TESTING
     runDerivativeTest(pRenderContext, renderData);
     return;
@@ -457,6 +458,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
         mKpcnnTested = true;
     }
     return;
+    #endif
 
     runTrainingAndTesting(pRenderContext, renderData);
     std::cout.flush();
@@ -980,10 +982,7 @@ void SVGFPass::computeDerivatives(RenderContext* pRenderContext, SVGFRenderData&
 {
     FALCOR_PROFILE(pRenderContext, "Bwd Pass");
 
-    #ifdef KPCNN_TESTING
-    mpKpcnnAtrousSubpass->computeBackPropagation(pRenderContext, renderData);
-    return;
-    #endif
+
 
 
     ref<Texture> pIllumTexture = mpPingPongFbo[0]->getColorTexture(0);
@@ -1002,6 +1001,11 @@ void SVGFPass::computeDerivatives(RenderContext* pRenderContext, SVGFRenderData&
             uint4* dPtr = (uint4*)&defaultDerivative;
             pRenderContext->clearUAV(mpUtilities->mpdrCompactedBuffer[1]->getUAV().get(), *dPtr);
         }
+
+        #ifdef KPCNN_TESTING
+        mpKpcnnAtrousSubpass->computeBackPropagation(pRenderContext, renderData);
+        return;
+        #endif
 
         computeDerivFinalModulate(pRenderContext, renderData);
 
@@ -1034,6 +1038,12 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, SVGFRenderData& render
 
     mpUtilities->executeDummyFullscreenPass(pRenderContext, renderData.pOutputTexture);
     mpUtilities->executeDummyFullscreenPass(pRenderContext, renderData.fetchInternalTex("LossOutput"));
+
+    #ifdef KPCNN_TESTING
+    // try to reproduce input
+    renderData.pReferenceTexture = mpKpcnnAtrousSubpass->mpTestIllum;
+
+    #endif
 
     computeGaussian(pRenderContext, renderData.pReferenceTexture, mLossState.pReferenceGaussian, false);
     computeGaussian(pRenderContext, renderData.pOutputTexture, mLossState.pFilteredGaussian, true);

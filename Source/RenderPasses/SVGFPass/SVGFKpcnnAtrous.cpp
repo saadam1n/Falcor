@@ -10,8 +10,8 @@ SVGFKpcnnAtrousSubpass::SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtil
     mpPixelDebug->enable();
 
     // create some test stuff
-    mpTestIllum = mpDevice->createTexture2D(kMapDim, kMapDim, ResourceFormat::RGBA32Float);
-    mpTestNormalDepth = mpDevice->createTexture2D(kMapDim, kMapDim, ResourceFormat::RGBA32Float);
+    mpTestIllum = mpDevice->createTexture2D(kMapDim, kMapDim, ResourceFormat::RGBA32Float, 1, 1);
+    mpTestNormalDepth = mpDevice->createTexture2D(kMapDim, kMapDim, ResourceFormat::RGBA32Float, 1, 1);
     mpTestOutput = mpDevice->createTexture2D(
         kMapDim, kMapDim, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
     );
@@ -109,6 +109,7 @@ void SVGFKpcnnAtrousSubpass::computeBackPropagation(RenderContext* pRenderContex
     set_common_parameters(perImageCB);
     mpUtilities->setPatchingState(mpBackPropagatePass);
 
+    perImageCB["drIllum"] = mpUtilities->mpdrCompactedBuffer[1];
     perImageCB["daPostConv"] = mPostconvKernels.da;
 
     mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
