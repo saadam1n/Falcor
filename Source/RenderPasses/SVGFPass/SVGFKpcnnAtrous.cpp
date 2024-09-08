@@ -1,5 +1,7 @@
 #include "SVGFKpcnnAtrous.h"
 
+#include <random>
+
 SVGFKpcnnAtrousSubpass::SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtilitySet> pUtilities, ref<FilterParameterReflector> pParameterReflector)
     : mpDevice(pDevice), mpUtilities(pUtilities), mpParameterReflector(pParameterReflector)
 {
@@ -17,6 +19,8 @@ SVGFKpcnnAtrousSubpass::SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtil
     );
 
     // set up our variables
+    std::mt19937 mlp_rng(1234567);
+    std::uniform_real_distribution<> mlp_offset(0.0f, 0.1f);
     for (int k = 0; k < kOutputMapsPerLayer * kNumLayers; k++)
     {
         for (int s = 0; s < kOutputMapsPerLayer; s++)
@@ -25,7 +29,7 @@ SVGFKpcnnAtrousSubpass::SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtil
             {
                 for (int j = 0; j < kKernelDim; j++)
                 {
-                    mKernels[k].weights[s][i][j] = 1.0f / (kKernelDim * kKernelDim);
+                    mKernels[k].weights[s][i][j] = 1.0f / (kKernelDim * kKernelDim) + mlp_offset(mlp_rng);
                 }
                 mKernels[k].bias = 0.0f;
             }
@@ -39,10 +43,11 @@ SVGFKpcnnAtrousSubpass::SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtil
         {
             for (int j = 0; j < kMapDim; j++)
             {
-                mPostconvKernels.dv[k].weights[i][j] = 1.0f / (kMapDim * kMapDim);
+                mPostconvKernels.dv[k].weights[i][j] = 1.0f / (kMapDim * kMapDim) + mlp_offset(mlp_rng);
             }
         }
     }
+
 }
 
 void SVGFKpcnnAtrousSubpass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
@@ -131,34 +136,6 @@ void SVGFKpcnnAtrousSubpass::set_common_parameters(ShaderVar& perImageCB)
 
 void SVGFKpcnnAtrousSubpass::set_and_update_test_data(RenderContext* pRenderContext)
 {
-    float4 tempTestIllumData[5][5] = {
-        {float4(1.0f, 0.0f, 0.0f, 0.0f),
-         float4(0.0f, 0.0f, 0.0f, 0.0f),
-         float4(0.0f, 0.0f, 0.0f, 0.0f),
-         float4(0.0f, 0.0f, 0.0f, 0.0f),
-         float4(0.0f, 0.0f, 0.0f, 0.0f)},
-        {float4(0.0f, 0.0f, 0.0f, 0.0f),
-         float4(1.0f, 0.0f, 0.0f, 0.0f),
-         float4(1.0f, 0.0f, 0.0f, 0.0f),
-         float4(0.0f, 0.0f, 0.0f, 0.0f),
-         float4(0.0f, 0.0f, 0.0f, 0.0f)},
-        {float4(0.0f, 0.0f, 0.0f, 0.0f),
-         float4(1.0f, 0.0f, 0.0f, 0.0f),
-         float4(1.0f, -1.0f, 0.0f, 0.0f),
-         float4(0.0f, -1.0f, 0.0f, 0.0f),
-         float4(0.0f, 0.0f, 0.0f, 0.0f)},
-        {float4(0.0f, 0.0f, 0.0f, 0.0f),
-         float4(0.0f, 0.0f, 0.0f, 0.0f),
-         float4(0.0f, -1.0f, 0.0f, 0.0f),
-         float4(0.0f, -1.0f, 0.0f, 0.0f),
-         float4(0.0f, 0.0f, 0.0f, 0.0f)},
-        {float4(0.0f, 0.0f, 0.0f, 0.0f),
-         float4(0.0f, 0.0f, 0.0f, 0.0f),
-         float4(0.0f, 0.0f, 0.0f, 0.0f),
-         float4(0.0f, 0.0f, 0.0f, 0.0f),
-         float4(0.0f, 0.0f, 0.0f, 0.0f)},
-    };
-
     for (int y = 0; y < kMapDim; y++)
     {
         for (int x = 0; x < kMapDim; x++)

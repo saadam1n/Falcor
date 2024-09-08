@@ -108,6 +108,8 @@ float4 calculateLoss(int2 ipos)
 
     float3 gradientLoss = abs(filteredGradient - referenceGradient);
 
+    gradientLoss = 0.0f; // for current testing
+
     // color diff loss
     float3 filteredCenter = applyLossColorTransform(getFilteredImage(ipos)).rgb;
     float3 referenceCenter = applyLossColorTransform(getReferenceImage(ipos)).rgb;
@@ -120,6 +122,8 @@ float4 calculateLoss(int2 ipos)
     float3 referenceDerivative = (referenceCenter - applyLossColorTransform(getPrevReference(ipos)).rgb) / K_FRAME_TIME;
 
     float3 temporalLoss = abs(filteredDerivative - referenceDerivative);
+
+    temporalLoss = 0.0f; // for current testing
 
     const float3 unnormWeights = float3(2.8f, 0.1f, 1.5f);
     const float3 normWeights = unnormWeights / dot(unnormWeights, 1.0f.xxx);

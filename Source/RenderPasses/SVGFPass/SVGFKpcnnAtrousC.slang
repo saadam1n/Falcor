@@ -762,7 +762,7 @@ void bwd_prop_akpcnn(uint3 threadId, uint3 groupId, uint3 globalId)
     dLdInputlum[accumIndex.y][accumIndex.x] = float4(0.0f);
     GroupMemoryBarrierWithGroupSync();
 
-    float4 dLoss = float4(1.0f, 0.0f, 0.0f, 0.0f);//readDerivBuf4(drIllum, curPixel, gIllumination);
+    float4 dLoss = readDerivBuf4(drIllum, curPixel, gIllumination);
 
     bwd_execute_final_filtering(offset, weightIndex, dLoss);
     bwd_execute_cnn(offset);

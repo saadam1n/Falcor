@@ -37,6 +37,8 @@ TODO:
 - enum for fbo channel indices
 */
 
+//#define DETAILED_GRAD_DESCENT_INFO
+
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
     registry.registerClass<RenderPass, SVGFPass>();
@@ -367,6 +369,7 @@ void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, SVGFRenderData& rend
     #ifdef KPCNN_TESTING
     mpKpcnnAtrousSubpass->computeEvaluation(pRenderContext, renderData, updateInternalBuffers);
     pRenderContext->blit(mpKpcnnAtrousSubpass->mpTestOutput->getSRV(), mpFinalFbo->getRenderTargetView(0));
+    renderData.pOutputTexture = mpKpcnnAtrousSubpass->mpTestOutput;
     return;
     #endif
 
@@ -465,8 +468,8 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 }
 
 
-const int K_NUM_EPOCHS = 1;
-const int K_FRAME_SAMPLE_START = 48;
+const int K_NUM_EPOCHS = 1024;
+const int K_FRAME_SAMPLE_START = 0;
 
 const float K_LRATE_NUMER = 25.0f * 0.0085f; // 0.0085 is a good value
 const float K_LRATE_DENOM = 25.0f * 1.0f;
@@ -798,6 +801,13 @@ void SVGFPass::updateParameters(RenderContext* pRenderContext, int sampledFrames
 
         for (int j = 0; j < pmi.mNumElements; j++)
         {
+#ifdef DETAILED_GRAD_DESCENT_INFO
+            if (pmi.mName.find("Postconv") != std::string::npos)
+            {
+                std::cout << "Elem j " << j << "\n";
+            }
+            #endif
+
             float averageGradient = getAverageGradient(gradient, currentOffset, sampledFrames);
 
             float adjustment = learningRate * calculateBaseAdjustment(averageGradient, pmi.momentum[j], pmi.ssgrad[j]);
@@ -808,8 +818,10 @@ void SVGFPass::updateParameters(RenderContext* pRenderContext, int sampledFrames
 
             if(!isMlpParameter) pmi.mAddress[j] = std::max(pmi.mAddress[j], 0.0f); // gradient clipping
 
+
             currentOffset++;
 
+            #ifdef DETAILED_GRAD_DESCENT_INFO
             std::string printName = pmi.mName + (pmi.mNumElements != 1 ? "[" + std::to_string(j) + "]" : "");
             alsoLog << "\tAdjusting " << printName << "\tby " << -adjustment << "\twhen negative gradient is " << -averageGradient << "\n";
             std::cout << "\tAdjusting " << printName << "\tby " << -adjustment << "\twhen negative gradient is " << -averageGradient << "\n";
@@ -819,6 +831,7 @@ void SVGFPass::updateParameters(RenderContext* pRenderContext, int sampledFrames
                 mismatchedParameters.push_back(pmi.mName);
             }
             std::cout << "\n";
+            #endif
 
             if(abs(adjustment) > abs(maxAdjValue))
             {
@@ -832,16 +845,25 @@ void SVGFPass::updateParameters(RenderContext* pRenderContext, int sampledFrames
         currentOffset = 4 * ((currentOffset + 3) / 4);
     }
 
+    #ifdef DETAILED_GRAD_DESCENT_INFO
+    for (int i = 0; i < currentOffset; i++)
+    {
+        std::cout << i << "\t" << gradient[i] << "\n";
+    }
+    #endif
+
     mReadbackBuffer[0]->unmap();
 
 
     std::cout << "Max adjustment was " << maxAdjValue << "\tfor " << maxAdjParamName  << "\n";
 
     std::cout << mismatchedParameters.size() << " mismatched parameters:\n";
+#ifdef DETAILED_GRAD_DESCENT_INFO
     for(const auto& s : mismatchedParameters)
     {
         std::cout << "\t" << s << "\n";
     }
+    #endif
 
     alsoLog.flush();
     alsoLog.close();
@@ -1042,7 +1064,6 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, SVGFRenderData& render
     #ifdef KPCNN_TESTING
     // try to reproduce input
     renderData.pReferenceTexture = mpKpcnnAtrousSubpass->mpTestIllum;
-
     #endif
 
     computeGaussian(pRenderContext, renderData.pReferenceTexture, mLossState.pReferenceGaussian, false);
@@ -1059,8 +1080,12 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, SVGFRenderData& render
     perImageCB["filteredImage"] = renderData.pOutputTexture;
     perImageCB["referenceImage"] =  renderData.pReferenceTexture;
 
+    #ifndef KPCNN_TESTING
+
     perImageCB["prevFiltered"] = renderData.fetchInternalTex("LossPrevOutput");
     perImageCB["prevReference"] = renderData.fetchInternalTex("LossPrevReference"); 
+
+    #endif
 
     perImageCB["pdaFilteredGaussian"] = mpUtilities->mpdaRawOutputBuffer[0];
     perImageCB["pdaFilteredImage"] = mpUtilities->mpdaRawOutputBuffer[1];

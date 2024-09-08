@@ -112,7 +112,35 @@ namespace
     const float dvWeightFunctionParams[3] {1.0, 1.0, 1.0};
 
     const int kNumReprojectionMlpWeights = 1192;
-}
+
+    float4 tempTestIllumData[5][5] = {
+        {float4(1.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f)},
+        {float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f)},
+        {float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 1.0f, 0.0f, 0.0f),
+         float4(0.0f, 1.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f)},
+        {float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 1.0f, 0.0f, 0.0f),
+         float4(0.0f, 1.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f)},
+        {float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f)},
+    };
+    }
 
 template<typename T>
 struct SVGFParameter
