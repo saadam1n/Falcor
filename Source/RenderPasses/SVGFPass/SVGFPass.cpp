@@ -471,8 +471,8 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 const int K_NUM_EPOCHS = 1024;
 const int K_FRAME_SAMPLE_START = 0;
 
-const float K_LRATE_NUMER = 25.0f * 0.0085f; // 0.0085 is a good value
-const float K_LRATE_DENOM = 25.0f * 1.0f;
+const float K_LRATE_NUMER = 5.0f * 15.0f * 25.0f * 0.0085f; // 0.0085 is a good value
+const float K_LRATE_DENOM = 5.0f * 25.0f * 1.0f;
 
 // parameters for the adam algorithm
 // the paper recommends 0.9 and 0.999 respectively, but we observed that leads to exploding gradients

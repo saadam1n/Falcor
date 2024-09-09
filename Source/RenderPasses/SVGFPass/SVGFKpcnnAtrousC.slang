@@ -10,17 +10,23 @@ import Utils.Debug.PixelDebug;
 #define kKernelDim 3
 #define kKernelSummationTerms (kKernelDim * kKernelDim)
 #define kOutputMapsPerLayer 8
+#define kFwdRingBufferSize (2 * kOutputMapsPerLayer + kKernelSummationTerms - 1) // minus one since for the last write index, we can simultaineously store/accum
+#define kBwdRingBufferSize ((kNumLayers + 2) * kOutputMapsPerLayer + kKernelSummationTerms - 1) // plus two, one for inputs and outputs
+
 #ifdef FWD_PASS
-#define kRingBufferSize (2 * kOutputMapsPerLayer + kKernelSummationTerms - 1) // minus one since for the last write index, we can simultaineously store/accum
+#define kMainRingBufferSize kFwdRingBufferSize
 #else
-#define kRingBufferSize ((kNumLayers + 2) * kOutputMapsPerLayer + kKernelSummationTerms - 1) // plus two, one for inputs and outputs
+#define kMainRingBufferSize kBwdRingBufferSize
 #endif
-#define kNumLayers 4
+
+#define kNumLayers 20
 #define kNumOutputWeights kOutputMapsPerLayer
-#define getRingBufferIndex(x) ((x) % kRingBufferSize)
-#define arbuf(x) rbuf[getRingBufferIndex(x)]
+#define getFwdRingBufferIndex(x) ((x) % kFwdRingBufferSize)
+#define getBwdRingBufferIndex(x) ((x) % kBwdRingBufferSize)
+#define getMainRingBufferIndex(x) ((x) % kMainRingBufferSize)
+#define arbuf(x) rbuf[getMainRingBufferIndex(x)]
 #ifdef BWD_PASS
-#define drbuf(x) dbuf[getRingBufferIndex(x)]
+#define drbuf(x) dbuf[getFwdRingBufferIndex(x)]
 #endif
 //#define GET_RAW_WEIGHTS
 #define GET_PIXEL_PARAMS \
@@ -121,7 +127,7 @@ cbuffer PerImageCB
     RWByteAddressBuffer daKernel;
 };
 
-groupshared CnnMap rbuf[kRingBufferSize];
+groupshared CnnMap rbuf[kMainRingBufferSize];
 groupshared float4 inputlum[kMapDim][kMapDim];
 
 #ifdef BWD_PASS
@@ -210,7 +216,7 @@ struct MultiAccum
     }
 };
 
-groupshared CnnMap dbuf[kRingBufferSize];
+groupshared CnnMap dbuf[kFwdRingBufferSize];
 groupshared float4 dLdInputlum[kMapDim][kMapDim];
 groupshared CnnKernel dLdKernel;
 groupshared MultiAccum multiaccum;
@@ -447,7 +453,7 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
 void reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
 {
     // no fancy parallel reduction for now, just plain "linear" accumulation
-    int dstIdx = getRingBufferIndex(writeIdx);
+    int dstIdx = getMainRingBufferIndex(writeIdx);
 
     for (int i = 1; i < kKernelSummationTerms; i++)
     {
@@ -468,7 +474,7 @@ void reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
 void bwd_reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
 {
     // no fancy parallel reduction for now, just plain "linear" accumulation
-    int dstIdx = getRingBufferIndex(writeIdx);
+    int dstIdx = getMainRingBufferIndex(writeIdx);
 
     // expand the loss if ReLU didn't zero out our loss
     float dLoss = (rbuf[dstIdx].m[offset.y][offset.x] > 0.0f ? dbuf[dstIdx].m[offset.y][offset.x] : 0.0f);

@@ -20,7 +20,7 @@ using namespace Falcor;
 #define kRingBufferSize \
     (2 * kOutputMapsPerLayer + kKernelSummationTerms - 1 + kRingBufferDebugAdditionalSize) // minus one since for the last write index, we
                                                                                            // can simultaineously store/accum
-#define kNumLayers 4
+#define kNumLayers 20
 #define kNumOutputWeights kOutputMapsPerLayer
 #define getRingBufferIndex(x) ((x) % kRingBufferSize)
 #define arbuf(x) mRbuf[getRingBufferIndex(x)]
@@ -87,7 +87,7 @@ public: // for testing
 
         PostconvolutionKernel gen_smax_kernel();
         void update_raw_weights(const PostconvolutionKernel& dLdPostconv, PostconvolutionKernel& gradStorage);
-        float getNormFactor();
+        float2 getNormFactor();
     };
 
     struct PostconvUpdate : public DefaultParameterUpdateHandler

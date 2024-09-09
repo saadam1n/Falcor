@@ -20,7 +20,7 @@ SVGFKpcnnAtrousSubpass::SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtil
 
     // set up our variables
     std::mt19937 mlp_rng(1234567);
-    std::uniform_real_distribution<> mlp_offset(-0.05f, 0.05f);
+    std::uniform_real_distribution<> mlp_offset(-0.5f, 0.5f);
 
     REGISTER_PARAMETER(mpParameterReflector, mKernels);
     for (int k = 0; k < kOutputMapsPerLayer * kNumLayers; k++)
@@ -33,8 +33,7 @@ SVGFKpcnnAtrousSubpass::SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtil
                 {
                     mKernels.dv[k].weights[s][i][j] = 1.0f / (kKernelDim * kKernelDim) + mlp_offset(mlp_rng);
                 }
-                mKernels.dv[k].bias = 0.0f;
-                //mlp_offset(mlp_rng);
+                mKernels.dv[k].bias = mlp_offset(mlp_rng);
             }
         }
     }
@@ -47,7 +46,7 @@ SVGFKpcnnAtrousSubpass::SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtil
             for (int j = 0; j < kMapDim; j++)
             {
                 //mPostconvKernels.dv[k].weights[i][j] = 1.0f / (kMapDim * kMapDim) + mlp_offset(mlp_rng);
-                mUnormPostconvKernels[k].weights[i][j] = 1.0f + mlp_offset(mlp_rng);
+                mUnormPostconvKernels[k].weights[i][j] = 5.0f * mlp_offset(mlp_rng);
             }
         }
     }
@@ -184,14 +183,14 @@ float SVGFKpcnnAtrousSubpass::PostconvolutionKernel::fetch_weight(const int x, c
 
 SVGFKpcnnAtrousSubpass::PostconvolutionKernel SVGFKpcnnAtrousSubpass::PostconvolutionKernel::gen_smax_kernel()
 {
-    float normFactor = getNormFactor();
+    float2 normFactor = getNormFactor();
 
     PostconvolutionKernel postconv = *this;
     for (int i = 0; i < kMapDim; i++)
     {
         for (int j = 0; j < kMapDim; j++)
         {
-            postconv.weights[i][j] = exp(postconv.weights[i][j]) / normFactor;
+            postconv.weights[i][j] = exp(postconv.weights[i][j] - normFactor.y) / normFactor.x;
         }
     }
 
@@ -203,18 +202,19 @@ void SVGFKpcnnAtrousSubpass::PostconvolutionKernel::update_raw_weights(
     PostconvolutionKernel& gradStorage
 )
 {
-    float normFactor = getNormFactor();
+    float2 normFactor = getNormFactor();
 
     float dLdNormFactor = 0.0f;
 
     PostconvolutionKernel normKernel = gen_smax_kernel();
 
+    PostconvolutionKernel tempGrad;
     for (int i = 0; i < kMapDim; i++)
     {
         for (int j = 0; j < kMapDim; j++)
         {
-            gradStorage.weights[i][j] = dLdPostconv.weights[i][j] / normFactor;
-            dLdNormFactor += -dLdPostconv.weights[i][j] * normKernel.weights[i][j] / (normFactor * normFactor);
+            tempGrad.weights[i][j] = dLdPostconv.weights[i][j] / normFactor.x;
+            dLdNormFactor += -dLdPostconv.weights[i][j] * normKernel.weights[i][j] / (normFactor.x * normFactor.x);
         }
     }
 
@@ -222,12 +222,16 @@ void SVGFKpcnnAtrousSubpass::PostconvolutionKernel::update_raw_weights(
     {
         for (int j = 0; j < kMapDim; j++)
         {
-            gradStorage.weights[i][j] += dLdNormFactor;
+            tempGrad.weights[i][j] += dLdNormFactor;
+
+            gradStorage.weights[i][j] = tempGrad.weights[i][j] * normKernel.weights[i][j];
         }
     }
+
+
 }
 
-float SVGFKpcnnAtrousSubpass::PostconvolutionKernel::getNormFactor()
+float2 SVGFKpcnnAtrousSubpass::PostconvolutionKernel::getNormFactor()
 {
     float maxRawValue = weights[0][0];
     for (int i = 0; i < kMapDim; i++)
@@ -243,11 +247,11 @@ float SVGFKpcnnAtrousSubpass::PostconvolutionKernel::getNormFactor()
     {
         for (int j = 0; j < kMapDim; j++)
         {
-            normFactor += exp(weights[i][j]);
+            normFactor += exp(weights[i][j] - maxRawValue);
         }
     }
 
-    return normFactor;
+    return float2(normFactor, maxRawValue);
 }
 
 float& SVGFKpcnnAtrousSubpass::ConvolutionMap::get(const int x, const int y)
