@@ -20,7 +20,9 @@ SVGFKpcnnAtrousSubpass::SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtil
 
     // set up our variables
     std::mt19937 mlp_rng(1234567);
-    std::uniform_real_distribution<> mlp_offset(0.0f, 0.1f);
+    std::uniform_real_distribution<> mlp_offset(-0.05f, 0.05f);
+
+    REGISTER_PARAMETER(mpParameterReflector, mKernels);
     for (int k = 0; k < kOutputMapsPerLayer * kNumLayers; k++)
     {
         for (int s = 0; s < kOutputMapsPerLayer; s++)
@@ -29,9 +31,10 @@ SVGFKpcnnAtrousSubpass::SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtil
             {
                 for (int j = 0; j < kKernelDim; j++)
                 {
-                    mKernels[k].weights[s][i][j] = 1.0f / (kKernelDim * kKernelDim) + mlp_offset(mlp_rng);
+                    mKernels.dv[k].weights[s][i][j] = 1.0f / (kKernelDim * kKernelDim) + mlp_offset(mlp_rng);
                 }
-                mKernels[k].bias = 0.0f;
+                mKernels.dv[k].bias = 0.0f;
+                //mlp_offset(mlp_rng);
             }
         }
     }
@@ -115,6 +118,7 @@ void SVGFKpcnnAtrousSubpass::computeBackPropagation(RenderContext* pRenderContex
     mpUtilities->setPatchingState(mpBackPropagatePass);
 
     perImageCB["drIllum"] = mpUtilities->mpdrCompactedBuffer[1];
+    perImageCB["daKernel"] = mKernels.da;
     perImageCB["daPostConv"] = mPostconvKernels.da;
 
     mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
@@ -131,7 +135,7 @@ void SVGFKpcnnAtrousSubpass::set_common_parameters(ShaderVar& perImageCB)
     perImageCB["gFiltered"] = mpTestOutput;
     perImageCB["gStepSize"] = mCurrentStepSize;
     perImageCB["postconv"].setBlob(mPostconvKernels.dv);
-    perImageCB["kernels"].setBlob(mKernels);
+    perImageCB["kernels"].setBlob(mKernels.dv);
 }
 
 void SVGFKpcnnAtrousSubpass::set_and_update_test_data(RenderContext* pRenderContext)
@@ -256,7 +260,7 @@ void SVGFKpcnnAtrousSubpass::convolve_kernel(uint2 srcPix, int readIdx, int writ
                 for (int srcLayer = 0; srcLayer < kOutputMapsPerLayer; srcLayer++)
                 {
                     float mapVal = arbuf(readIdx + srcLayer).m[srcPix.y][srcPix.x];
-                    sum += mapVal * mKernels[kernelIdx].fetch_weight(srcLayer, x + kKernelDistance, y + kKernelDistance);
+                    sum += mapVal * mKernels.dv[kernelIdx].fetch_weight(srcLayer, x + kKernelDistance, y + kKernelDistance);
                 }
 
                 int offsetIdx = kKernelDim * (y + kKernelDistance) + (x + kKernelDistance);
@@ -281,7 +285,7 @@ void SVGFKpcnnAtrousSubpass::reduce_and_activate(uint2 offset, int writeIdx, int
     }
 
     // now apply bias
-    mRbuf[dstIdx].m[offset.y][offset.x] += mKernels[kernelIdx].bias;
+    mRbuf[dstIdx].m[offset.y][offset.x] += mKernels.dv[kernelIdx].bias;
 
     // apply ReLU
     mRbuf[dstIdx].m[offset.y][offset.x] = std::max(mRbuf[dstIdx].m[offset.y][offset.x], 0.0f);
@@ -484,7 +488,7 @@ void SVGFKpcnnAtrousSubpass::reference_convolution(int readIdx, int kernelIdx, C
         {
             for (int xdst = 0; xdst < kMapDim; xdst++)
             {
-                float sum = mKernels[kernelIdx + dstLayer].bias;
+                float sum = mKernels.dv[kernelIdx + dstLayer].bias;
 
                 for (int srcLayer = 0; srcLayer < kOutputMapsPerLayer; srcLayer++)
                 {
@@ -501,7 +505,7 @@ void SVGFKpcnnAtrousSubpass::reference_convolution(int readIdx, int kernelIdx, C
                             }
 
                             float sourcev = arbuf(readIdx + srcLayer).m[ysrc][xsrc];
-                            sum += mKernels[kernelIdx + dstLayer].fetch_weight(dstLayer, xoff + kKernelDistance, yoff + kKernelDistance) *
+                            sum += mKernels.dv[kernelIdx + dstLayer].fetch_weight(dstLayer, xoff + kKernelDistance, yoff + kKernelDistance) *
                                    sourcev;
                         }
                     }

@@ -97,7 +97,7 @@ public: // for testing
     uint2 mCurrentStepSize;
 
     SVGFParameter<PostconvolutionKernel[kNumOutputWeights]> mPostconvKernels;
-    ConvolutionKernel mKernels[kOutputMapsPerLayer * kNumLayers];
+    SVGFParameter<ConvolutionKernel[kOutputMapsPerLayer * kNumLayers]> mKernels;
 
     float4 mTestIllumData[kMapDim][kMapDim];
     float4 mTestNormalData[kMapDim][kMapDim];

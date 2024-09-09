@@ -45,7 +45,7 @@ struct CnnKernel
     float4 weights[(kOutputMapsPerLayer * kKernelDim * kKernelDim + 3) / 4];
     float bias;
 
-    int2 get_index(const int map, const int x, const int y)
+    static int2 get_index(const int map, const int x, const int y)
     {
         const int linearIdx = kKernelDim * kKernelDim * map + kKernelDim * y + x;
         const int elemIdx = linearIdx / 4;
@@ -118,6 +118,7 @@ cbuffer PerImageCB
     RWByteAddressBuffer daIllum;
 
     RWByteAddressBuffer daPostConv;
+    RWByteAddressBuffer daKernel;
 };
 
 groupshared CnnMap rbuf[kRingBufferSize];
@@ -128,7 +129,7 @@ struct MultiAccum
 {
     float memory[kMapDim * kMapDim * kMapDim * kMapDim * 4];
 
-    int get_prop_idx(int a0, int a1, int a2, int a3)
+    static int get_prop_idx(int a0, int a1, int a2, int a3)
     {
         int idx = (kMapDim * kMapDim * kMapDim) * a0 +
                   (kMapDim * kMapDim) * a1 +
@@ -138,11 +139,11 @@ struct MultiAccum
         return idx;
     }
 
-    int get_kernel_idx(int a0, int a1, int a2, int a3)
+    static int get_kernel_idx(int a0, int a1, int a2, int a3)
     {
-        int idx = (kKernelDim * kKernelDim * kKernelSummationTerms) * a0 +
-                  (kKernelDim * kKernelSummationTerms) * a1 +
-                  (kKernelSummationTerms)*a2 +
+        int idx = (kMapDim * kKernelSummationTerms * kNumOutputWeights) * a0 +
+                  (kKernelSummationTerms * kNumOutputWeights) * a1 +
+                  (kNumOutputWeights)*a2 +
                   a3;
 
         return idx;
@@ -211,8 +212,7 @@ struct MultiAccum
 
 groupshared CnnMap dbuf[kRingBufferSize];
 groupshared float4 dLdInputlum[kMapDim][kMapDim];
-groupshared CnnPostconvolutionKernel dLdPostconv[kNumOutputWeights];
-groupshared CnnKernel dLdKernel[kOutputMapsPerLayer * kNumLayers];
+groupshared CnnKernel dLdKernel;
 groupshared MultiAccum multiaccum;
 groupshared float writeStaging[(kMapDim * kMapDim - 1) / 4 + 1]; // idk if staging is the write word
 
@@ -334,10 +334,10 @@ void convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
                 for (int srcLayer = 0; srcLayer < kOutputMapsPerLayer; srcLayer++)
                 {
                     float mapVal = arbuf(readIdx + srcLayer).m[srcPix.y][srcPix.x];
-                    sum += mapVal * kernels[kernelIdx].fetch_weight(srcLayer, x + kKernelDistance, y + kKernelDistance);
+                    sum += mapVal * kernels[kernelIdx].fetch_weight(srcLayer, kKernelDistance - x, kKernelDistance - y);
                 }
 
-                int offsetIdx = kKernelDim * (y + kKernelDistance) + (x + kKernelDistance);
+                int offsetIdx = kKernelDim * (kKernelDistance - y) + (kKernelDistance - x);
 
                 arbuf(writeIdx + offsetIdx).m[dstPixel.y][dstPixel.x] = sum;
             }
@@ -351,13 +351,11 @@ void convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
 #ifdef BWD_PASS
 void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
 {
-    for (int i = 0; i < kOutputMapsPerLayer; i++)
+    for (int i = 0; i < kKernelSummationTerms; i++)
     {
-        drbuf(readIdx + i).m[srcPix.y][srcPix.x] = 0.0f;
-
-        for (int j = 0; j < kKernelSummationTerms; j++)
+        for (int j = 0; j < kOutputMapsPerLayer; j++)
         {
-            STORE_KERNEL(i, srcPix.y, srcPix.x, j, 0.0f);
+            STORE_KERNEL(srcPix.y, srcPix.x, i,  j, 0.0f);
         }
     }
 
@@ -369,9 +367,23 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
             const int2 dstPixel = int2(srcPix) + int2(x, y);
             const bool inside = all(dstPixel >= int2(0)) && all(dstPixel < int2(kMapDim));
 
+            int offsetIdx = kKernelDim * (kKernelDistance - y) + (kKernelDistance - x);
+
+            if(srcPix.x == 4 && srcPix.y == 0 && kernelIdx == 0)
+            {
+                int4 con;
+
+                con.x = dstPixel.x;
+                con.y = dstPixel.y;
+                con.z = int(inside);
+                con.w = offsetIdx;
+
+                print(" Stuff ", con);
+            }
+
             if (inside)
             {
-                int offsetIdx = kKernelDim * (y + kKernelDistance) + (x + kKernelDistance);
+
                 float dLoss = drbuf(writeIdx + offsetIdx).m[dstPixel.y][dstPixel.x];
 
                 // float sum = 0.0f;
@@ -379,13 +391,17 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
 
                 for (int srcLayer = 0; srcLayer < kOutputMapsPerLayer; srcLayer++)
                 {
+
+
                     float mapVal = arbuf(readIdx + srcLayer).m[srcPix.y][srcPix.x];
                     //sum += mapVal * kernels[kernelIdx].fetch_weight(srcLayer, x + kKernelDistance, y + kKernelDistance);
 
-                    float dLdMapVal = dLoss * kernels[kernelIdx].fetch_weight(srcLayer, x + kKernelDistance, y + kKernelDistance);
+                    float dLdMapVal = dLoss * kernels[kernelIdx].fetch_weight(srcLayer, kKernelDistance - x, kKernelDistance - y);
                     float dLdKernelWeight = dLoss * mapVal;
 
-                    STORE_KERNEL(srcLayer, srcPix.y, srcPix.x, offsetIdx, dLdKernelWeight);
+                    dLdKernelWeight = 1.0f;
+
+                    STORE_KERNEL(srcPix.y, srcPix.x, offsetIdx, srcLayer, dLdKernelWeight);
 
                     drbuf(readIdx + srcLayer).m[srcPix.y][srcPix.x] += dLdMapVal;
                 }
@@ -411,17 +427,43 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
             {
                 for (int x = 0; x < kMapDim; x++)
                 {
-                    dLsum += multiaccum.read_kernel(srcLayer, y, x, offsetIdx);
+                    dLsum += multiaccum.read_kernel(y, x, offsetIdx, srcLayer);
+
+                    float3 con;
+                    con.x = x;
+                    con.y = y;
+                    con.z = multiaccum.read_kernel(y, x, offsetIdx, srcLayer);
+
+                    if(kernelIdx == 0)
+                    print("\tRd", con);
                 }
             }
 
             // dLdKernel[kernelIdx].save_bwd_prop(srcLayer, srcPix.y, srcPix.x, dLsum);
             //  hooray for abstraction!
-            int2 kidx = dLdKernel[kernelIdx].get_index(srcLayer, srcPix.x, srcPix.x);
-            dLdKernel[kernelIdx].weights[kidx[0]][kidx[1]] = dLsum;
+            int2 kidx = dLdKernel.get_index(srcLayer, srcPix.x, srcPix.y);
+            dLdKernel.weights[kidx[0]][kidx[1]] = dLsum;
         }
 
     }
+
+    // get all writes to sync, now we have to write it
+    GroupMemoryBarrierWithGroupSync();
+
+    int linearIdx = accumIndex.y * kMapDim + accumIndex.x;
+    const int kernelStride = ((sizeof(CnnKernel) / 4 + 3) / 4);
+    while (linearIdx < (kKernelDim * kKernelDim * kOutputMapsPerLayer + 3) / 4)
+    {
+        float4 dump = dLdKernel.weights[linearIdx];
+        storeDerivBuf4(daKernel, int2(0, 0), dump, gIllumination, kernelStride * kernelIdx + linearIdx);
+        linearIdx += kMapDim * kMapDim;
+    }
+
+    if (srcPix.x == 0 && srcPix.y == 0)
+    {
+        storeDerivBuf4( daKernel, int2(0, 0), float4(dLdKernel.bias, -999999.0f.xxx), gIllumination, kernelStride * kernelIdx + (kKernelDim * kKernelDim * kOutputMapsPerLayer + 3) / 4);
+    }
+
 }
 #endif
 
@@ -474,7 +516,7 @@ void bwd_reduce_and_activate(uint2 offset, int writeIdx, int kernelIdx)
                 dLdBias += multiaccum.read_prop(0, 0, offset.y, offset.x);
             }
         }
-        dLdKernel[kernelIdx].bias = dLdBias;
+        dLdKernel.bias = dLdBias;
     }
 
     // resync for next layer
@@ -514,6 +556,11 @@ void bwd_execute_cnn(const uint2 offset)
     for (int layerIndex = kNumLayers - 1; layerIndex >= 0; layerIndex--)
     {
         currentReadIndex -= kOutputMapsPerLayer;
+
+        for (int i = 0; i < kOutputMapsPerLayer; i++)
+        {
+            drbuf(currentReadIndex + i).m[offset.y][offset.x] = 0.0f;
+        }
 
         for (int outputMapIndex = kOutputMapsPerLayer - 1; outputMapIndex >= 0; outputMapIndex--)
         {

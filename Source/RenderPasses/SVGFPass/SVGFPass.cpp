@@ -37,7 +37,7 @@ TODO:
 - enum for fbo channel indices
 */
 
-//#define DETAILED_GRAD_DESCENT_INFO
+#define DETAILED_GRAD_DESCENT_INFO
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
