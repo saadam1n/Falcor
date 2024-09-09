@@ -39,14 +39,15 @@ SVGFKpcnnAtrousSubpass::SVGFKpcnnAtrousSubpass(ref<Device> pDevice, ref<SVGFUtil
         }
     }
 
-    REGISTER_PARAMETER(mpParameterReflector, mPostconvKernels);
+    REGISTER_PARAMETER_EX(mpParameterReflector, mPostconvKernels, make_ref<PostconvUpdate>(this));
     for (int k = 0; k < kOutputMapsPerLayer; k++)
     {
         for (int i = 0; i < kMapDim; i++)
         {
             for (int j = 0; j < kMapDim; j++)
             {
-                mPostconvKernels.dv[k].weights[i][j] = 1.0f / (kMapDim * kMapDim) + mlp_offset(mlp_rng);
+                //mPostconvKernels.dv[k].weights[i][j] = 1.0f / (kMapDim * kMapDim) + mlp_offset(mlp_rng);
+                mUnormPostconvKernels[k].weights[i][j] = 1.0f + mlp_offset(mlp_rng);
             }
         }
     }
@@ -129,6 +130,11 @@ void SVGFKpcnnAtrousSubpass::computeBackPropagation(RenderContext* pRenderContex
 
 void SVGFKpcnnAtrousSubpass::set_common_parameters(ShaderVar& perImageCB)
 {
+    for (int i = 0; i < kNumOutputWeights; i++)
+    {
+        mPostconvKernels.dv[i] = mUnormPostconvKernels[i].gen_smax_kernel();
+    }
+
     mCurrentStepSize = uint2(1, 1);
     perImageCB["gIllumination"] = mpTestIllum;
     perImageCB["gLinearZAndNormal"] = mpTestNormalDepth;
@@ -174,6 +180,74 @@ float SVGFKpcnnAtrousSubpass::PostconvolutionKernel::fetch_weight(const int x, c
     const int elemIdx = linearIdx / 4;
     const int chnlIdx = linearIdx % 4;
     return packed_weights[elemIdx][chnlIdx];
+}
+
+SVGFKpcnnAtrousSubpass::PostconvolutionKernel SVGFKpcnnAtrousSubpass::PostconvolutionKernel::gen_smax_kernel()
+{
+    float normFactor = getNormFactor();
+
+    PostconvolutionKernel postconv = *this;
+    for (int i = 0; i < kMapDim; i++)
+    {
+        for (int j = 0; j < kMapDim; j++)
+        {
+            postconv.weights[i][j] = exp(postconv.weights[i][j]) / normFactor;
+        }
+    }
+
+    return postconv;
+}
+
+void SVGFKpcnnAtrousSubpass::PostconvolutionKernel::update_raw_weights(
+    const PostconvolutionKernel& dLdPostconv,
+    PostconvolutionKernel& gradStorage
+)
+{
+    float normFactor = getNormFactor();
+
+    float dLdNormFactor = 0.0f;
+
+    PostconvolutionKernel normKernel = gen_smax_kernel();
+
+    for (int i = 0; i < kMapDim; i++)
+    {
+        for (int j = 0; j < kMapDim; j++)
+        {
+            gradStorage.weights[i][j] = dLdPostconv.weights[i][j] / normFactor;
+            dLdNormFactor += -dLdPostconv.weights[i][j] * normKernel.weights[i][j] / (normFactor * normFactor);
+        }
+    }
+
+    for (int i = 0; i < kMapDim; i++)
+    {
+        for (int j = 0; j < kMapDim; j++)
+        {
+            gradStorage.weights[i][j] += dLdNormFactor;
+        }
+    }
+}
+
+float SVGFKpcnnAtrousSubpass::PostconvolutionKernel::getNormFactor()
+{
+    float maxRawValue = weights[0][0];
+    for (int i = 0; i < kMapDim; i++)
+    {
+        for (int j = 0; j < kMapDim; j++)
+        {
+            maxRawValue = std::max(maxRawValue, weights[i][j]);
+        }
+    }
+
+    float normFactor = 0.0f;
+    for (int i = 0; i < kMapDim; i++)
+    {
+        for (int j = 0; j < kMapDim; j++)
+        {
+            normFactor += exp(weights[i][j]);
+        }
+    }
+
+    return normFactor;
 }
 
 float& SVGFKpcnnAtrousSubpass::ConvolutionMap::get(const int x, const int y)
@@ -522,6 +596,24 @@ void SVGFKpcnnAtrousSubpass::renderUI(Gui::Widgets& widget)
     mpPixelDebug->renderUI(widget);
 }
 
+SVGFKpcnnAtrousSubpass::PostconvUpdate::PostconvUpdate(SVGFKpcnnAtrousSubpass* p) : mParent(p) {}
 
+ParameterUpdateTask SVGFKpcnnAtrousSubpass::PostconvUpdate::propagate(float* grad)
+{
+    PostconvolutionKernel* pck = (PostconvolutionKernel*)grad;
 
+    for (int i = 0; i < kNumOutputWeights; i++)
+    {
+        mParent->mUnormPostconvKernels[i].update_raw_weights(pck[i], mParent->mPostconvGradStorage[i]);
+    }
 
+    ParameterUpdateTask put;
+
+    put.paramters = (float*)&mParent->mUnormPostconvKernels;
+    put.grad = (float*)&mParent->mPostconvGradStorage;
+    put.ssgrad = ssgrad.data();
+    put.momentum = momentum.data();
+    put.numElements = numElements;
+
+    return put;
+}

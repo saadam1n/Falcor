@@ -369,21 +369,8 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
 
             int offsetIdx = kKernelDim * (kKernelDistance - y) + (kKernelDistance - x);
 
-            if(srcPix.x == 4 && srcPix.y == 0 && kernelIdx == 0)
-            {
-                int4 con;
-
-                con.x = dstPixel.x;
-                con.y = dstPixel.y;
-                con.z = int(inside);
-                con.w = offsetIdx;
-
-                print(" Stuff ", con);
-            }
-
             if (inside)
             {
-
                 float dLoss = drbuf(writeIdx + offsetIdx).m[dstPixel.y][dstPixel.x];
 
                 // float sum = 0.0f;
@@ -398,8 +385,6 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
 
                     float dLdMapVal = dLoss * kernels[kernelIdx].fetch_weight(srcLayer, kKernelDistance - x, kKernelDistance - y);
                     float dLdKernelWeight = dLoss * mapVal;
-
-                    dLdKernelWeight = 1.0f;
 
                     STORE_KERNEL(srcPix.y, srcPix.x, offsetIdx, srcLayer, dLdKernelWeight);
 
@@ -428,14 +413,6 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
                 for (int x = 0; x < kMapDim; x++)
                 {
                     dLsum += multiaccum.read_kernel(y, x, offsetIdx, srcLayer);
-
-                    float3 con;
-                    con.x = x;
-                    con.y = y;
-                    con.z = multiaccum.read_kernel(y, x, offsetIdx, srcLayer);
-
-                    if(kernelIdx == 0)
-                    print("\tRd", con);
                 }
             }
 
@@ -461,7 +438,7 @@ void bwd_convolve_kernel(uint2 srcPix, int readIdx, int writeIdx, int kernelIdx)
 
     if (srcPix.x == 0 && srcPix.y == 0)
     {
-        storeDerivBuf4( daKernel, int2(0, 0), float4(dLdKernel.bias, -999999.0f.xxx), gIllumination, kernelStride * kernelIdx + (kKernelDim * kKernelDim * kOutputMapsPerLayer + 3) / 4);
+        storeDerivBuf4( daKernel, int2(0, 0), float4(dLdKernel.bias, 0.0f.xxx), gIllumination, kernelStride * kernelIdx + (kKernelDim * kKernelDim * kOutputMapsPerLayer + 3) / 4);
     }
 
 }
@@ -550,7 +527,7 @@ int execute_cnn(const uint2 offset)
 void bwd_execute_cnn(const uint2 offset)
 {
     int currentReadIndex = kNumLayers * kOutputMapsPerLayer;
-    int currentWriteIndex = kOutputMapsPerLayer;
+    int currentWriteIndex = (kNumLayers + 1) * kOutputMapsPerLayer;
     int currentKernelIdx = kNumLayers * kOutputMapsPerLayer;
 
     for (int layerIndex = kNumLayers - 1; layerIndex >= 0; layerIndex--)

@@ -179,7 +179,13 @@ void SVGFUtilitySet::setPatchingState(ShaderVar patchInfo)
 
 FilterParameterReflector::FilterParameterReflector(ref<SVGFUtilitySet> pUtilities) : mpUtilities(pUtilities) {}
 
-void FilterParameterReflector::registerParameterManual(float* addr, ref<Buffer>* accum, int cnt, const std::string& name)
+void FilterParameterReflector::registerParameterManual(
+    float* addr,
+    ref<Buffer>* accum,
+    int cnt,
+    const std::string& name,
+    ref<CustomParamterUpdateHandler> cpuh
+)
 {
     *accum = mpUtilities->createAccumulationBuffer(sizeof(float4) * ((cnt + 3) / 4));
 
@@ -190,8 +196,16 @@ void FilterParameterReflector::registerParameterManual(float* addr, ref<Buffer>*
     pmi.mNumElements = cnt;
     pmi.mName = name;
 
-    pmi.momentum.resize(cnt);
-    pmi.ssgrad.resize(cnt);
+    if (cpuh == nullptr)
+    {
+        pmi.mCpuh = make_ref<DefaultParameterUpdateHandler>();
+    }
+    else
+    {
+        pmi.mCpuh = cpuh;
+    }
+
+    pmi.mCpuh->init_state(cnt);
 
     mRegistry.push_back(pmi);
 }
@@ -544,4 +558,30 @@ void SVGFTrainingDataset::loadSampleBuffer(RenderContext* pRenderContext, ref<Te
         // this will release it from memory
         mCachedBitmaps.erase(path);
     }
+}
+
+void DefaultParameterUpdateHandler::init_state(int n)
+{
+    numElements = n;
+    momentum.resize(n);
+    ssgrad.resize(n);
+}
+
+void DefaultParameterUpdateHandler::reset_state()
+{
+    std::fill_n(momentum.begin(), numElements, 0);
+    std::fill_n(ssgrad.begin(), numElements, 0);
+}
+
+ParameterUpdateTask DefaultParameterUpdateHandler::propagate(float* grad)
+{
+    ParameterUpdateTask put;
+
+    put.paramters = nullptr;
+    put.grad = grad;
+    put.momentum = momentum.data();
+    put.ssgrad = ssgrad.data();
+    put.numElements = numElements;
+
+    return put;
 }

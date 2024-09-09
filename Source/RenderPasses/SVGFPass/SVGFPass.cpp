@@ -37,7 +37,7 @@ TODO:
 - enum for fbo channel indices
 */
 
-#define DETAILED_GRAD_DESCENT_INFO
+//#define DETAILED_GRAD_DESCENT_INFO
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
@@ -723,11 +723,7 @@ void SVGFPass::clearTrainingBuffers(RenderContext* pRenderContext)
 
         if(mEpoch == 0)
         {
-            for(int j = 0; j < param.mNumElements; j++)
-            {
-                param.momentum[j] = 0.0f;
-                param.ssgrad[j] = 0.0f;
-            }
+            param.mCpuh->reset_state();
         }
     }
 
@@ -797,29 +793,40 @@ void SVGFPass::updateParameters(RenderContext* pRenderContext, int sampledFrames
     {
         auto& pmi = mpParameterReflector->mRegistry[i];
 
-        bool isMlpParameter = (pmi.mName.find("MlpWeights") != std::string::npos);
+        int originalOFfset = currentOffset;
 
+        // let's first preprocess this
         for (int j = 0; j < pmi.mNumElements; j++)
         {
-#ifdef DETAILED_GRAD_DESCENT_INFO
-            if (pmi.mName.find("Postconv") != std::string::npos)
-            {
-                std::cout << "Elem j " << j << "\n";
-            }
-            #endif
-
             float averageGradient = getAverageGradient(gradient, currentOffset, sampledFrames);
+            gradient[currentOffset] = averageGradient;
+            currentOffset++;
+        }
 
-            float adjustment = learningRate * calculateBaseAdjustment(averageGradient, pmi.momentum[j], pmi.ssgrad[j]);
+        // round up divide
+        currentOffset = 4 * ((currentOffset + 3) / 4);
+
+        auto put = pmi.mCpuh->propagate(gradient + originalOFfset);
+
+        if (put.paramters == nullptr)
+        {
+            put.paramters = pmi.mAddress;
+        }
+
+        bool isMlpParameter = (pmi.mName.find("mKernel") != std::string::npos);
+
+        for (int j = 0; j < put.numElements; j++)
+        {
+            float averageGradient = put.grad[j];
+
+            float adjustment = learningRate * calculateBaseAdjustment(averageGradient, put.momentum[j], put.ssgrad[j]);
 
             //if(isMlpParameter) adjustment *= 25.0f;
 
-            pmi.mAddress[j] -= adjustment;
+            put.paramters[j] -= adjustment;
 
             if(!isMlpParameter) pmi.mAddress[j] = std::max(pmi.mAddress[j], 0.0f); // gradient clipping
 
-
-            currentOffset++;
 
             #ifdef DETAILED_GRAD_DESCENT_INFO
             std::string printName = pmi.mName + (pmi.mNumElements != 1 ? "[" + std::to_string(j) + "]" : "");
@@ -841,8 +848,6 @@ void SVGFPass::updateParameters(RenderContext* pRenderContext, int sampledFrames
 
         }
 
-        // round up divide
-        currentOffset = 4 * ((currentOffset + 3) / 4);
     }
 
     #ifdef DETAILED_GRAD_DESCENT_INFO

@@ -84,6 +84,20 @@ public: // for testing
         };
 
         float fetch_weight(const int x, const int y);
+
+        PostconvolutionKernel gen_smax_kernel();
+        void update_raw_weights(const PostconvolutionKernel& dLdPostconv, PostconvolutionKernel& gradStorage);
+        float getNormFactor();
+    };
+
+    struct PostconvUpdate : public DefaultParameterUpdateHandler
+    {
+    public:
+        PostconvUpdate(SVGFKpcnnAtrousSubpass* p);
+        virtual ParameterUpdateTask propagate(float* grad);
+
+    private:
+        SVGFKpcnnAtrousSubpass* mParent;
     };
 
     struct ConvolutionMap
@@ -98,6 +112,9 @@ public: // for testing
 
     SVGFParameter<PostconvolutionKernel[kNumOutputWeights]> mPostconvKernels;
     SVGFParameter<ConvolutionKernel[kOutputMapsPerLayer * kNumLayers]> mKernels;
+
+    PostconvolutionKernel mUnormPostconvKernels[kNumOutputWeights];
+    PostconvolutionKernel mPostconvGradStorage[kNumOutputWeights];
 
     float4 mTestIllumData[kMapDim][kMapDim];
     float4 mTestNormalData[kMapDim][kMapDim];

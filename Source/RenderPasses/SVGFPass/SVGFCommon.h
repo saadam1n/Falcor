@@ -216,6 +216,37 @@ public:
     int2 mPatchMaxP;
 };
 
+struct ParameterUpdateTask
+{
+    float* paramters;
+    float* grad;
+    float* momentum;
+    float* ssgrad;
+    int numElements;
+};
+
+class CustomParamterUpdateHandler : public Object
+{
+public:
+    virtual void init_state(int n) = 0;
+    virtual void reset_state() = 0;
+    virtual ParameterUpdateTask propagate(float* grad) = 0;
+};
+
+class DefaultParameterUpdateHandler : public CustomParamterUpdateHandler
+{
+public:
+    virtual void init_state(int n);
+    virtual void reset_state();
+    virtual ParameterUpdateTask propagate(float* grad);
+
+protected:
+    // parameters to use during learning
+    int numElements;
+    std::vector<float> momentum;
+    std::vector<float> ssgrad;
+};
+
 struct ParameterMetaInfo
 {
     // float4 is max allowed size
@@ -224,10 +255,10 @@ struct ParameterMetaInfo
     int mNumElements;
     std::string mName;
 
-    // parameters to use during learning
-    std::vector<float> momentum;
-    std::vector<float> ssgrad;
+    ref<CustomParamterUpdateHandler> mCpuh;
 };
+
+
 
 class FilterParameterReflector : public Object
 {
@@ -235,13 +266,13 @@ public:
     FilterParameterReflector(ref<SVGFUtilitySet> pUtilities);
 
     //  manually registers parameter (but it still is auto trained)
-    void registerParameterManual(float* addr, ref<Buffer>* accum, int cnt, const std::string& name);
+    void registerParameterManual(float* addr, ref<Buffer>* accum, int cnt, const std::string& name, ref<CustomParamterUpdateHandler> cpuh);
 
     // registers parameter into list of parameters so we automatically train it
     template<typename T>
-    void registerParameterAuto(SVGFParameter<T>& param, const std::string& name)
+    void registerParameterAuto(SVGFParameter<T>& param, const std::string& name, ref<CustomParamterUpdateHandler> cpuh = nullptr)
     {
-        registerParameterManual((float*) &param.dv, &param.da, sizeof(T) / sizeof(float), name);
+        registerParameterManual((float*)&param.dv, &param.da, sizeof(T) / sizeof(float), name, cpuh);
     }
 
     size_t getNumParams();
@@ -252,6 +283,7 @@ private:
     ref<SVGFUtilitySet> mpUtilities;
 };
 #define REGISTER_PARAMETER(reflector, x) reflector->registerParameterAuto(x, #x);
+#define REGISTER_PARAMETER_EX(reflector, x, cpuh) reflector->registerParameterAuto(x, #x, cpuh);
 
 // the renderdata class contains external inputs and outputs for the SVGF algorithm
 struct SVGFRenderData
