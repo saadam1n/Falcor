@@ -12,7 +12,7 @@ class KpcnnTest(nn.Module):
         self.doposenc = False
 
         self.numLayers = 1
-        self.numWeights = 12
+        self.numWeights = 6
 
 
         self.conv = nn.ParameterList()
@@ -22,9 +22,9 @@ class KpcnnTest(nn.Module):
 
             if(layer == 0):
                 if(self.doposenc):
-                    inchnl = 6
+                    inchnl = 10
                 else:
-                    inchnl = 4
+                    inchnl = 8
             if(layer == self.numLayers - 1):
                 outchnl = self.numWeights
 
@@ -61,11 +61,13 @@ class KpcnnTest(nn.Module):
 
         # apply convolution
         for layer in range(self.numLayers):
-            convmaps = F.relu(self.conv[layer](convmaps))
+            convmaps = self.conv[layer](convmaps)
+            if(layer != self.numLayers - 1):
+                convmaps = F.leaky_relu(convmaps)
 
 
 
-        postconvcolors = self.postconv(input).view(4, self.numWeights)
+        postconvcolors = self.postconv(input[0:4]).view(4, self.numWeights)
         normWeights = convmaps#F.softmax(convmaps, dim=0)
         filtered = torch.Tensor(4, 5, 5)
 
@@ -105,7 +107,7 @@ for blankmap in range(0, 2):
         [0.0, 0.0, 0.0, 0.0, 0.0,],
     ])
 
-
+normz = torch.randn(4, 5, 5)
 
 print(rawdata)
 
@@ -113,8 +115,8 @@ targetdata = list()
 for channel in range(4):
     targetdata.append(rawdata[channel])
 
-inputtensor = torch.tensor(rawdata)
 targettensor = torch.tensor(targetdata)
+inputtensor = torch.tensor(rawdata)
 
 #o = cnntest.forward(t)
 #print(o.size())
@@ -128,13 +130,13 @@ for name, param in kpcnntest.named_parameters():
 
 
 crit = nn.L1Loss()
-optim = torch.optim.SGD(kpcnntest.parameters(), lr=0.001, momentum=0.9)
+optim = torch.optim.SGD(kpcnntest.parameters(), lr=0.005, momentum=0.9)
 
 num_training_iter = 1000
 for epoch in range(num_training_iter):
     optim.zero_grad()
 
-    outputtensor = kpcnntest(inputtensor)
+    outputtensor = kpcnntest(torch.cat((inputtensor + torch.randn(4, 5, 5) * 0.3, normz), dim=0))
     loss = crit(outputtensor, targettensor)
     loss.backward()
     optim.step()
@@ -145,7 +147,7 @@ for epoch in range(num_training_iter):
             temp[param.grad != 0] += 1
             count_dict[name] += temp
 
-    print(loss.item())
+    print(loss.item() * 100.0)
 
     if(epoch == 0 or epoch == num_training_iter - 1):
         print(outputtensor)
