@@ -4,11 +4,12 @@ import torch.nn.functional as F
 import kpcnn
 import transformer
 import miniblock_transformer
+import math
 
 print("Hello World, this language is very unintuitive")
 torch.set_printoptions(precision=4, sci_mode=False)
 
-model = kpcnn.Kpcnn()
+model = transformer.Transformer()
 
 rawdata = [
     [
@@ -25,10 +26,24 @@ rawdata = [
         [0.0, 0.0, -1.0, -1.0, 0.0,],
         [0.0, 0.0, 0.0, 0.0, 0.0,],
     ],
+    [
+        [1.0, 1.0, 1.0, 0.0, 0.0,],
+        [1.0, 0.0, 0.0, 0.0, 0.0,],
+        [1.0, 0.0, 0.0, 0.0, 0.0,],
+        [0.0, 0.0, 0.0, 0.0, 0.0,],
+        [0.0, 0.0, 0.0, 0.0, 0.0,],
+    ],
+    [
+        [0.0, 0.0, 0.0, 0.0, 0.0,],
+        [0.0, 0.0, 0.0, 0.0, 0.0,],
+        [0.0, 0.0, 0.0, 0.0, 1.0,],
+        [0.0, 0.0, 0.0, 0.0, 1.0,],
+        [0.0, 0.0, 1.0, 1.0, 1.0,],
+    ],
 ]
 
 # two more illum channels, then 4 channels more for normal + depth
-for blankmap in range(0, 2):
+for blankmap in range(0, 0):
     rawdata.append([
         [0.0, 0.0, 0.0, 0.0, 0.0,],
         [0.0, 0.0, 0.0, 0.0, 0.0,],
@@ -60,22 +75,22 @@ for name, param in model.named_parameters():
 
 
 crit = nn.L1Loss()
-optim = torch.optim.SGD(model.parameters(), lr=0.005, momentum=0.9)
+optim = torch.optim.SGD(model.parameters(), lr=0.0025, momentum=0.9)
 
 num_training_iter = 1000
 for epoch in range(num_training_iter):
     optim.zero_grad()
 
-    outputtensor = model(torch.cat((inputtensor + torch.randn(4, 5, 5) * 0.3, normz), dim=0))
+    outputtensor = model(torch.cat((inputtensor + torch.abs(torch.randn(4, 5, 5)) * 0.3, normz), dim=0))
     loss = crit(outputtensor, targettensor)
     loss.backward()
     optim.step()
 
-    for name, param in model.named_parameters():
-        if 'weight' in name:
-            temp = torch.zeros(param.grad.shape)
-            temp[param.grad != 0] += 1
-            count_dict[name] += temp
+    #for name, param in model.named_parameters():
+    #    if 'weight' in name:
+    #        temp = torch.zeros(param.grad.shape)
+    #        temp[param.grad != 0] += 1
+    #        count_dict[name] += temp
 
     print(loss.item() * 100.0)
 
