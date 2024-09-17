@@ -8,7 +8,7 @@ class Kpcnn(nn.Module):
 
         self.doposenc = False
 
-        self.numLayers = 1
+        self.numLayers = 8
         self.numWeights = 6
 
 
@@ -29,7 +29,7 @@ class Kpcnn(nn.Module):
             self.conv.append(curconv)
 
         # 4 illum channels
-        self.postconv = nn.Conv2d(4, 4 * self.numWeights, 5)
+        self.postconv = nn.Conv2d(3, 3 * self.numWeights, 5)
 
         self.smax = nn.Softmax(dim=0)
     def forward(self, input):
@@ -60,13 +60,13 @@ class Kpcnn(nn.Module):
         for layer in range(self.numLayers):
             convmaps = self.conv[layer](convmaps)
             if(layer != self.numLayers - 1):
-                convmaps = F.leaky_relu(convmaps)
+                convmaps = F.relu(convmaps)
 
 
 
-        postconvcolors = self.postconv(input[0:4]).view(4, self.numWeights)
-        normWeights = convmaps#F.softmax(convmaps, dim=0)
-        filtered = torch.Tensor(4, 5, 5)
+        postconvcolors = self.postconv(input[0:3]).view(3, self.numWeights)
+        normWeights = F.softmax(convmaps, dim=0)
+        filtered = torch.Tensor(3, 5, 5)
 
         for y in range(5):
             for x in range(5):

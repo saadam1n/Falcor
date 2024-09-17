@@ -10,14 +10,16 @@ class Transformer(nn.Module):
         self.query_mtx = nn.ParameterList()
         self.key_mtx = nn.ParameterList()
         self.value_mtx = nn.ParameterList()
+        self.preproc = nn.ParameterList()
+        self.postproc = nn.ParameterList()
 
-        self.numLayers = 1
+        self.numLayers = 96
         for layer in range(self.numLayers):
             qm = nn.Linear(8, 8, bias=False)
             km = nn.Linear(8, 8, bias=False)
             vm = nn.Linear(8, 8, bias=False)
 
-            qm.weight.data.copy_(torch.eye(8) + torch.rand(8, 8) * 0.01)
+            qm.weight.data.copy_(torch.eye(8) * math.pow(8.0, 1.0 / 8.0) + torch.rand(8, 8) * 0.01)
             km.weight.data.copy_(torch.eye(8) + torch.rand(8, 8) * 0.01)
             vm.weight.data.copy_(torch.eye(8) + torch.rand(8, 8) * 0.01)
 
@@ -25,13 +27,20 @@ class Transformer(nn.Module):
             self.key_mtx.append(km)
             self.value_mtx.append(vm)
 
+            prel = nn.Linear(8, 8)
+            postl = nn.Linear(8, 8)
+
+            self.preproc.append(prel)
+            self.postproc.append(postl)
+
     def generateNormWeights(self, prod):
         if False:
             prod = prod / math.sqrt(8)
-        elif False:
-            prod = 8 * prod
+            weights = F.softmax(prod, dim = 1)
+            return weights
+        elif True:
+            #prod = 8 * prod
             weights =  F.softmax(prod, dim = 1)
-            #
             return weights
         else:
             prod = F.relu(prod)
@@ -53,8 +62,16 @@ class Transformer(nn.Module):
             v = self.value_mtx[layer](embedding)
 
             k = k.transpose(0, 1)
-
             prod = torch.matmul(q, k)
+
+            #lq = torch.matmul(q, q.transpose(0, 1))
+            #lk = torch.matmul(k.transpose(0, 1), k).transpose(0, 1)
+
+            #print(lq.size())
+            #print(lk.size())
+
+            #prod = 2 * prod - lq - lk
+
             #print("This is product")
             #print(prod)
 
@@ -67,10 +84,14 @@ class Transformer(nn.Module):
 
             ftform = torch.matmul(weights, v)
 
-            alpha = 0.0
+            ftform = self.preproc[layer](ftform)
+            ftform = F.relu(ftform)
+            ftform = self.postproc[layer](ftform)
+
+            alpha = 0.8
             embedding = ftform * (1.0 - alpha) + embedding * alpha
 
-        return embedding[:, 0:4].view(5, 5, 4).permute((2, 0, 1))
+        return embedding[:, 0:3].view(5, 5, 3).permute((2, 0, 1))
 
 
 
