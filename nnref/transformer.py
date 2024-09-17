@@ -50,7 +50,7 @@ class Transformer(nn.Module):
         for layer in range(self.numLayers):
             q = self.query_mtx[layer](embedding)
             k = self.key_mtx[layer](embedding)
-            v = embedding#self.value_mtx[layer](embedding)
+            v = self.value_mtx[layer](embedding)
 
             k = k.transpose(0, 1)
 
@@ -67,7 +67,7 @@ class Transformer(nn.Module):
 
             ftform = torch.matmul(weights, v)
 
-            alpha = 1.0
+            alpha = 0.0
             embedding = ftform * (1.0 - alpha) + embedding * alpha
 
         return embedding[:, 0:4].view(5, 5, 4).permute((2, 0, 1))
