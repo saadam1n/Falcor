@@ -10,9 +10,9 @@ import os
 import random
 import matplotlib.pyplot as plt
 os.environ["OPENCV_IO_ENABLE_OPENEXR"]="1"
-
-
 import cv2
+
+blocksize = 21
 
 print("Hello World, this language is very unintuitive")
 torch.set_printoptions(precision=4, sci_mode=False)
@@ -24,7 +24,7 @@ emission = cv2.imread("C:\\FalcorFiles\\Dataset0\\0-Emission.exr", cv2.IMREAD_AN
 normals = cv2.imread("C:\\FalcorFiles\\Dataset0\\0-WorldNormal.exr", cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
 linearz = cv2.imread("C:\\FalcorFiles\\Dataset0\\0-LinearZ.exr", cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
 
-model = transformer.Transformer()
+model = transformer.Transformer(blocksize)
 
 #o = cnntest.forward(t)
 #print(o.size())
@@ -45,15 +45,15 @@ losshistory = list()
 
 num_training_iter = 5000
 for epoch in range(num_training_iter):
-    startx = random.randint(0, 1920 - 5 - 1)
-    starty = random.randint(0, 1080 - 5 - 1)
+    startx = random.randint(0, 1920 - blocksize - 1)
+    starty = random.randint(0, 1080 - blocksize - 1)
 
-    refPatch = reference[starty:starty + 5, startx:startx + 5, 0:3]
-    colorPatch = color[starty:starty + 5, startx:startx + 5, 0:3]
-    albedoPatch = albedo[starty:starty + 5, startx:startx + 5, 0:3]
-    emissionPatch = emission[starty:starty + 5, startx:startx + 5, 0:3]
-    normalPatch = normals[starty:starty + 5, startx:startx + 5, 0:3]
-    linearZPatch = linearz[starty:starty + 5, startx:startx + 5, 2:3]
+    refPatch = reference[starty:starty + blocksize, startx:startx + blocksize, 0:3]
+    colorPatch = color[starty:starty + blocksize, startx:startx + blocksize, 0:3]
+    albedoPatch = albedo[starty:starty + blocksize, startx:startx + blocksize, 0:3]
+    emissionPatch = emission[starty:starty + blocksize, startx:startx + blocksize, 0:3]
+    normalPatch = normals[starty:starty + blocksize, startx:startx + blocksize, 0:3]
+    linearZPatch = linearz[starty:starty + blocksize, startx:startx + blocksize, 2:3]
 
 #Average loss was: 38.31475299393369 with squared diff
 #Average loss was: 30.6063318612274 without it
@@ -74,13 +74,13 @@ for epoch in range(num_training_iter):
 
     illumTensor = (colorTensor - emissionTensor) / albedoTensor
 
-    inputtensor = torch.cat((illumTensor, torch.zeros(5, 5, 1), normalTensor, linearZTensor), dim=2).permute(2, 0, 1)
+    inputtensor = torch.cat((illumTensor, torch.zeros(blocksize, blocksize, 1), normalTensor, linearZTensor), dim=2).permute(2, 0, 1)
     targettensor = refTensor.permute(2, 0, 1)
-
 
     optim.zero_grad()
 
     outputtensor = model(inputtensor) * albedoTensor.permute(2, 0, 1) + emissionTensor.permute(2, 0, 1)
+
     loss = crit(outputtensor, targettensor)
     loss.backward()
     optim.step()
@@ -97,14 +97,15 @@ for epoch in range(num_training_iter):
         mvingavg = 0.8
         alphaloss =alphaloss * mvingavg + loss.item() * (1.0 - mvingavg)
 
-    print("Epoch {}: loss is {}".format(epoch, alphaloss * 100.0))
-    losshistory.append(loss.item())
+    print("Epoch {}: loss is {}".format(epoch, loss.item() * 1920 * 1080))
+    losshistory.append(loss.item() * 1920 * 1080)
 
     if(epoch == 0 or epoch == num_training_iter - 1):
+        print(outputtensor.shape)
         print(outputtensor)
 
 #print(count_dict)
-print("Average loss was: {}".format(100.0 * numpy.average(losshistory[int(0.8*num_training_iter):-1])))
+print("Average loss was: {}".format(numpy.average(losshistory[int(0.8*num_training_iter):-1])))
 plt.plot(losshistory)
 plt.show()
 
