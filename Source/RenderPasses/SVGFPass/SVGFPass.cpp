@@ -155,6 +155,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     // set atrous state
     mpAtrousSubpass = make_ref<SVGFAtrousSubpass>(mpDevice, mpUtilities, mpParameterReflector);
     mpKpcnnAtrousSubpass = make_ref<SVGFKpcnnAtrousSubpass>(mpDevice, mpUtilities, mpParameterReflector);
+    mpTransformerSubpass = make_ref<SVGFTransformer>(mpDevice, mpUtilities, mpParameterReflector);
 
     // set final modulate state vars
     mFinalModulateState.pdaIllumination = mpUtilities->createAccumulationBuffer();
@@ -448,8 +449,10 @@ double getTexSum(RenderContext* pRenderContext, ref<Texture> tex)
 
 void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    #if 0
-#ifdef KPCNN_TESTING
+    
+
+    #if 1
+#ifndef KPCNN_TESTING
     runDerivativeTest(pRenderContext, renderData);
     return;
     #endif
@@ -457,7 +460,10 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 
     if (!mKpcnnTested || mKeepRunningKpcnnTest)
     {
-        mpKpcnnAtrousSubpass->runTest(pRenderContext);
+        //mpKpcnnAtrousSubpass->runTest(pRenderContext);
+        mRenderData.copyTextureReferences(renderData);
+
+        mpTransformerSubpass->computeEvaluation(pRenderContext, mRenderData, false);
         mKpcnnTested = true;
     }
     return;

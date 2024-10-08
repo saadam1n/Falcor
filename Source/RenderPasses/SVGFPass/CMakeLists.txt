@@ -49,6 +49,12 @@ target_sources(SVGFPass PRIVATE
     SVGFReprojectD.ps.slang
     SVGFReprojectS.ps.slang
 
+    SVGFTransformer.cpp
+    SVGFTransformer.h
+    SVGFTransformerC.slang
+    SVGFTransformerD.cs.slang
+    SVGFTransformerS.cs.slang
+
 )
 
 target_copy_shaders(SVGFPass RenderPasses/SVGFPass)

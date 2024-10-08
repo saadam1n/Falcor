@@ -34,6 +34,7 @@
 #include "SVGFCommon.h"
 #include "SVGFAtrous.h"
 #include "SVGFKpcnnAtrous.h"
+#include "SVGFTransformer.h"
 
 #define KPCNN_TESTING
 
@@ -191,6 +192,7 @@ private:
 
     ref<SVGFAtrousSubpass> mpAtrousSubpass;
     ref<SVGFKpcnnAtrousSubpass> mpKpcnnAtrousSubpass;
+    ref<SVGFTransformer> mpTransformerSubpass;
     bool mKpcnnTested = false;
     bool mKeepRunningKpcnnTest = false;
 

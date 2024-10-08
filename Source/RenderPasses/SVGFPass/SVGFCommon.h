@@ -39,6 +39,9 @@ namespace
     const char kLossGaussianShaderS[]         = "RenderPasses/SVGFPass/SVGFLossGaussianS.ps.slang";
     const char kLossGaussianShaderD[]         = "RenderPasses/SVGFPass/SVGFLossGaussianD.ps.slang";
 
+    const char kTransformerShaderD[]          = "RenderPasses/SVGFPass/SVGFTransformerD.cs.slang";
+    const char kTransformerShaderS[]          = "RenderPasses/SVGFPass/SVGFTransformerS.cs.slang";
+
     // Names of valid entries in the parameter dictionary.
     const char kEnabled[] = "Enabled";
     const char kIterations[] = "Iterations";
