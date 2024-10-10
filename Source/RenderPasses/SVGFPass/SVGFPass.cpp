@@ -1561,7 +1561,7 @@ void SVGFPass::renderUI(Gui::Widgets& widget)
 
     widget.checkbox("Keep running test", mKeepRunningKpcnnTest);
     mpKpcnnAtrousSubpass->renderUI(widget);
-
+    mpTransformerSubpass->renderUI(widget);
 
     if (dirty)
         mBuffersNeedClear = true;

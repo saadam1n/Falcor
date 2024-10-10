@@ -6,6 +6,9 @@ SVGFTransformer::SVGFTransformer(ref<Device> pDevice, ref<SVGFUtilitySet> pUtili
     mpEvaluatePass = mpUtilities->createComputePassAndDumpIR(kTransformerShaderS);
     mpBackPropagatePass = mpUtilities->createComputePassAndDumpIR(kTransformerShaderD);
 
+    mpPixelDebug = std::make_unique<PixelDebug>(mpDevice);
+    mpPixelDebug->enable();
+
     // create some test stuff
     mpTestIllum = mpDevice->createTexture2D(kMapDim, kMapDim, ResourceFormat::RGBA32Float, 1, 1);
     mpTestNormalDepth = mpDevice->createTexture2D(kMapDim, kMapDim, ResourceFormat::RGBA32Float, 1, 1);
@@ -38,10 +41,10 @@ void SVGFTransformer::computeEvaluation(RenderContext* pRenderContext, SVGFRende
     set_common_parameters(perImageCB);
     //mpUtilities->setPatchingState(mpEvaluatePass);
 
-    //mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
-    //mpPixelDebug->prepareProgram(mpEvaluatePass->getProgram(), mpEvaluatePass->getRootVar());
+    mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
+    mpPixelDebug->prepareProgram(mpEvaluatePass->getProgram(), mpEvaluatePass->getRootVar());
     mpEvaluatePass->execute(pRenderContext, uint3(1, 1, 25));
-    //mpPixelDebug->endFrame(pRenderContext);
+    mpPixelDebug->endFrame(pRenderContext);
 
     std::cout << "GPU Test Result:\n";
 
@@ -53,6 +56,10 @@ void SVGFTransformer::computeEvaluation(RenderContext* pRenderContext, SVGFRende
 void SVGFTransformer::computeBackPropagation(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
 {
 
+}
+
+void SVGFTransformer::renderUI(Gui::Widgets& widget) {
+    mpPixelDebug->renderUI(widget);
 }
 
 void SVGFTransformer::set_common_parameters(ShaderVar& perImageCB)

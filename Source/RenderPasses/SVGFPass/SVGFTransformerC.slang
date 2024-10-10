@@ -82,13 +82,16 @@ void gemm_scores_and_smax() {
     }
 
     float normFactor = 0.0f;
-    for (int i = 0; i < kNumFeatures; i++) {
+    for (int i = 0; i < kTransformerItems; i++) {
         scores[threadIdx][i] = exp(scores[threadIdx][i] - maxRawScore);
         normFactor += scores[threadIdx][i];
     }
 
-    for (int i = 0; i < kNumFeatures; i++) {
+    for (int i = 0; i < kTransformerItems; i++) {
         scores[threadIdx][i] /= normFactor;
+
+        float2 pdata = float2(i, scores[threadIdx][i]);
+        print("Scores", pdata);
     }
 
 }
@@ -112,29 +115,38 @@ void gemm_output() {
 
 }
 
-void transformer(int2 idx) {
-    workIdx = idx;
-    threadIdx = kTransformerItems * idx.y + idx.x;
+void transformer(const int idx) {
+    threadIdx = idx;
+    workIdx = uint2(idx % 5, idx / 5);
+
+    printSetPixel(workIdx);
 
     // load the values from meory
-    float4 curIllum = gIllumination[idx];
+    float4 curIllum = gIllumination[workIdx];
 
     for (int i = 0; i < 4; i++) {
         src.m[threadIdx][i] = curIllum[i];
     }
 
+    GroupMemoryBarrierWithGroupSync();
+
     gemm_src(0); // query
     gemm_src(1); // key
+    gemm_src(2); // values
+
+    GroupMemoryBarrierWithGroupSync();
 
     gemm_scores_and_smax();
 
-    gemm_src(2); // values
     gemm_output();
 
     float4 filtered;
     for (int i = 0; i < 4; i++) {
         filtered[i] = output.m[threadIdx][i];
     }
+
+    // filtered.xy = float2(workIdx);
+    //filtered.xy = xw[0].m[threadIdx][0];
 
     gFiltered[workIdx] = filtered;
 }

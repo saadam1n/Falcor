@@ -4,6 +4,7 @@
 #include "RenderGraph/RenderPass.h"
 #include "Core/Pass/FullScreenPass.h"
 #include "Utils/Algorithm/ParallelReduction.h"
+#include "Utils/Debug/PixelDebug.h"
 
 #include "SVGFCommon.h"
 
@@ -22,6 +23,8 @@ public:
     void computeEvaluation(RenderContext* pRenderContext, SVGFRenderData& svgfrd, bool updateInternalBuffers);
     void computeBackPropagation(RenderContext* pRenderContext, SVGFRenderData& svgfrd);
 
+    void renderUI(Gui::Widgets& widget);
+
 private:
     ref<Device> mpDevice;
     ref<SVGFUtilitySet> mpUtilities;
@@ -30,6 +33,8 @@ private:
     ref<Texture> mpTestIllum;
     ref<Texture> mpTestNormalDepth;
     ref<Texture> mpTestOutput;
+
+    std::unique_ptr<PixelDebug> mpPixelDebug;
 
     struct WeightMatrix
     {
