@@ -22,7 +22,7 @@ SVGFTransformer::SVGFTransformer(ref<Device> pDevice, ref<SVGFUtilitySet> pUtili
         {
             for (int k = 0; k < kNumFeatures; k++)
             {
-                mWeights.dv[i].weights[j][k] = (j == k ? 1.0 : 0.0);
+                mWeights.dv[i].weights[j][k] = j * kNumFeatures + k;
             }
         }
     }
@@ -93,28 +93,33 @@ void SVGFTransformer::set_and_update_test_data(RenderContext* pRenderContext)
 }
 
 void SVGFTransformer::print_test_result(float4 grid[][kMapDim]) {
-    for (int y = -1; y < kMapDim; y++)
+    for (int i = 0; i < 2; i++)
     {
-        for (int x = -1; x < kMapDim; x++)
+        for (int y = -1; y < kMapDim; y++)
         {
-            if (x == -1 && y == -1)
+            for (int x = -1; x < kMapDim; x++)
             {
-                std::cout << "y/x\t";
+                if (x == -1 && y == -1)
+                {
+                    std::cout << "y/x\t";
+                }
+                else if (y == -1)
+                {
+                    std::cout << x << "\t";
+                }
+                else if (x == -1)
+                {
+                    std::cout << y << "\t";
+                }
+                else
+                {
+                    std::cout << grid[y][x][i] << "\t";
+                }
             }
-            else if (y == -1)
-            {
-                std::cout << x << "\t";
-            }
-            else if (x == -1)
-            {
-                std::cout << y << "\t";
-            }
-            else
-            {
-                std::cout << grid[y][x].r << "," << grid[y][x].g << "\t";
-            }
+            std::cout << "\n";
         }
         std::cout << "\n";
+        std::cout.flush();
     }
-    std::cout.flush();
+
 }
