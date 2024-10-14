@@ -2,6 +2,7 @@ import SVGFCommon;
 import Utils.Debug.PixelDebug;
 
 #define kTransformerItems 25
+#define kPaddedFeatures 32
 #define kNumFeatures 4
 
 /*
@@ -39,12 +40,12 @@ cbuffer PerImageCB {
 };
 
 struct EmbeddingMatrix {
-    float m[kTransformerItems][kNumFeatures];
+    float m[kNumFeatures][kPaddedFeatures];
 };
 
 groupshared EmbeddingMatrix src;
 groupshared EmbeddingMatrix xw[3];
-groupshared float scores[kTransformerItems][kTransformerItems];
+groupshared float scores[kTransformerItems][kPaddedFeatures];
 groupshared EmbeddingMatrix output;
 
 static int2 workIdx;
@@ -56,10 +57,10 @@ void gemm_src(int idx) {
         float sum = 0.0f;
 
         for (int j = 0; j < kNumFeatures; j++) {
-            sum += weights[idx].fetch(i, j) * src.m[threadIdx][j];
+            sum += weights[idx].fetch(i, j) * src.m[j][threadIdx];
         }
 
-        xw[idx].m[threadIdx][i] = sum;
+        xw[idx].m[i][threadIdx] = sum;
     }
 }
 
@@ -71,10 +72,10 @@ void gemm_scores_and_smax() {
         float sum = 0.0f;
 
         for (int j = 0; j < kNumFeatures; j++) {
-            sum += xw[0].m[threadIdx][j] * xw[1].m[i][j];
+            sum += xw[0].m[j][threadIdx] * xw[1].m[j][i];
         }
 
-        scores[threadIdx][i] = sum;
+        scores[i][threadIdx] = sum;
 
         if (sum > maxRawScore) {
             maxRawScore = sum;
@@ -83,12 +84,12 @@ void gemm_scores_and_smax() {
 
     float normFactor = 0.0f;
     for (int i = 0; i < kTransformerItems; i++) {
-        scores[threadIdx][i] = exp(scores[threadIdx][i] - maxRawScore);
-        normFactor += scores[threadIdx][i];
+        scores[i][threadIdx] = exp(scores[i][threadIdx] - maxRawScore);
+        normFactor += scores[i][threadIdx];
     }
 
     for (int i = 0; i < kTransformerItems; i++) {
-        scores[threadIdx][i] /= normFactor;
+        scores[i][threadIdx] /= normFactor;
 
         float2 pdata = float2(i, scores[threadIdx][i]);
         print("Scores", pdata);
@@ -103,13 +104,13 @@ void gemm_output() {
 
     // first clear to zero
     for (int i = 0; i < kNumFeatures; i++) {
-        output.m[threadIdx][i] = 0.0f;
+        output.m[i][threadIdx] = 0.0f;
     }
 
     for (int i = 0; i < kTransformerItems; i++) {
         for (int j = 0; j < kNumFeatures; j++) {
             // blend each feature
-            output.m[threadIdx][j] += scores[threadIdx][i] * xw[2].m[i][j];
+            output.m[j][threadIdx] += scores[i][threadIdx] * xw[2].m[j][i];
         }
     }
 
@@ -125,7 +126,7 @@ void transformer(const int idx) {
     float4 curIllum = gIllumination[workIdx];
 
     for (int i = 0; i < 4; i++) {
-        src.m[threadIdx][i] = curIllum[i];
+        src.m[i][threadIdx] = curIllum[i];
     }
 
     GroupMemoryBarrierWithGroupSync();
@@ -142,7 +143,7 @@ void transformer(const int idx) {
 
     float4 filtered;
     for (int i = 0; i < 4; i++) {
-        filtered[i] = output.m[threadIdx][i];
+        filtered[i] = output.m[i][threadIdx];
     }
 
     // filtered.xy = float2(workIdx);
