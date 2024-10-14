@@ -93,7 +93,7 @@ void SVGFTransformer::set_and_update_test_data(RenderContext* pRenderContext)
 }
 
 void SVGFTransformer::print_test_result(float4 grid[][kMapDim]) {
-    for (int i = 0; i < 2; i++)
+    for (int i = 0; i < 4; i++)
     {
         for (int y = -1; y < kMapDim; y++)
         {
