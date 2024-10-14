@@ -16,13 +16,15 @@ SVGFTransformer::SVGFTransformer(ref<Device> pDevice, ref<SVGFUtilitySet> pUtili
         kMapDim, kMapDim, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
     );
 
+
     for (int i = 0; i < 3; i++)
     {
         for (int j = 0; j < kNumFeatures; j++)
         {
             for (int k = 0; k < kNumFeatures; k++)
             {
-                mWeights.dv[i].weights[j][k] = j * kNumFeatures + k;
+                int rx = i * kNumFeatures * kNumFeatures + j * kNumFeatures + k;
+                mWeights.dv[i].weights[j][k] =  sin((float)rx);
             }
         }
     }
