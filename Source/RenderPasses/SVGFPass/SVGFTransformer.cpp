@@ -24,10 +24,11 @@ SVGFTransformer::SVGFTransformer(ref<Device> pDevice, ref<SVGFUtilitySet> pUtili
             for (int k = 0; k < kNumFeatures; k++)
             {
                 int rx = i * kNumFeatures * kNumFeatures + j * kNumFeatures + k;
-                mWeights.dv[i].weights[j][k] =  sin((float)rx);
+                mWeights.dv[i].weights[j][k] =  2.0f + sin((float)rx);
             }
         }
     }
+    REGISTER_PARAMETER(mpParameterReflector, mWeights);
 }
 void SVGFTransformer::allocateFbos(uint2 dim, RenderContext* pRenderContext)
 {
@@ -36,12 +37,13 @@ void SVGFTransformer::allocateFbos(uint2 dim, RenderContext* pRenderContext)
 
 void SVGFTransformer::computeEvaluation(RenderContext* pRenderContext, SVGFRenderData& svgfrd, bool updateInternalBuffers)
 {
+    FALCOR_PROFILE(pRenderContext, "Transformer");
 
     set_and_update_test_data(pRenderContext);
 
     auto perImageCB = mpEvaluatePass->getRootVar()["PerImageCB"];
     set_common_parameters(perImageCB);
-    //mpUtilities->setPatchingState(mpEvaluatePass);
+    mpUtilities->setPatchingState(mpEvaluatePass);
 
     mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
     mpPixelDebug->prepareProgram(mpEvaluatePass->getProgram(), mpEvaluatePass->getRootVar());
@@ -57,7 +59,21 @@ void SVGFTransformer::computeEvaluation(RenderContext* pRenderContext, SVGFRende
 
 void SVGFTransformer::computeBackPropagation(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
 {
+    FALCOR_PROFILE(pRenderContext, "Transformer");
 
+    set_and_update_test_data(pRenderContext);
+
+    auto perImageCB = mpBackPropagatePass->getRootVar()["PerImageCB"];
+    set_common_parameters(perImageCB);
+    mpUtilities->setPatchingState(mpBackPropagatePass);
+
+    perImageCB["drIllum"] = mpUtilities->mpdrCompactedBuffer[1];
+    perImageCB["daWeightMatrices"] = mWeights.da;
+
+    mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
+    mpPixelDebug->prepareProgram(mpBackPropagatePass->getProgram(), mpBackPropagatePass->getRootVar());
+    mpBackPropagatePass->execute(pRenderContext, uint3(1, 1, 25));
+    mpPixelDebug->endFrame(pRenderContext);
 }
 
 void SVGFTransformer::renderUI(Gui::Widgets& widget) {

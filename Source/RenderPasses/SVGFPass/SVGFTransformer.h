@@ -30,9 +30,12 @@ private:
     ref<SVGFUtilitySet> mpUtilities;
     ref<FilterParameterReflector> mpParameterReflector;
 
+public:
     ref<Texture> mpTestIllum;
     ref<Texture> mpTestNormalDepth;
     ref<Texture> mpTestOutput;
+
+private:
 
     std::unique_ptr<PixelDebug> mpPixelDebug;
 

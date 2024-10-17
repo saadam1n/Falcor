@@ -154,7 +154,7 @@ SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
 
     // set atrous state
     mpAtrousSubpass = make_ref<SVGFAtrousSubpass>(mpDevice, mpUtilities, mpParameterReflector);
-    mpKpcnnAtrousSubpass = make_ref<SVGFKpcnnAtrousSubpass>(mpDevice, mpUtilities, mpParameterReflector);
+    //mpKpcnnAtrousSubpass = make_ref<SVGFKpcnnAtrousSubpass>(mpDevice, mpUtilities, mpParameterReflector);
     mpTransformerSubpass = make_ref<SVGFTransformer>(mpDevice, mpUtilities, mpParameterReflector);
 
     // set final modulate state vars
@@ -278,7 +278,7 @@ void SVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
 
     mpUtilities->allocateFbos(dim, pRenderContext);
     mpAtrousSubpass->allocateFbos(dim, pRenderContext);
-    mpKpcnnAtrousSubpass->allocateFbos(dim, pRenderContext);
+    //mpKpcnnAtrousSubpass->allocateFbos(dim, pRenderContext);
 
     mBuffersNeedClear = true;
 }
@@ -368,9 +368,14 @@ void SVGFPass::runSvgfFilter(RenderContext* pRenderContext, SVGFRenderData& rend
     FALCOR_PROFILE(pRenderContext, "SVGF Filter");
 
     #ifdef KPCNN_TESTING
+    /*
     mpKpcnnAtrousSubpass->computeEvaluation(pRenderContext, renderData, updateInternalBuffers);
     pRenderContext->blit(mpKpcnnAtrousSubpass->mpTestOutput->getSRV(), mpFinalFbo->getRenderTargetView(0));
     renderData.pOutputTexture = mpKpcnnAtrousSubpass->mpTestOutput;
+    */
+    mpTransformerSubpass->computeEvaluation(pRenderContext, renderData, updateInternalBuffers);
+    pRenderContext->blit(mpTransformerSubpass->mpTestOutput->getSRV(), mpFinalFbo->getRenderTargetView(0));
+    renderData.pOutputTexture = mpTransformerSubpass->mpTestOutput;
     return;
     #endif
 
@@ -451,7 +456,7 @@ void SVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderDa
 {
     
 
-    #if 1
+    #if 0
 #ifndef KPCNN_TESTING
     runDerivativeTest(pRenderContext, renderData);
     return;
@@ -1036,7 +1041,8 @@ void SVGFPass::computeDerivatives(RenderContext* pRenderContext, SVGFRenderData&
         }
 
         #ifdef KPCNN_TESTING
-        mpKpcnnAtrousSubpass->computeBackPropagation(pRenderContext, renderData);
+        //mpKpcnnAtrousSubpass->computeBackPropagation(pRenderContext, renderData);
+        mpTransformerSubpass->computeBackPropagation(pRenderContext, renderData);
         return;
         #endif
 
@@ -1074,7 +1080,7 @@ void SVGFPass::computeLoss(RenderContext* pRenderContext, SVGFRenderData& render
 
     #ifdef KPCNN_TESTING
     // try to reproduce input
-    renderData.pReferenceTexture = mpKpcnnAtrousSubpass->mpTestIllum;
+    renderData.pReferenceTexture = mpTransformerSubpass->mpTestIllum;
     #endif
 
     computeGaussian(pRenderContext, renderData.pReferenceTexture, mLossState.pReferenceGaussian, false);

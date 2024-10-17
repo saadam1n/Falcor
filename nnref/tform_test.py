@@ -42,7 +42,7 @@ for i in range(3):
         tlist = list()
         for k in range(4):
             val = (16.0 * i) + (4.0 * j) + k
-            sv = math.sin(val)
+            sv = 2.0 + math.sin(val)
             tlist.append(sv)
 
         layerlist.append(tlist)
