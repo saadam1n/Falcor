@@ -76,8 +76,9 @@ void gemm_src(int idx) {
 }
 
 void bwd_gemm_src(int idx) {
-    for (int i = 0; i < kNumFeatures; i++) {
-        for (int j = 0; j < kNumFeatures; j++) {
+    for (int i = 0; i < kNumFeatures; i++) { // i is dst
+        for (int j = 0; j < kNumFeatures; j++) { // j is src
+            // destination loss times other factor
             dLdTempWeightMatrices[idx][i][j][threadIdx] = dLdxw[idx].m[i][threadIdx] * src.m[j][threadIdx];
         }
     }
@@ -272,6 +273,8 @@ void bwd_simple_gemm_test(const int idx) {
     bwd_gemm_src(2);
 
     // now we need to store store derivatives somewhere
+
+#if 0
     const int totalValuesToStore = 3 * kNumFeatures * kNumFeatures;
 
     int baseIdx = threadIdx * 4;
@@ -279,7 +282,7 @@ void bwd_simple_gemm_test(const int idx) {
         float4 writeVal;
 
         for (int i = 0; i < 4; i++) {
-            if (baseIdx + i < kNumFeatures) {
+            if (baseIdx + i < totalValuesToStore) {
                 int linearIdx = baseIdx + i;
 
                 int a = linearIdx % kNumFeatures;
@@ -295,6 +298,20 @@ void bwd_simple_gemm_test(const int idx) {
         storeDerivBuf4(daWeightMatrices, int2(0, 0), writeVal, gIllumination, baseIdx / 4);
         baseIdx += 4 * kTransformerItems;
     }
+    #else
+    // 12 4-vectors to store
+    if (threadIdx < 12) {
+        float4 writeVal;
 
+        int rowIdx = threadIdx % 4;
+        int mtxIdx = threadIdx / 4;
+        for (int i = 0; i < 4; i++) {
+            writeVal[i] = dLdWeightMatrices[mtxIdx][rowIdx][i];
+        }
+
+        storeDerivBuf4(daWeightMatrices, int2(0, 0), writeVal, gIllumination, threadIdx);
+    }
+
+    #endif
 
 }
