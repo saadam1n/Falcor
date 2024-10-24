@@ -235,6 +235,39 @@ void transformer(const int idx) {
     gFiltered[workIdx] = filtered;
 }
 
+void bwd_transformer(const int idx) {
+    transformer(idx);
+
+    float4 loss = readDerivBuf4(drIllum, workIdx, gIllumination, 0);
+    for (int i = 0; i < 4; i++) {
+        dLdxw[2].m[i][threadIdx] = loss[i];
+    }
+
+    bwd_gemm_output();
+    GroupMemoryBarrierWithGroupSync();
+
+    bwd_gemm_scores_and_smax();
+    GroupMemoryBarrierWithGroupSync();
+
+    gemm_src(0);
+    gemm_src(1);
+    gemm_src(2);
+
+    GroupMemoryBarrierWithGroupSync();
+
+    if (threadIdx < 12) {
+        float4 writeVal;
+
+        int rowIdx = threadIdx % 4;
+        int mtxIdx = threadIdx / 4;
+        for (int i = 0; i < 4; i++) {
+            writeVal[i] = dLdWeightMatrices[mtxIdx][rowIdx][i];
+        }
+
+        storeDerivBuf4(daWeightMatrices, int2(0, 0), writeVal, gIllumination, threadIdx);
+    }
+}
+
 void simple_gemm_test(const int idx, bool flushResult) {
     threadIdx = idx;
     workIdx = uint2(idx % 5, idx / 5);
