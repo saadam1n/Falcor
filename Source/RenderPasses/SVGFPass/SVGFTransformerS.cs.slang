@@ -11,6 +11,6 @@ struct FS_OUT {
 void main(uint3 threadId: SV_GroupThreadID, uint3 groupId: SV_GroupID, uint3 globalId: SV_DispatchThreadID)
 {
     transformer(threadId.z);
-    return;
-    simple_gemm_test(threadId.z, true);
+    //return;
+    //simple_gemm_test(threadId.z, true);
 }

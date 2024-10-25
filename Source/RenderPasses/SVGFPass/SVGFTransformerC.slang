@@ -190,11 +190,16 @@ void bwd_gemm_output() {
         for (int j = 0; j < kNumFeatures; j++) {
             // blend each feature
             // output.m[j][threadIdx] += scores[i][threadIdx] * xw[2].m[j][i];
-            float loss = dLdOutput.m[j][threadIdx];
-            dLdxw[2].m[j][threadIdx] += loss * scores[i][threadIdx];
-            dLdCurrentScore += loss * xw[2].m[j][i];
+            float loss = dLdOutput.m[j][i];
+            print("Loss ", loss);
+            dLdxw[2].m[j][threadIdx] += loss * scores[threadIdx][i];
+            dLdCurrentScore += loss * xw[2].m[j][threadIdx];
         }
         dLdScores[i][threadIdx] = dLdCurrentScore;
+    }
+
+    for (int i = 0; i < kNumFeatures; i++) {
+        print("Pxl ", dLdxw[2].m[i][threadIdx]);
     }
 
 }
@@ -240,7 +245,7 @@ void bwd_transformer(const int idx) {
 
     float4 loss = readDerivBuf4(drIllum, workIdx, gIllumination, 0);
     for (int i = 0; i < 4; i++) {
-        dLdxw[2].m[i][threadIdx] = loss[i];
+        dLdOutput.m[i][threadIdx] = loss[i];
     }
 
     bwd_gemm_output();
@@ -249,9 +254,9 @@ void bwd_transformer(const int idx) {
     bwd_gemm_scores_and_smax();
     GroupMemoryBarrierWithGroupSync();
 
-    gemm_src(0);
-    gemm_src(1);
-    gemm_src(2);
+    bwd_gemm_src(0);
+    bwd_gemm_src(1);
+    bwd_gemm_src(2);
 
     GroupMemoryBarrierWithGroupSync();
 
@@ -263,6 +268,8 @@ void bwd_transformer(const int idx) {
         for (int i = 0; i < 4; i++) {
             writeVal[i] = dLdWeightMatrices[mtxIdx][rowIdx][i];
         }
+
+        print("Dumping ", writeVal);
 
         storeDerivBuf4(daWeightMatrices, int2(0, 0), writeVal, gIllumination, threadIdx);
     }

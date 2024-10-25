@@ -6,7 +6,7 @@ SVGFTransformer::SVGFTransformer(ref<Device> pDevice, ref<SVGFUtilitySet> pUtili
     mpEvaluatePass = mpUtilities->createComputePassAndDumpIR(kTransformerShaderS);
     mpBackPropagatePass = mpUtilities->createComputePassAndDumpIR(kTransformerShaderD);
 
-    mpPixelDebug = std::make_unique<PixelDebug>(mpDevice);
+    mpPixelDebug = std::make_unique<PixelDebug>(mpDevice, 1024);
     mpPixelDebug->enable();
 
     // create some test stuff

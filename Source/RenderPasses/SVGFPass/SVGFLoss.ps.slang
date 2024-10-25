@@ -136,6 +136,19 @@ float4 calculateLoss(int2 ipos)
     return float4(totalLoss, dot(centerLoss, channelCoeffs), dot(gradientLoss, channelCoeffs), dot(temporalLoss, channelCoeffs));
 }
 
+[BackwardDifferentiable]
+float4 just_l1_loss(int2 ipos) {
+    // color diff loss
+    float3 filteredCenter = (getFilteredImage(ipos)).rgb;
+    float3 referenceCenter = (getReferenceImage(ipos)).rgb;
+
+    float3 centerLoss = abs(filteredCenter - referenceCenter);
+
+    float totalLoss = dot(centerLoss, 1.0f.xxx);
+
+    return float4(totalLoss, centerLoss);
+}
+
 struct FS_OUT
 {
     float totalLoss : SV_TARGET0;

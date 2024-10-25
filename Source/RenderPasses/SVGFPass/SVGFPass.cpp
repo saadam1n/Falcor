@@ -1566,8 +1566,9 @@ void SVGFPass::renderUI(Gui::Widgets& widget)
     dirty |= (int)widget.var("Moments Alpha", mReprojectState.mMomentsAlpha.dv, 0.0f, 1.0f, 0.001f);
 
     widget.checkbox("Keep running test", mKeepRunningKpcnnTest);
-    mpKpcnnAtrousSubpass->renderUI(widget);
-    mpTransformerSubpass->renderUI(widget);
+
+    if (mpKpcnnAtrousSubpass) mpKpcnnAtrousSubpass->renderUI(widget);
+    if (mpTransformerSubpass) mpTransformerSubpass->renderUI(widget);
 
     if (dirty)
         mBuffersNeedClear = true;
