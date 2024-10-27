@@ -34,6 +34,7 @@ public:
     ref<Texture> mpTestIllum;
     ref<Texture> mpTestNormalDepth;
     ref<Texture> mpTestOutput;
+    ref<Texture> mpDebugBuf;
 
 private:
 

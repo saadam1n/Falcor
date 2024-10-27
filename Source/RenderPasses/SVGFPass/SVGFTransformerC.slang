@@ -37,6 +37,7 @@ cbuffer PerImageCB {
 
     texture2D gIllumination;
     RWTexture2D<float4> gFiltered;
+    RWTexture2D<float4> gDebugBuf;
 
     RWByteAddressBuffer daWeightMatrices;
     RWByteAddressBuffer drIllum;
@@ -250,6 +251,8 @@ void transformer(const int idx) {
     gemm_src(1); // key
     gemm_src(2); // values
 
+
+
     GroupMemoryBarrierWithGroupSync();
 
     gemm_scores_and_smax();
@@ -278,10 +281,16 @@ void bwd_transformer(const int idx) {
     bwd_gemm_output();
     GroupMemoryBarrierWithGroupSync();
 
-    /*
+    float4 printVal;
+    for (int i = 0; i < 4; i++) {
+        printVal[i] = xw[2].m[i][threadIdx];
+    }
+    print("Here is the value ", printVal);
+    gDebugBuf[workIdx] = printVal;
+
     bwd_gemm_scores_and_smax();
     GroupMemoryBarrierWithGroupSync();
-
+    /*
     bwd_gemm_src(0);
     bwd_gemm_src(1);
     bwd_gemm_src(2);

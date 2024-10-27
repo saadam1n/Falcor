@@ -17,6 +17,10 @@ SVGFTransformer::SVGFTransformer(ref<Device> pDevice, ref<SVGFUtilitySet> pUtili
         kMapDim, kMapDim, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
     );
 
+    mpDebugBuf = mpDevice->createTexture2D(
+        kMapDim, kMapDim, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
+    );
+
     // set up our variables
     std::mt19937 mlp_rng(1234567);
     std::uniform_real_distribution<> mlp_offset(0.0f, 1.0f);
@@ -27,9 +31,7 @@ SVGFTransformer::SVGFTransformer(ref<Device> pDevice, ref<SVGFUtilitySet> pUtili
             for (int k = 0; k < kNumFeatures; k++)
             {
                 int rx = i * kNumFeatures * kNumFeatures + j * kNumFeatures + k;
-                mWeights.dv[i].weights[j][k] = mlp_offset(mlp_rng);
-                mWeights.dv[i].weights[j][k] = (j == k ? 1.0f : 0.0f);
-                //mlp_offset(mlp_rng);
+                mWeights.dv[i].weights[j][k] = (j == k ? 1.0f : 0.0f) + mlp_offset(mlp_rng) / 4.0f;
             }
         }
     }
@@ -111,6 +113,7 @@ void SVGFTransformer::set_common_parameters(ShaderVar& perImageCB)
     perImageCB["fixedScores"].setBlob(mSMatrix.dv);
     perImageCB["gIllumination"] = mpTestIllum;
     perImageCB["gFiltered"] = mpTestOutput;
+    perImageCB["gDebugBuf"] = mpDebugBuf;
 }
 
 void SVGFTransformer::set_and_update_test_data(RenderContext* pRenderContext)
