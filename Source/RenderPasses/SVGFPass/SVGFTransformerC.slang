@@ -116,6 +116,13 @@ void gemm_scores_and_smax() {
 
         scores[i][threadIdx] = sum;
 
+        int linearIdxSc = i * kTransformerItems + threadIdx;
+
+        int vec_idx = linearIdxSc / 4;
+        int chn_idx = linearIdxSc % 4;
+
+        scores[i][threadIdx] = fixedScores[vec_idx][chn_idx];
+
         if (sum > maxRawScore) {
             maxRawScore = sum;
         }
@@ -130,31 +137,31 @@ void gemm_scores_and_smax() {
     for (int i = 0; i < kTransformerItems; i++) {
         scores[i][threadIdx] /= normFactor;
 
-        int linearIdxSc = i * kTransformerItems + threadIdx;
-
-        int vec_idx = linearIdxSc / 4;
-        int chn_idx = linearIdxSc % 4;
-
-        scores[i][threadIdx] = fixedScores[vec_idx][chn_idx];
-
         float2 pdata = float2(i, scores[i][threadIdx]);
         print("Scores", pdata);
     }
 
 }
 
+groupshared float dLdTempScores[kTransformerItems][kTransformerItems];
 void bwd_gemm_scores_and_smax() {
     // for each score we need to add normFactor
     for (int i = 0; i < kTransformerItems; i++) {
         // uh, norm factor cancels out?
         float self_score = scores[i][threadIdx];
-        dLdScores[i][threadIdx] = dLdScores[i][threadIdx] * self_score * (1.0f - self_score);
+        float temp_loss = dLdScores[i][threadIdx] * self_score * (1.0f - self_score);
 
         for (int j = 0; j < kTransformerItems; j++) {
             if (i != j) {
-                dLdScores[i][threadIdx] += dLdScores[j][threadIdx] * self_score * -scores[j][threadIdx];
+                temp_loss += dLdScores[j][threadIdx] * self_score * -scores[j][threadIdx];
             }
         }
+
+        dLdTempScores[i][threadIdx] = temp_loss;
+    }
+
+    for (int i = 0; i < kTransformerItems; i++) {
+        dLdScores[i][threadIdx] = dLdTempScores[i][threadIdx];
     }
 
     GroupMemoryBarrierWithGroupSync();
