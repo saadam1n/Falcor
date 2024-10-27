@@ -163,11 +163,11 @@ FS_OUT main(FullScreenPassVsOut vsOut)
 
     if (isInPatch(ipos))
     {
-        __bwd_diff(calculateLoss)(ipos, float4(1.0f, 0.0f.xxx));
+        __bwd_diff(just_l1_loss)(ipos, float4(1.0f, 0.0f.xxx));
     }
 
     // return loss to debug
-    float4 loss = calculateLoss(ipos);
+    float4 loss = just_l1_loss(ipos);
 
     FS_OUT fs_out;
 

@@ -48,7 +48,17 @@ private:
         };
     };
 
+    struct SMatrix
+    {
+        union
+        {
+            float scores[kTransformerItems][kTransformerItems];
+            float4 scoreVec[(kTransformerItems * kTransformerItems - 1) / 4 + 1];
+        };
+    };
+
     SVGFParameter<WeightMatrix[3]> mWeights;
+    SVGFParameter<SMatrix> mSMatrix;
 
     int mFilterIterations = 4;
 

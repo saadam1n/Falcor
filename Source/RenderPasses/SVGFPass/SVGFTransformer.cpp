@@ -1,4 +1,5 @@
 #include "SVGFTransformer.h"
+#include <random>
 
 SVGFTransformer::SVGFTransformer(ref<Device> pDevice, ref<SVGFUtilitySet> pUtilities, ref<FilterParameterReflector> pParameterReflector)
     : mpDevice(pDevice), mpUtilities(pUtilities), mpParameterReflector(pParameterReflector)
@@ -16,7 +17,9 @@ SVGFTransformer::SVGFTransformer(ref<Device> pDevice, ref<SVGFUtilitySet> pUtili
         kMapDim, kMapDim, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
     );
 
-
+    // set up our variables
+    std::mt19937 mlp_rng(1234567);
+    std::uniform_real_distribution<> mlp_offset(0.0f, 1.0f);
     for (int i = 0; i < 3; i++)
     {
         for (int j = 0; j < kNumFeatures; j++)
@@ -24,11 +27,23 @@ SVGFTransformer::SVGFTransformer(ref<Device> pDevice, ref<SVGFUtilitySet> pUtili
             for (int k = 0; k < kNumFeatures; k++)
             {
                 int rx = i * kNumFeatures * kNumFeatures + j * kNumFeatures + k;
-                mWeights.dv[i].weights[j][k] =  2.0f + sin((float)rx);
+                mWeights.dv[i].weights[j][k] = mlp_offset(mlp_rng);
+                mWeights.dv[i].weights[j][k] = (j == k ? 1.0f : 0.0f);
+                //mlp_offset(mlp_rng);
             }
         }
     }
     REGISTER_PARAMETER(mpParameterReflector, mWeights);
+
+
+    for (int i = 0; i < kTransformerItems; i++)
+    {
+        for (int j = 0; j < kTransformerItems; j++)
+        {
+            mSMatrix.dv.scores[i][j] = mlp_offset(mlp_rng);
+        }
+    }
+    REGISTER_PARAMETER(mpParameterReflector, mSMatrix)
 }
 void SVGFTransformer::allocateFbos(uint2 dim, RenderContext* pRenderContext)
 {
@@ -69,6 +84,7 @@ void SVGFTransformer::computeBackPropagation(RenderContext* pRenderContext, SVGF
 
     perImageCB["drIllum"] = mpUtilities->mpdrCompactedBuffer[1];
     perImageCB["daWeightMatrices"] = mWeights.da;
+    perImageCB["daScoreMatrices"] = mSMatrix.da;
 
     mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
     mpPixelDebug->prepareProgram(mpBackPropagatePass->getProgram(), mpBackPropagatePass->getRootVar());
@@ -92,6 +108,7 @@ void SVGFTransformer::set_common_parameters(ShaderVar& perImageCB)
 
 
     perImageCB["weights"].setBlob(mWeights.dv);
+    perImageCB["fixedScores"].setBlob(mSMatrix.dv);
     perImageCB["gIllumination"] = mpTestIllum;
     perImageCB["gFiltered"] = mpTestOutput;
 }

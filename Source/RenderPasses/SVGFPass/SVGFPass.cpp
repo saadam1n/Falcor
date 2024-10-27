@@ -824,7 +824,7 @@ void SVGFPass::updateParameters(RenderContext* pRenderContext, int sampledFrames
             put.paramters = pmi.mAddress;
         }
 
-        bool isMlpParameter = (pmi.mName.find("mKernel") != std::string::npos);
+        bool isMlpParameter = (pmi.mName.find("mWeights") != std::string::npos);
 
         for (int j = 0; j < put.numElements; j++)
         {

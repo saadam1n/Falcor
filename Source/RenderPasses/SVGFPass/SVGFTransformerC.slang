@@ -40,6 +40,9 @@ cbuffer PerImageCB {
 
     RWByteAddressBuffer daWeightMatrices;
     RWByteAddressBuffer drIllum;
+
+    float4 fixedScores[(kTransformerItems * kTransformerItems - 1) / 4 + 1];
+    RWByteAddressBuffer daScoreMatrices;
 };
 
 struct EmbeddingMatrix {
@@ -126,6 +129,13 @@ void gemm_scores_and_smax() {
     for (int i = 0; i < kTransformerItems; i++) {
         scores[i][threadIdx] /= normFactor;
 
+        int linearIdxSc = i * kTransformerItems + threadIdx;
+
+        int vec_idx = linearIdxSc / 4;
+        int chn_idx = linearIdxSc % 4;
+
+        scores[i][threadIdx] = fixedScores[vec_idx][chn_idx];
+
         float2 pdata = float2(i, scores[i][threadIdx]);
         print("Scores", pdata);
     }
@@ -135,11 +145,18 @@ void gemm_scores_and_smax() {
 void bwd_gemm_scores_and_smax() {
     // for each score we need to add normFactor
     for (int i = 0; i < kTransformerItems; i++) {
-        dLdScores[i][threadIdx] += normFactor;
+        // uh, norm factor cancels out?
+        float self_score = scores[i][threadIdx];
+        dLdScores[i][threadIdx] = dLdScores[i][threadIdx] * self_score * (1.0f - self_score);
 
-        // since bwd of e^x is e^x, just multiply it
-        dLdScores[i][threadIdx] *= scores[i][threadIdx];
+        for (int j = 0; j < kTransformerItems; j++) {
+            if (i != j) {
+                dLdScores[i][threadIdx] += dLdScores[j][threadIdx] * self_score * -scores[j][threadIdx];
+            }
+        }
     }
+
+    GroupMemoryBarrierWithGroupSync();
 
     for (int i = 0; i < kNumFeatures; i++) {
         dLdxw[0].m[i][threadIdx] = 0.0;
@@ -190,10 +207,20 @@ void bwd_gemm_output() {
         for (int j = 0; j < kNumFeatures; j++) {
             // blend each feature
             // output.m[j][threadIdx] += scores[i][threadIdx] * xw[2].m[j][i];
-            float loss = dLdOutput.m[j][i];
-            print("Loss ", loss);
-            dLdxw[2].m[j][threadIdx] += loss * scores[threadIdx][i];
-            dLdCurrentScore += loss * xw[2].m[j][threadIdx];
+
+            // score * value
+            // thus, to get dL deposited on score, do dL_in * value
+            // thus, to get dL deposited on value, do dL_in * score
+
+            // we want to find the loss deposted on our scores and values
+            // other threads can mind their own business doing the same thing
+            // thus no need for parallel reduction
+
+            // other loss times their score for us score gives us our value loss
+            dLdxw[2].m[j][threadIdx] += dLdOutput.m[j][i] * scores[threadIdx][i];
+
+            // our loss times times their value gives loss for our score on them
+            dLdCurrentScore += dLdOutput.m[j][threadIdx] * xw[2].m[j][i];
         }
         dLdScores[i][threadIdx] = dLdCurrentScore;
     }
@@ -251,6 +278,7 @@ void bwd_transformer(const int idx) {
     bwd_gemm_output();
     GroupMemoryBarrierWithGroupSync();
 
+    /*
     bwd_gemm_scores_and_smax();
     GroupMemoryBarrierWithGroupSync();
 
@@ -259,7 +287,7 @@ void bwd_transformer(const int idx) {
     bwd_gemm_src(2);
 
     GroupMemoryBarrierWithGroupSync();
-
+    */
     if (threadIdx < 12) {
         float4 writeVal;
 
@@ -271,7 +299,22 @@ void bwd_transformer(const int idx) {
 
         print("Dumping ", writeVal);
 
-        storeDerivBuf4(daWeightMatrices, int2(0, 0), writeVal, gIllumination, threadIdx);
+        //storeDerivBuf4(daWeightMatrices, int2(0, 0), writeVal, gIllumination, threadIdx);
+    }
+
+    for (int i = threadIdx; i < (kTransformerItems * kTransformerItems - 1) / 4 + 1; i += kTransformerItems) {
+        // gotta convert this to normal indices
+        float4 writeVal;
+        for (int j = 0; j < 4; j++) {
+            int lin_idx = i * 4 + j;
+
+            int r = lin_idx / kTransformerItems;
+            int c = lin_idx % kTransformerItems;
+
+            writeVal[j] = dLdScores[r][c];
+        }
+
+        storeDerivBuf4(daScoreMatrices, int2(0, 0), writeVal, gIllumination, i);
     }
 }
 

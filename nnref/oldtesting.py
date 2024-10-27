@@ -92,7 +92,8 @@ for epoch in range(num_training_iter):
     #        temp[param.grad != 0] += 1
     #        count_dict[name] += temp
 
-    print(loss.item() * 100.0)
+    #print(loss.item() * 100.0)
+    print(loss.item() * 25.0 * 4.0)
 
     if(epoch == 0 or epoch == num_training_iter - 1):
         print(outputtensor)
