@@ -33,17 +33,10 @@ rawdata = [
         [0.0, 0.0, 0.0, 0.0, 0.0,],
         [0.0, 0.0, 0.0, 0.0, 0.0,],
     ],
-    [
-        [0.0, 0.0, 0.0, 0.0, 0.0,],
-        [0.0, 0.0, 0.0, 0.0, 0.0,],
-        [0.0, 0.0, 0.0, 0.0, 0.0,],
-        [0.0, 0.0, 0.0, 0.0, 0.0,],
-        [0.0, 0.0, 0.0, 0.0, 0.0,],
-    ],
 ]
 
 # two more illum channels, then 4 channels more for normal + depth
-for blankmap in range(0, 0):
+for blankmap in range(0, 1):
     rawdata.append([
         [0.0, 0.0, 0.0, 0.0, 0.0,],
         [0.0, 0.0, 0.0, 0.0, 0.0,],
@@ -57,7 +50,7 @@ normz = torch.randn(4, 5, 5) * 0.0
 print(rawdata)
 
 targetdata = list()
-for channel in range(4):
+for channel in range(3):
     targetdata.append(rawdata[channel])
 
 targettensor = torch.tensor(targetdata)
@@ -93,7 +86,7 @@ for epoch in range(num_training_iter):
     #        count_dict[name] += temp
 
     #print(loss.item() * 100.0)
-    print(loss.item() * 25.0 * 4.0)
+    print(loss.item() * 25.0 * 3.0)
 
     if(epoch == 0 or epoch == num_training_iter - 1):
         print(outputtensor)

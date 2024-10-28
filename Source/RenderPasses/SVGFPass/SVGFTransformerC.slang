@@ -41,9 +41,6 @@ cbuffer PerImageCB {
 
     RWByteAddressBuffer daWeightMatrices;
     RWByteAddressBuffer drIllum;
-
-    float4 fixedScores[(kTransformerItems * kTransformerItems - 1) / 4 + 1];
-    RWByteAddressBuffer daScoreMatrices;
 };
 
 struct EmbeddingMatrix {
@@ -111,17 +108,11 @@ void gemm_scores_and_smax() {
         float sum = 0.0f;
 
         for (int j = 0; j < kNumFeatures; j++) {
+            // our query times their key
             sum += xw[0].m[j][threadIdx] * xw[1].m[j][i];
         }
 
         scores[i][threadIdx] = sum;
-
-        int linearIdxSc = i * kTransformerItems + threadIdx;
-
-        int vec_idx = linearIdxSc / 4;
-        int chn_idx = linearIdxSc % 4;
-
-        scores[i][threadIdx] = fixedScores[vec_idx][chn_idx];
 
         if (sum > maxRawScore) {
             maxRawScore = sum;
@@ -172,14 +163,28 @@ void bwd_gemm_scores_and_smax() {
     }
 
     for (int i = 0; i < kTransformerItems; i++) {
-        float qloss = dLdScores[threadIdx][i];
-        float kloss = dLdScores[i][threadIdx]; // this is very slow, 32 clock cycle read
+        // s_ij = sum of q_ij * k_ij
+        // we are thread j in this case usually (according to memory layout of scores)
+        // so when calculating s_ij loss for query, we just multiply it by the other thread keys
+        // but what about key loss?
+        // we have to flip the script and say we are thread i
+        // how relevant was our key to the loss? it's that incoming loss times the other query value
+
+        // remember, 0 is query and 1 is key
+
+        // when we want to find the loss w.r.t to our query,
+        // we worry about smax losses associated with our own thread
+        float qloss = dLdScores[i][threadIdx];
+        // when we want to find the loss w.r.t our key,
+        // we worry about smax losses associated with other threads
+        // this is very slow, 32 clock cycle read
+        float kloss = dLdScores[threadIdx][i];
 
         for (int j = 0; j < kNumFeatures; j++) {
             // find other key weight for query
-            dLdxw[0].m[j][threadIdx] += qloss * xw[1].m[j][threadIdx];
+            dLdxw[0].m[j][threadIdx] += qloss * xw[1].m[j][i];
             // do same for key
-            dLdxw[1].m[j][threadIdx] += kloss * xw[0].m[j][threadIdx];
+            dLdxw[1].m[j][threadIdx] += kloss * xw[0].m[j][i];
         }
     }
 }
@@ -258,8 +263,6 @@ void transformer(const int idx) {
     gemm_src(1); // key
     gemm_src(2); // values
 
-
-
     GroupMemoryBarrierWithGroupSync();
 
     gemm_scores_and_smax();
@@ -297,13 +300,13 @@ void bwd_transformer(const int idx) {
 
     bwd_gemm_scores_and_smax();
     GroupMemoryBarrierWithGroupSync();
-    /*
+
     bwd_gemm_src(0);
     bwd_gemm_src(1);
     bwd_gemm_src(2);
 
     GroupMemoryBarrierWithGroupSync();
-    */
+
     if (threadIdx < 12) {
         float4 writeVal;
 
@@ -315,22 +318,7 @@ void bwd_transformer(const int idx) {
 
         print("Dumping ", writeVal);
 
-        //storeDerivBuf4(daWeightMatrices, int2(0, 0), writeVal, gIllumination, threadIdx);
-    }
-
-    for (int i = threadIdx; i < (kTransformerItems * kTransformerItems - 1) / 4 + 1; i += kTransformerItems) {
-        // gotta convert this to normal indices
-        float4 writeVal;
-        for (int j = 0; j < 4; j++) {
-            int lin_idx = i * 4 + j;
-
-            int r = lin_idx / kTransformerItems;
-            int c = lin_idx % kTransformerItems;
-
-            writeVal[j] = dLdScores[r][c];
-        }
-
-        storeDerivBuf4(daScoreMatrices, int2(0, 0), writeVal, gIllumination, i);
+        storeDerivBuf4(daWeightMatrices, int2(0, 0), writeVal, gIllumination, threadIdx);
     }
 }
 

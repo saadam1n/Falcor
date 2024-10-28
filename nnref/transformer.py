@@ -101,7 +101,7 @@ class Transformer(nn.Module):
             alpha = 0.8
             embedding = ftform * (1.0 - alpha) + embedding * alpha
 
-        num_out_channels = 4
+        num_out_channels = 3
         return embedding[:, 0:num_out_channels].view(self.blocksize, self.blocksize, num_out_channels).permute((2, 0, 1))
 
 
