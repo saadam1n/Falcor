@@ -12,7 +12,7 @@ using namespace Falcor;
 
 #define kMapDim 5
 #define kTransformerItems 25
-#define kNumFeatures 4
+#define kNumFeatures 8
 
 class SVGFTransformer : public Object
 {

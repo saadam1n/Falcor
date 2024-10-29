@@ -2,8 +2,7 @@ import SVGFCommon;
 import Utils.Debug.PixelDebug;
 
 #define kTransformerItems 25
-#define kPaddedFeatures 32
-#define kNumFeatures 4
+#define kNumFeatures 8
 
 /*
 To make this as fast as possible, we need to ensure our stride between array accesses is always 1. Let X be a 25x8 matrix. Then:
@@ -36,6 +35,7 @@ cbuffer PerImageCB {
     WeightMatrix weights[3];
 
     texture2D gIllumination;
+    texture2D gNormalZ;
     RWTexture2D<float4> gFiltered;
     RWTexture2D<float4> gDebugBuf;
 
@@ -45,18 +45,18 @@ cbuffer PerImageCB {
 };
 
 struct EmbeddingMatrix {
-    float m[kNumFeatures][kPaddedFeatures];
+    float m[kNumFeatures][kTransformerItems];
 };
 
 groupshared EmbeddingMatrix src;
 groupshared EmbeddingMatrix xw[3];
-groupshared float scores[kTransformerItems][kPaddedFeatures]; // how much the 2nd idx is related to 1st idx, technically index doesn't matter
+groupshared float scores[kTransformerItems][kTransformerItems]; // how much the 2nd idx is related to 1st idx, technically index doesn't matter
 groupshared EmbeddingMatrix output;
 
 groupshared EmbeddingMatrix dLdOutput;
-groupshared float dLdScores[kTransformerItems][kPaddedFeatures];
+groupshared float dLdScores[kTransformerItems][kTransformerItems];
 groupshared EmbeddingMatrix dLdxw[3];
-groupshared float dLdTempWeightMatrices[3][kNumFeatures][kNumFeatures][kPaddedFeatures];
+groupshared float dLdTempWeightMatrix[kNumFeatures][kNumFeatures][kTransformerItems];
 groupshared float dLdWeightMatrices[3][kNumFeatures][kNumFeatures];
 groupshared float dLdSource[kNumFeatures][kTransformerItems];
 
@@ -81,7 +81,7 @@ void bwd_gemm_src(int idx) {
     for (int i = 0; i < kNumFeatures; i++) { // i is dst
         for (int j = 0; j < kNumFeatures; j++) { // j is src
             // destination loss times other factor
-            dLdTempWeightMatrices[idx][i][j][threadIdx] = dLdxw[idx].m[i][threadIdx] * src.m[j][threadIdx];
+            dLdTempWeightMatrix[i][j][threadIdx] = dLdxw[idx].m[i][threadIdx] * src.m[j][threadIdx];
             dLdSource[j][threadIdx] += dLdxw[idx].m[i][threadIdx] * weights[idx].fetch(i, j);
         }
     }
@@ -94,14 +94,13 @@ void bwd_gemm_src(int idx) {
         int srcFeature = threadIdx % 4;
 
         for (int i = 0; i < kTransformerItems; i++) {
-            sumWeight += dLdTempWeightMatrices[idx][dstFeature][srcFeature][i];
+            sumWeight += dLdTempWeightMatrix[dstFeature][srcFeature][i];
         }
 
         dLdWeightMatrices[idx][dstFeature][srcFeature] = sumWeight;
     }
 }
 
-static float normFactor;
 void gemm_scores_and_smax() {
     float maxRawScore = 0.0f;
 
@@ -121,7 +120,7 @@ void gemm_scores_and_smax() {
         }
     }
 
-    normFactor = 0.0f;
+    float normFactor = 0.0f;
     for (int i = 0; i < kTransformerItems; i++) {
         scores[i][threadIdx] = exp(scores[i][threadIdx] - maxRawScore);
         normFactor += scores[i][threadIdx];
@@ -129,9 +128,6 @@ void gemm_scores_and_smax() {
 
     for (int i = 0; i < kTransformerItems; i++) {
         scores[i][threadIdx] /= normFactor;
-
-        float2 pdata = float2(i, scores[i][threadIdx]);
-        print("Scores", pdata);
     }
 
 }
@@ -240,10 +236,6 @@ void bwd_gemm_output() {
         dLdScores[i][threadIdx] = dLdCurrentScore;
     }
 
-    for (int i = 0; i < kNumFeatures; i++) {
-        print("Pxl ", dLdxw[2].m[i][threadIdx]);
-    }
-
 }
 
 void transformer(const int idx) {
@@ -254,9 +246,13 @@ void transformer(const int idx) {
 
     // load the values from meory
     float4 curIllum = gIllumination[workIdx];
-
     for (int i = 0; i < 4; i++) {
         src.m[i][threadIdx] = curIllum[i];
+    }
+
+    float4 normZ = gNormalZ[workIdx];
+    for (int i = 0; i < 4; i++) {
+        src.m[i + 4][threadIdx] = normZ[i];
     }
 
     GroupMemoryBarrierWithGroupSync();
@@ -276,9 +272,6 @@ void transformer(const int idx) {
         filtered[i] = output.m[i][threadIdx];
     }
 
-    // filtered.xy = float2(workIdx);
-    //filtered.xy = xw[0].m[threadIdx][0];
-
     gFiltered[workIdx] = filtered;
 }
 
@@ -292,13 +285,6 @@ void bwd_transformer(const int idx) {
 
     bwd_gemm_output();
     GroupMemoryBarrierWithGroupSync();
-
-    float4 printVal;
-    for (int i = 0; i < 4; i++) {
-        printVal[i] = xw[2].m[i][threadIdx];
-    }
-    print("Here is the value ", printVal);
-    gDebugBuf[workIdx] = printVal;
 
     bwd_gemm_scores_and_smax();
     GroupMemoryBarrierWithGroupSync();
@@ -319,18 +305,21 @@ void bwd_transformer(const int idx) {
 
     GroupMemoryBarrierWithGroupSync();
 
-    if (threadIdx < 12) {
+    const int NUM_TOTAL_WEIGHTS = 3 * kNumFeatures * kNumFeatures;
+    int readIdx = 4 * threadIdx;
+    while (readIdx < NUM_TOTAL_WEIGHTS) {
         float4 writeVal;
+        for (int i = readIdx; i < readIdx + 4; i++) {
+            int colIdx = i % kNumFeatures;
+            int rowIdx = (i / kNumFeatures) % kNumFeatures;
+            int mtxIdx = (i / kNumFeatures) / kNumFeatures;
 
-        int rowIdx = threadIdx % 4;
-        int mtxIdx = threadIdx / 4;
-        for (int i = 0; i < 4; i++) {
-            writeVal[i] = dLdWeightMatrices[mtxIdx][rowIdx][i];
+            writeVal[i % 4] = dLdWeightMatrices[mtxIdx][rowIdx][colIdx];
         }
 
-        print("Dumping ", writeVal);
+        storeDerivBuf4(daWeightMatrices, int2(0, 0), writeVal, gIllumination, readIdx / 4);
 
-        storeDerivBuf4(daWeightMatrices, int2(0, 0), writeVal, gIllumination, threadIdx);
+        readIdx += 4 * kTransformerItems;
     }
 }
 

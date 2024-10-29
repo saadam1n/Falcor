@@ -30,8 +30,7 @@ SVGFTransformer::SVGFTransformer(ref<Device> pDevice, ref<SVGFUtilitySet> pUtili
         {
             for (int k = 0; k < kNumFeatures; k++)
             {
-                int rx = i * kNumFeatures * kNumFeatures + j * kNumFeatures + k;
-                mWeights.dv[i].weights[j][k] = (j == k ? 1.0f : 0.0f) + mlp_offset(mlp_rng) / 4.0f;
+                mWeights.dv[i].weights[j][k] = (j == k ? 1.0f : 0.0f) + mlp_offset(mlp_rng) / 25.0f;
             }
         }
     }
@@ -101,17 +100,25 @@ void SVGFTransformer::set_common_parameters(ShaderVar& perImageCB)
     perImageCB["weights"].setBlob(mWeights.dv);
     perImageCB["gIllumination"] = mpTestIllum;
     perImageCB["gFiltered"] = mpTestOutput;
+    perImageCB["gNormalZ"] = mpTestNormalDepth;
     perImageCB["gDebugBuf"] = mpDebugBuf;
 }
 
 void SVGFTransformer::set_and_update_test_data(RenderContext* pRenderContext)
 {
+    std::mt19937 mlp_rng(2024);
+    std::uniform_real_distribution<> mlp_offset(0.0f, 1.0f);
+
     for (int y = 0; y < kMapDim; y++)
     {
         for (int x = 0; x < kMapDim; x++)
         {
             mTestIllumData[y][x] = tempTestIllumData[y][x];
-            mTestNormalData[y][x] = float4(0.0f);
+
+            for (int i = 0; i < 4; i++)
+            {
+                mTestNormalData[y][x][i] = mlp_offset(mlp_rng);
+            }
         }
     }
     pRenderContext->updateTextureData(mpTestIllum.get(), (const void*)mTestIllumData);
