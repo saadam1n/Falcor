@@ -47,8 +47,7 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     RenderPass(pDevice),
     #ifdef KPCNN_TESTING
-    mpUtilities(make_ref<SVGFUtilitySet>(pDevice, 0, 0, 2 * kMapDim, kMapDim))
-    ,
+    mpUtilities(make_ref<SVGFUtilitySet>(pDevice, 0, 0, 2 * kMapDim, kMapDim)),
     #else
     mpUtilities(make_ref<SVGFUtilitySet>(pDevice, 200, 200, 800, 800)),
     #endif
@@ -1208,11 +1207,13 @@ void SVGFPass::computeDerivFinalModulate(RenderContext* pRenderContext, SVGFRend
 
 void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, SVGFRenderData& svgfrd, bool updateInternalBuffers)
 {
+    //mpTransformerSubpass->computeEvaluation(pRenderContext, svgfrd, updateInternalBuffers);
     mpAtrousSubpass->computeEvaluation(pRenderContext, svgfrd, updateInternalBuffers);
 }
 
 void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
 {
+    //mpTransformerSubpass->computeBackPropagation(pRenderContext, svgfrd);
     mpAtrousSubpass->computeBackPropagation(pRenderContext, svgfrd);
 }
 

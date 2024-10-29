@@ -306,6 +306,7 @@ void bwd_transformer(const int2 group_idx, const int local_idx) {
     for (int i = 0; i < 4; i++) {
         dLdCurPixel[i] = dLdSource[i][threadIdx];
     }
+    storeDerivBuf4(daIllum, pixelIdx, dLdCurPixel, gIllumination);
 
     GroupMemoryBarrierWithGroupSync();
 

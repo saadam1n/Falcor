@@ -36,7 +36,7 @@
 #include "SVGFKpcnnAtrous.h"
 #include "SVGFTransformer.h"
 
-#define KPCNN_TESTING
+//#define KPCNN_TESTING
 
 using namespace Falcor;
 

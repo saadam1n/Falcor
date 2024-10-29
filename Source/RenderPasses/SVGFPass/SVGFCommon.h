@@ -95,8 +95,8 @@ namespace
     const std::string kDatasetMotionVector = "MotionVec";
 
     // set common stuff first
-    const size_t screenWidth = 5;
-    const size_t screenHeight = 5;
+    const size_t screenWidth = 1920;
+    const size_t screenHeight = 1080;
     const size_t numPixels = screenWidth * screenHeight;
 
     const float3 dvLuminanceParams = float3(0.2126f, 0.7152f, 0.0722f);

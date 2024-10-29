@@ -17,8 +17,26 @@ SVGFTransformer::SVGFTransformer(ref<Device> pDevice, ref<SVGFUtilitySet> pUtili
         kMapDim * 2, kMapDim, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
     );
 
+
+
+    mpOutput = mpDevice->createTexture2D(
+        screenWidth,
+        screenHeight,
+        ResourceFormat::RGBA32Float,
+        1,
+        1,
+        nullptr,
+        ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
+    );
+
     mpDebugBuf = mpDevice->createTexture2D(
-        kMapDim * 2, kMapDim, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
+        screenWidth,
+        screenHeight,
+        ResourceFormat::RGBA32Float,
+        1,
+        1,
+        nullptr,
+        ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
     );
 
     // set up our variables
@@ -45,10 +63,10 @@ void SVGFTransformer::computeEvaluation(RenderContext* pRenderContext, SVGFRende
 {
     FALCOR_PROFILE(pRenderContext, "Transformer");
 
-    set_and_update_test_data(pRenderContext);
+    //set_and_update_test_data(pRenderContext);
 
     auto perImageCB = mpEvaluatePass->getRootVar()["PerImageCB"];
-    set_common_parameters(perImageCB);
+    set_common_parameters(perImageCB, svgfrd);
     mpUtilities->setPatchingState(mpEvaluatePass);
 
     mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
@@ -67,13 +85,14 @@ void SVGFTransformer::computeBackPropagation(RenderContext* pRenderContext, SVGF
 {
     FALCOR_PROFILE(pRenderContext, "Transformer");
 
-    set_and_update_test_data(pRenderContext);
+    //set_and_update_test_data(pRenderContext);
 
     auto perImageCB = mpBackPropagatePass->getRootVar()["PerImageCB"];
-    set_common_parameters(perImageCB);
+    set_common_parameters(perImageCB, svgfrd);
     mpUtilities->setPatchingState(mpBackPropagatePass);
 
     perImageCB["drIllum"] = mpUtilities->mpdrCompactedBuffer[1];
+    perImageCB["daIllum"] = mpUtilities->mpdrCompactedBuffer[0];
     perImageCB["daWeightMatrices"] = mWeights.da;
 
     mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
@@ -86,7 +105,7 @@ void SVGFTransformer::renderUI(Gui::Widgets& widget) {
     mpPixelDebug->renderUI(widget);
 }
 
-void SVGFTransformer::set_common_parameters(ShaderVar& perImageCB)
+void SVGFTransformer::set_common_parameters(ShaderVar& perImageCB, SVGFRenderData& svgfrd)
 {
     /*
         WeightMatrix weights[3];
@@ -98,10 +117,15 @@ void SVGFTransformer::set_common_parameters(ShaderVar& perImageCB)
 
 
     perImageCB["weights"].setBlob(mWeights.dv);
-    perImageCB["gIllumination"] = mpTestIllum;
-    perImageCB["gFiltered"] = mpTestOutput;
-    perImageCB["gNormalZ"] = mpTestNormalDepth;
+    perImageCB["gIllumination"] = svgfrd.fetchTexTable("AtrousInputIllumination");
+    perImageCB["gNormalZ"] = svgfrd.fetchTexTable("gLinearZAndNormal");
+
+    perImageCB["gFiltered"] = mpOutput;
     perImageCB["gDebugBuf"] = mpDebugBuf;
+
+    svgfrd.fetchTexTable("FinalModulateInIllumination") = mpOutput;
+
+    svgfrd.fetchBufTable("FilterMomentsInIllumination") = mpUtilities->mpdrCompactedBuffer[0];
 }
 
 void SVGFTransformer::set_and_update_test_data(RenderContext* pRenderContext)
