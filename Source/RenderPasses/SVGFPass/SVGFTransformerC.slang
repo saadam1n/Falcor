@@ -41,6 +41,7 @@ cbuffer PerImageCB {
 
     RWByteAddressBuffer daWeightMatrices;
     RWByteAddressBuffer drIllum;
+    RWByteAddressBuffer daIllum;
 };
 
 struct EmbeddingMatrix {
@@ -57,7 +58,7 @@ groupshared float dLdScores[kTransformerItems][kPaddedFeatures];
 groupshared EmbeddingMatrix dLdxw[3];
 groupshared float dLdTempWeightMatrices[3][kNumFeatures][kNumFeatures][kPaddedFeatures];
 groupshared float dLdWeightMatrices[3][kNumFeatures][kNumFeatures];
-
+groupshared float dLdSource[kNumFeatures][kTransformerItems];
 
 static int2 workIdx;
 static int threadIdx;
@@ -81,6 +82,7 @@ void bwd_gemm_src(int idx) {
         for (int j = 0; j < kNumFeatures; j++) { // j is src
             // destination loss times other factor
             dLdTempWeightMatrices[idx][i][j][threadIdx] = dLdxw[idx].m[i][threadIdx] * src.m[j][threadIdx];
+            dLdSource[j][threadIdx] += dLdxw[idx].m[i][threadIdx] * weights[idx].fetch(i, j);
         }
     }
 
@@ -301,9 +303,19 @@ void bwd_transformer(const int idx) {
     bwd_gemm_scores_and_smax();
     GroupMemoryBarrierWithGroupSync();
 
+    for (int i = 0; i < kNumFeatures; i++) {
+        dLdSource[i][threadIdx] = 0.0f;
+    }
+
     bwd_gemm_src(0);
     bwd_gemm_src(1);
     bwd_gemm_src(2);
+
+    // now we need to dump this stuff somewhere
+    float4 dLdCurPixel;
+    for (int i = 0; i < 4; i++) {
+        dLdCurPixel[i] = dLdSource[i][threadIdx];
+    }
 
     GroupMemoryBarrierWithGroupSync();
 
