@@ -1,8 +1,10 @@
 import SVGFCommon;
 import Utils.Debug.PixelDebug;
 
-#define kTransformerItems 25
+#define kMapDim 5
+#define kTransformerItems (kMapDim * kMapDim)
 #define kNumFeatures 8
+#define kNumTotalWeights (3 * kNumFeatures * kNumFeatures)
 
 /*
 To make this as fast as possible, we need to ensure our stride between array accesses is always 1. Let X be a 25x8 matrix. Then:
@@ -62,7 +64,7 @@ groupshared float dLdSource[kNumFeatures][kTransformerItems];
 
 static int2 workIdx;
 static int threadIdx;
-
+static int2 pixelIdx;
 
 void gemm_src(int idx) {
     // take src and do dot product
@@ -238,19 +240,21 @@ void bwd_gemm_output() {
 
 }
 
-void transformer(const int idx) {
-    threadIdx = idx;
-    workIdx = uint2(idx % 5, idx / 5);
+void transformer(const int2 group_idx, const int local_idx) {
+    threadIdx = local_idx;
+    workIdx = uint2(local_idx % kMapDim, local_idx / kMapDim);
+
+    pixelIdx = group_idx * kMapDim + workIdx;
 
     printSetPixel(workIdx);
 
     // load the values from meory
-    float4 curIllum = gIllumination[workIdx];
+    float4 curIllum = gIllumination[pixelIdx];
     for (int i = 0; i < 4; i++) {
         src.m[i][threadIdx] = curIllum[i];
     }
 
-    float4 normZ = gNormalZ[workIdx];
+    float4 normZ = gNormalZ[pixelIdx];
     for (int i = 0; i < 4; i++) {
         src.m[i + 4][threadIdx] = normZ[i];
     }
@@ -272,13 +276,13 @@ void transformer(const int idx) {
         filtered[i] = output.m[i][threadIdx];
     }
 
-    gFiltered[workIdx] = filtered;
+    gFiltered[pixelIdx] = filtered;
 }
 
-void bwd_transformer(const int idx) {
-    transformer(idx);
+void bwd_transformer(const int2 group_idx, const int local_idx) {
+    transformer(group_idx, local_idx);
 
-    float4 loss = readDerivBuf4(drIllum, workIdx, gIllumination, 0);
+    float4 loss = readDerivBuf4(drIllum, pixelIdx, gIllumination, 0);
     for (int i = 0; i < 4; i++) {
         dLdOutput.m[i][threadIdx] = loss[i];
     }
@@ -305,9 +309,8 @@ void bwd_transformer(const int idx) {
 
     GroupMemoryBarrierWithGroupSync();
 
-    const int NUM_TOTAL_WEIGHTS = 3 * kNumFeatures * kNumFeatures;
     int readIdx = 4 * threadIdx;
-    while (readIdx < NUM_TOTAL_WEIGHTS) {
+    while (readIdx < kNumTotalWeights) {
         float4 writeVal;
         for (int i = readIdx; i < readIdx + 4; i++) {
             int colIdx = i % kNumFeatures;
