@@ -47,7 +47,7 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 SVGFPass::SVGFPass(ref<Device> pDevice, const Properties& props) :
     RenderPass(pDevice),
     #ifdef KPCNN_TESTING
-    mpUtilities(make_ref<SVGFUtilitySet>(pDevice, 0, 0, kMapDim, kMapDim))
+    mpUtilities(make_ref<SVGFUtilitySet>(pDevice, 0, 0, 2 * kMapDim, kMapDim))
     ,
     #else
     mpUtilities(make_ref<SVGFUtilitySet>(pDevice, 200, 200, 800, 800)),

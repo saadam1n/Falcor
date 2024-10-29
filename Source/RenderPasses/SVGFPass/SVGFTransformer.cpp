@@ -11,14 +11,14 @@ SVGFTransformer::SVGFTransformer(ref<Device> pDevice, ref<SVGFUtilitySet> pUtili
     mpPixelDebug->enable();
 
     // create some test stuff
-    mpTestIllum = mpDevice->createTexture2D(kMapDim, kMapDim, ResourceFormat::RGBA32Float, 1, 1);
-    mpTestNormalDepth = mpDevice->createTexture2D(kMapDim, kMapDim, ResourceFormat::RGBA32Float, 1, 1);
+    mpTestIllum = mpDevice->createTexture2D(kMapDim * 2, kMapDim, ResourceFormat::RGBA32Float, 1, 1);
+    mpTestNormalDepth = mpDevice->createTexture2D(kMapDim * 2, kMapDim, ResourceFormat::RGBA32Float, 1, 1);
     mpTestOutput = mpDevice->createTexture2D(
-        kMapDim, kMapDim, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
+        kMapDim * 2, kMapDim, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
     );
 
     mpDebugBuf = mpDevice->createTexture2D(
-        kMapDim, kMapDim, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
+        kMapDim * 2, kMapDim, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
     );
 
     // set up our variables
@@ -53,7 +53,7 @@ void SVGFTransformer::computeEvaluation(RenderContext* pRenderContext, SVGFRende
 
     mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
     mpPixelDebug->prepareProgram(mpEvaluatePass->getProgram(), mpEvaluatePass->getRootVar());
-    mpEvaluatePass->execute(pRenderContext, uint3(1, 1, 25));
+    mpEvaluatePass->execute(pRenderContext, uint3(2, 1, 25));
     mpPixelDebug->endFrame(pRenderContext);
 
     std::cout << "GPU Test Result:\n";
@@ -78,7 +78,7 @@ void SVGFTransformer::computeBackPropagation(RenderContext* pRenderContext, SVGF
 
     mpPixelDebug->beginFrame(pRenderContext, uint2(kMapDim, kMapDim));
     mpPixelDebug->prepareProgram(mpBackPropagatePass->getProgram(), mpBackPropagatePass->getRootVar());
-    mpBackPropagatePass->execute(pRenderContext, uint3(1, 1, 25));
+    mpBackPropagatePass->execute(pRenderContext, uint3(2, 1, 25));
     mpPixelDebug->endFrame(pRenderContext);
 }
 
@@ -111,7 +111,7 @@ void SVGFTransformer::set_and_update_test_data(RenderContext* pRenderContext)
 
     for (int y = 0; y < kMapDim; y++)
     {
-        for (int x = 0; x < kMapDim; x++)
+        for (int x = 0; x < 2 * kMapDim; x++)
         {
             mTestIllumData[y][x] = tempTestIllumData[y][x];
 

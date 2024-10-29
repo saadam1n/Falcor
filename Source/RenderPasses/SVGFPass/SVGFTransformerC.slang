@@ -320,7 +320,7 @@ void bwd_transformer(const int2 group_idx, const int local_idx) {
             writeVal[i % 4] = dLdWeightMatrices[mtxIdx][rowIdx][colIdx];
         }
 
-        storeDerivBuf4(daWeightMatrices, int2(0, 0), writeVal, gIllumination, readIdx / 4);
+        storeDerivBuf4(daWeightMatrices, group_idx, writeVal, gIllumination, readIdx / 4);
 
         readIdx += 4 * kTransformerItems;
     }

@@ -116,7 +116,7 @@ namespace
 
     const int kNumReprojectionMlpWeights = 1192;
 
-    float4 tempTestIllumData[5][5] = {
+    float4 tempTestIllumData5x5[5][5] = {
         {float4(1.0f, 0.0f, 0.0f, 0.0f),
          float4(0.0f, 0.0f, 0.0f, 0.0f),
          float4(0.0f, 0.0f, 0.0f, 0.0f),
@@ -142,6 +142,59 @@ namespace
          float4(0.0f, 0.0f, 0.0f, 0.0f),
          float4(0.0f, 0.0f, 0.0f, 0.0f),
          float4(0.0f, 0.0f, 0.0f, 0.0f)},
+    };
+
+    float4 tempTestIllumData[5][10] = {
+        {float4(1.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 1.0f, 0.0f),
+         float4(1.0f, 1.0f, 1.0f, 0.0f)},
+        {float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 1.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 1.0f, 1.0f, 0.0f)},
+        {float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 1.0f, 0.0f, 0.0f),
+         float4(0.0f, 1.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 1.0f, 1.0f, 0.0f),
+         float4(0.0f, 1.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f)},
+        {float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 1.0f, 0.0f, 0.0f),
+         float4(0.0f, 1.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 1.0f, 1.0f, 0.0f),
+         float4(0.0f, 1.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f)},
+        {float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(0.0f, 0.0f, 1.0f, 0.0f),
+         float4(0.0f, 0.0f, 0.0f, 0.0f),
+         float4(1.0f, 1.0f, 1.0f, 0.0f)},
     };
     }
 

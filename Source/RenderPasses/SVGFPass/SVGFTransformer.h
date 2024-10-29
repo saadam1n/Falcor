@@ -56,8 +56,8 @@ private:
     ref<ComputePass> mpEvaluatePass;
     ref<ComputePass> mpBackPropagatePass;
 
-    float4 mTestIllumData[kMapDim][kMapDim];
-    float4 mTestNormalData[kMapDim][kMapDim];
+    float4 mTestIllumData[kMapDim][kMapDim * 2];
+    float4 mTestNormalData[kMapDim][kMapDim * 2];
 
     void set_common_parameters(ShaderVar& perImageCB);
     void set_and_update_test_data(RenderContext* pRenderContext);
