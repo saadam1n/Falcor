@@ -255,8 +255,8 @@ public:
 private:
     ref<Device> mpDevice;
 
-    int mBufferMemUsage = 0;
-    int mTextureMemUsage = 0;
+    int64_t mBufferMemUsage = 0;
+    int64_t mTextureMemUsage = 0;
 
     ref<Fbo> mpDummyFullscreenFbo;
     ref<FullScreenPass> mpDummyFullscreenPass;

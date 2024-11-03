@@ -460,10 +460,10 @@ void SVGFTrainingDataset::preloadBitmaps()
 
 bool SVGFTrainingDataset::atValidIndex() const
 {
-    #if 0
+    #if 1
     return std::filesystem::exists(getSampleBufferPath(kDatasetColor));
     #else
-    return (mDatasetIndex < 1); 
+    return (mDatasetIndex < 1);
     #endif
 }
 
@@ -474,8 +474,6 @@ bool SVGFTrainingDataset::loadCurrent(RenderContext* pRenderContext)
     {
         return false;
     }
-
-    return true; // uh I'll end up shooting myself in the foot later
 
     // continue with loading of samples
     for(auto [buffer, tex] : mTextureNameMappings)

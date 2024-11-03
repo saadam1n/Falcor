@@ -68,7 +68,7 @@ private:
 
     SVGFRenderData mRenderData;
 
-    bool mTrained = false;
+    bool mTrained = true;
     int mEpoch = 0;
     void runNextTrainingTask(RenderContext* pRenderContext);
     void clearTrainingBuffers(RenderContext* pRenderContext);

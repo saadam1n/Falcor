@@ -74,11 +74,15 @@ void SVGFTransformer::computeEvaluation(RenderContext* pRenderContext, SVGFRende
     mpEvaluatePass->execute(pRenderContext, uint3(2, 1, 25));
     mpPixelDebug->endFrame(pRenderContext);
 
+    svgfrd.fetchTexTable("FinalModulateInIllumination") = mpOutput;
+
+    /*
     std::cout << "GPU Test Result:\n";
 
     auto outputBitmap = pRenderContext->readTextureSubresource(mpTestOutput.get(), 0);
     float4(*filteredImage)[kMapDim] = (float4(*)[kMapDim])outputBitmap.data(); // uh super weird syntax I do not understand
     print_test_result(filteredImage);
+    */
 }
 
 void SVGFTransformer::computeBackPropagation(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
@@ -99,6 +103,8 @@ void SVGFTransformer::computeBackPropagation(RenderContext* pRenderContext, SVGF
     mpPixelDebug->prepareProgram(mpBackPropagatePass->getProgram(), mpBackPropagatePass->getRootVar());
     mpBackPropagatePass->execute(pRenderContext, uint3(2, 1, 25));
     mpPixelDebug->endFrame(pRenderContext);
+
+    svgfrd.fetchBufTable("FilterMomentsInIllumination") = mpUtilities->mpdrCompactedBuffer[0];
 }
 
 void SVGFTransformer::renderUI(Gui::Widgets& widget) {

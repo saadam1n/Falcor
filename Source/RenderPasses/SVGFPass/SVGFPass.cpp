@@ -1213,8 +1213,8 @@ void SVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, SVGFRen
 
 void SVGFPass::computeDerivAtrousDecomposition(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
 {
-    //mpTransformerSubpass->computeBackPropagation(pRenderContext, svgfrd);
-    mpAtrousSubpass->computeBackPropagation(pRenderContext, svgfrd);
+    mpTransformerSubpass->computeBackPropagation(pRenderContext, svgfrd);
+    //mpAtrousSubpass->computeBackPropagation(pRenderContext, svgfrd);
 }
 
 void SVGFPass::computeFilteredMoments(RenderContext* pRenderContext, SVGFRenderData& svgfrd)
@@ -1260,6 +1260,7 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext, SVGFRe
 
     auto perImageCB = mFilterMomentsState.dPass->getRootVar()["PerImageCB"];
 
+    /*
     perImageCB["gIllumination"]     = svgfrd.fetchInternalTex("FilterMomentsIllum");
     perImageCB["gMoments"]          = svgfrd.fetchInternalTex("FilterMomentsMoments");
     perImageCB["gHistoryLength"]    = svgfrd.fetchInternalTex("FilterMomentsHistoryLength");
@@ -1282,16 +1283,17 @@ void SVGFPass::computeDerivFilteredMoments(RenderContext* pRenderContext, SVGFRe
     for (int i = 0; i < 3; i++) {
         perImageCB["dvWeightFunctionParams"][i] = mFilterMomentsState.mWeightFunctionParams.dv[i];
     }
-
+    */
     auto perImageCB_D = mFilterMomentsState.dPass->getRootVar()["PerImageCB_D"];
 
+    /*
     perImageCB_D["drIllumination"] = svgfrd.fetchBufTable("FilterMomentsInIllumination");
 
     perImageCB_D["daSigma"] = mFilterMomentsState.mSigma.da;
     perImageCB_D["daVarianceBoostFactor"] = mFilterMomentsState.mVarianceBoostFactor.da;
     perImageCB_D["daLuminanceParams"] = mFilterMomentsState.mLuminanceParams.da;
     perImageCB_D["daWeightFunctionParams"] = mFilterMomentsState.mWeightFunctionParams.da;
-
+    */
     mFilterMomentsState.dPass->execute(pRenderContext, mpUtilities->getDummyFullscreenFbo());
 
     mpUtilities->runCompactingPass(pRenderContext, 0, 50);
