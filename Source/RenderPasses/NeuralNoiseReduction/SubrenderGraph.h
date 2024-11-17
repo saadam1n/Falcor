@@ -22,15 +22,18 @@ public:
         ref<RenderingComponent> srcComponent,
         const std::string& srcName,
         ref<RenderingComponent> dstComponent,
-        const std::string& dstName
+        const std::string& dstName,
+        bool dynamicEntry = false
     );
 
     // connect a component directly a texture
-    void createEdge(ref<RenderingComponent> srcComponent, const std::string& srcName, ref<Texture> dstTexture);
-    void createEdge(ref<Texture> srcTexture, ref<RenderingComponent> dstComponent, const std::string& dstName);
+    void createEdge(ref<RenderingComponent> srcComponent, const std::string& srcName, ref<Texture> dstTexture, bool dynamicEntry = false);
+    void createEdge(ref<Texture> srcTexture, ref<RenderingComponent> dstComponent, const std::string& dstName, bool dynamicEntry = false);
 
     void loadDataAndExecForward(RenderContext* pRenderContext, ref<RenderingComponent> component);
     void loadDataAndExecBackward(RenderContext* pRenderContext, ref<RenderingComponent> component);
+
+    ref<Texture> getVertex(ref<RenderingComponent> component, const std::string& name);
 
 private:
     ref<Device> mpDevice;

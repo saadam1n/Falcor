@@ -18,6 +18,9 @@ struct TextureVertex
     int height = sParams.patchHeight;
     ResourceFormat fmt = ResourceFormat::RGBA32Float;
     ResourceBindFlags flags = ResourceBindFlags::ShaderResource | ResourceBindFlags::RenderTarget;
+    ref<Texture> predefinedLocation = nullptr;
+
+    TextureVertex& setPredefinedLocation(ref<Texture> location);
 };
 
 class TextureReflecter

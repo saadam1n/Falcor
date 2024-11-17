@@ -1,5 +1,11 @@
 #include "TextureReflecter.h"
 
+TextureVertex& TextureVertex::setPredefinedLocation(ref<Texture> location)
+{
+    predefinedLocation = location;
+    return *this;
+}
+
 TextureVertex& TextureReflecter::addInput(const std::string& name)
 {
     throwIfAlreadyPresent(mInputList, name);
@@ -44,3 +50,4 @@ void TextureReflecter::throwIfAlreadyPresent(const std::vector<TextureVertex>& v
         }
     }
 }
+

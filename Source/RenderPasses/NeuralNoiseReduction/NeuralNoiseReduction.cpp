@@ -64,10 +64,11 @@ void NeuralNoiseReduction::execute(RenderContext* pRenderContext, const RenderDa
     auto pSrc = renderData.getTexture("src");
     auto pDst = renderData.getTexture("dst");
 
-    mpSubrenderGraph->createEdge(pSrc, mpSimpleKernel, kSimpleKernelInput);
-    mpSubrenderGraph->createEdge(mpSimpleKernel, kSimpleKernelOutput, pDst);
+    mpSubrenderGraph->createEdge(pSrc, mpSimpleKernel, kSimpleKernelInput, true);
 
     mpSubrenderGraph->loadDataAndExecForward(pRenderContext, mpSimpleKernel);
+
+    blitTextures(pRenderContext, mpSubrenderGraph->getVertex(mpSimpleKernel, kSimpleKernelOutput), pDst);
 }
 
 void NeuralNoiseReduction::renderUI(Gui::Widgets& widget) {}
