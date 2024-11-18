@@ -12,7 +12,10 @@ namespace
 const char* kSimpleKernelInput = "src";
 const char* kSimpleKernelOutput = "dst";
 const char* kSimpleKernelShader = "RenderPasses/NeuralNoiseReduction/SimpleKernel.ps.slang";
+
 }
+
+#define KERNEL_DIM 15
 
 class SimpleKernel : public RenderingComponent
 {
@@ -28,6 +31,10 @@ public:
     virtual void backward(RenderContext* pRenderContext, const TextureData& textureData) override;
 
 private:
+    float mKernel[KERNEL_DIM][KERNEL_DIM];
+
+
     ref<FullScreenPass> mpBlurFilter;
     ref<Fbo> mpBlurringFbo;
+
 };

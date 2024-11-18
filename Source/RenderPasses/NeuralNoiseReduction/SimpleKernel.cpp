@@ -4,6 +4,29 @@
 SimpleKernel::SimpleKernel(ref<Device> pDevice) : RenderingComponent(pDevice)
 {
     mpBlurFilter = createFullscreenPassAndDumpIR(mpDevice, kSimpleKernelShader, NEURAL_NET_PASS_TYPE_FORWARD);
+
+    float totalWeight = 0.0f;
+    float var = 0.1f;
+    for (int i = 0; i < KERNEL_DIM; i++)
+    {
+        for (int j = 0; j < KERNEL_DIM; j++)
+        {
+            int ydist = i - KERNEL_DIM / 2;
+            int xdist = j - KERNEL_DIM / 2;
+            mKernel[i][j] = exp(var * -(xdist * xdist + ydist * ydist));
+
+            totalWeight += mKernel[i][j];
+        }
+    }
+
+    for (int i = 0; i < KERNEL_DIM; i++)
+    {
+        for (int j = 0; j < KERNEL_DIM; j++)
+        {
+            mKernel[i][j] /= totalWeight;
+        }
+    }
+
     allocateFbos();
 }
 
@@ -17,16 +40,12 @@ void SimpleKernel::allocateFbos()
     }
 }
 
-SimpleKernel::~SimpleKernel() {
-
-}
+SimpleKernel::~SimpleKernel() {}
 
 void SimpleKernel::reflect(TextureReflecter& reflecter)
 {
     reflecter.addInput(kSimpleKernelInput);
     reflecter.addOutput(kSimpleKernelOutput).setPredefinedLocation(mpBlurringFbo->getColorTexture(0));
-
-    std::cout << "Predefined location is " << mpBlurringFbo->getColorTexture(0) << std::endl;
 }
 
 void SimpleKernel::forward(RenderContext* pRenderContext, const TextureData& textureData)
@@ -36,18 +55,10 @@ void SimpleKernel::forward(RenderContext* pRenderContext, const TextureData& tex
     auto perImageCB = mpBlurFilter->getRootVar()["PerImageCB"];
 
     perImageCB["src"] = pSrc;
+    perImageCB["kernel"].setBlob(mKernel);
 
     // blurring fbo points directly to output
     mpBlurFilter->execute(pRenderContext, mpBlurringFbo);
-
-    ref<Texture> np = nullptr;
-    std::cout << mpBlurringFbo->getColorTexture(0) << std::endl;
-    std::cout << textureData.getTexture(kSimpleKernelOutput) << std::endl;
-    std::cout << np << std::endl;
-    std::cout << "========\n";
-    std::cout << mpBlurringFbo->getColorTexture(0).get() << std::endl;
-    std::cout << textureData.getTexture(kSimpleKernelOutput).get() << std::endl;
-    std::cout << np.get() << std::endl;
 
     ASSERT_TEXTURE_IS_OUTPUT(textureData, mpBlurringFbo->getColorTexture(0), kSimpleKernelOutput);
 }
