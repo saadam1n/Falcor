@@ -49,7 +49,7 @@ void TextureData::setTexture(const std::string& name, ref<Texture> tex, bool for
         else
         {
             // previous doesn't really matter, but warn in case
-            if (it->second.ptr)
+            if (it->second.ptr && it->second.ptr != tex)
             {
                 std::cout << "Warn: trying to override field " << name
                           << " in texture data which (before override) points to a non-null texture at " << it->second.ptr;
