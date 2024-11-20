@@ -6,7 +6,7 @@ void SubrenderGraph::registerComponent(ref<RenderingComponent> component)
 {
     TextureReflecter reflecter;
 
-    component->reflect(reflecter);
+    component->reflectTextures(reflecter);
 
     TextureData data;
 

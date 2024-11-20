@@ -42,7 +42,7 @@ void SimpleKernel::allocateFbos()
 
 SimpleKernel::~SimpleKernel() {}
 
-void SimpleKernel::reflect(TextureReflecter& reflecter)
+void SimpleKernel::reflectTextures(TextureReflecter& reflecter)
 {
     reflecter.addInput(kSimpleKernelInput);
     reflecter.addOutput(kSimpleKernelOutput).setPredefinedLocation(mpBlurringFbo->getColorTexture(0));

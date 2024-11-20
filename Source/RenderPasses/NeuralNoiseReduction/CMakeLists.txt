@@ -6,6 +6,10 @@ target_sources(NeuralNoiseReduction PRIVATE
     Common.slang
     NeuralNoiseReduction.cpp
     NeuralNoiseReduction.h
+    Optimizer.h
+    Optimizer.cpp
+    ParameterReflecter.h
+    ParameterReflecter.cpp
     RenderContextUtils.h
     RenderContextUtils.cpp
     RenderingComponent.h

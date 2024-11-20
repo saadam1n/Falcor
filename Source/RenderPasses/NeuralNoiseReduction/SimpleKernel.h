@@ -25,7 +25,7 @@ public:
 
     virtual ~SimpleKernel() override;
 
-    virtual void reflect(TextureReflecter& reflecter) override;
+    virtual void reflectTextures(TextureReflecter& reflecter) override;
 
     virtual void forward(RenderContext* pRenderContext, const TextureData& textureData) override;
     virtual void backward(RenderContext* pRenderContext, const TextureData& textureData) override;
