@@ -29,10 +29,14 @@
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
 
+#include <torch/torch.h>
+
+
 using namespace Falcor;
 
 #include "RenderingComponent.h"
 #include "Subrendergraph.h"
+
 
 class NeuralNoiseReduction : public RenderPass
 {

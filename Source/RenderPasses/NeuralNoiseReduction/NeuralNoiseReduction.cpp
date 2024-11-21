@@ -31,6 +31,8 @@
 
 #include "SimpleKernel.h"
 
+#include <torch/script.h>
+
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
     registry.registerClass<RenderPass, NeuralNoiseReduction>();
@@ -42,6 +44,18 @@ NeuralNoiseReduction::NeuralNoiseReduction(ref<Device> pDevice, const Properties
     mpSimpleKernel = make_ref<SimpleKernel>(mpDevice);
 
     mpSubrenderGraph->registerComponent(mpSimpleKernel);
+
+    torch::jit::Module module;
+    try
+    {
+        module = torch::jit::load("C:/FalcorFiles/Models/SimpleKernel4.pt");
+    }
+    catch (const c10::Error& e)
+    {
+        std::cerr << "Error loading the model: " << e.what() << "\n";
+    }
+
+    std::cout << "Model loaded successfully.\n";
 }
 
 Properties NeuralNoiseReduction::getProperties() const
