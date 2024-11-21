@@ -18,13 +18,13 @@ print(f"Ref shape is {reference.shape}")
 
 model = simple_kernel.SimpleKernel().to(device)
 
-optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0.9)
+optimizer = torch.optim.SGD(model.parameters(), lr=0.0005, momentum=0.9)
 loss_fn = torch.nn.L1Loss()
 
 input = torch.tensor(reference, device=device).permute((2, 0, 1))
 input = input[None, :]
 
-numIters = 10000
+numIters = 1000
 for i in range(0, numIters):
     optimizer.zero_grad()
 
@@ -38,14 +38,17 @@ for i in range(0, numIters):
     print(f"Loss at iteration {i}\tis {loss.item()}")
 
     if i == 0 or i == (numIters - 1):
+        # first, export our model
+        if i == (numIters - 1):
+            traced = torch.jit.trace(model, input)
+            traced.to("cpu")
+            traced.save("C:/FalcorFiles/Models/SimpleKernel4.pt")
+
         image = output.detach().squeeze().permute((1, 2, 0)).cpu().numpy()
         print(f"Output shape is now {image.shape}")
         cv2.imshow("Image", image)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
-
-
-
 
 
 
