@@ -27,24 +27,26 @@
  **************************************************************************/
 #include "NeuralNoiseReduction.h"
 
-#include "RenderContextUtils.h"
+namespace
+{
+const char* kSimpleKernelInput = "src";
+const char* kSimpleKernelOutput = "dst";
+const char* kSimpleKernelShader = "RenderPasses/NeuralNoiseReduction/SimpleKernel.ps.slang";
 
-#include "SimpleKernel.h"
-
-#include <torch/script.h>
+} // namespace
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
     registry.registerClass<RenderPass, NeuralNoiseReduction>();
 }
 
+void blitTextures(RenderContext* pRenderContext, ref<Texture> src, ref<Texture> dst)
+{
+    pRenderContext->blit(src->getSRV(), dst->getRTV());
+}
+
 NeuralNoiseReduction::NeuralNoiseReduction(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
-    mpSubrenderGraph = make_ref<SubrenderGraph>(mpDevice);
-    mpSimpleKernel = make_ref<SimpleKernel>(mpDevice);
-
-    mpSubrenderGraph->registerComponent(mpSimpleKernel);
-
     torch::jit::Module module;
     try
     {
@@ -53,9 +55,58 @@ NeuralNoiseReduction::NeuralNoiseReduction(ref<Device> pDevice, const Properties
     catch (const c10::Error& e)
     {
         std::cerr << "Error loading the model: " << e.what() << "\n";
+        throw e;
     }
 
     std::cout << "Model loaded successfully.\n";
+
+    auto parameters = module.named_parameters();
+    torch::Tensor conv1;
+    for (const auto& param : parameters)
+    {
+        std::cout << "Parameter name: " << param.name << "\n";
+        std::cout << "Parameter size: " << param.value.sizes() << "\n";
+
+        if (param.name == "conv1.weight")
+        {
+            conv1 = param.value;
+        }
+    }
+
+    mpBlurFilter = FullScreenPass::create(mpDevice, kSimpleKernelShader);
+
+    for (int i = 0; i < 13; i++)
+    {
+        for (int j = 0; j < 13; j++)
+        {
+            float avg = 0.0f;
+            for (int k = 0; k < 3; k++)
+            {
+                for (int l = 0; l < 3; l++)
+                {
+                    avg += conv1[k][l][i][j].item<float>();
+                }
+            }
+            avg /= 3.0f;
+            mKernel[i][j] = avg;
+        }
+    }
+    
+}
+
+void NeuralNoiseReduction::compile(RenderContext* pRenderContext, const CompileData& compileData)
+{
+    allocateFbos(compileData.defaultTexDims, pRenderContext);
+}
+
+void NeuralNoiseReduction::allocateFbos(uint2 dim, RenderContext* pRenderContext)
+{
+    {
+        Fbo::Desc desc;
+        desc.setSampleCount(0);
+        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
+        mpBlurringFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
+    }
 }
 
 Properties NeuralNoiseReduction::getProperties() const
@@ -72,17 +123,22 @@ RenderPassReflection NeuralNoiseReduction::reflect(const CompileData& compileDat
     return reflector;
 }
 
+
 void NeuralNoiseReduction::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
     // renderData holds the requested resources
     auto pSrc = renderData.getTexture("src");
     auto pDst = renderData.getTexture("dst");
 
-    mpSubrenderGraph->createEdge(pSrc, mpSimpleKernel, kSimpleKernelInput, true);
+    auto perImageCB = mpBlurFilter->getRootVar()["PerImageCB"];
 
-    mpSubrenderGraph->loadDataAndExecForward(pRenderContext, mpSimpleKernel);
+    perImageCB["src"] = pSrc;
+    perImageCB["kernel"].setBlob(mKernel);
 
-    blitTextures(pRenderContext, mpSubrenderGraph->getVertex(mpSimpleKernel, kSimpleKernelOutput), pDst);
+    mpBlurFilter->execute(pRenderContext, mpBlurringFbo);
+
+    blitTextures(pRenderContext, mpBlurringFbo->getColorTexture(0), pDst);
 }
 
 void NeuralNoiseReduction::renderUI(Gui::Widgets& widget) {}
+

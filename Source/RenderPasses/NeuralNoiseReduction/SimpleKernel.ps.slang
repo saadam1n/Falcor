@@ -1,6 +1,6 @@
 import Common;
 
-#define KERNEL_DIM 15
+#define KERNEL_DIM 13
 
 cbuffer PerImageCB
 {

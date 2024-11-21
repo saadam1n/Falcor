@@ -28,15 +28,11 @@
 #pragma once
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
+#include "Core/Pass/FullScreenPass.h"
 
-#include <torch/torch.h>
-
+#include <torch/script.h>
 
 using namespace Falcor;
-
-#include "RenderingComponent.h"
-#include "Subrendergraph.h"
-
 
 class NeuralNoiseReduction : public RenderPass
 {
@@ -52,7 +48,7 @@ public:
 
     virtual Properties getProperties() const override;
     virtual RenderPassReflection reflect(const CompileData& compileData) override;
-    virtual void compile(RenderContext* pRenderContext, const CompileData& compileData) override {}
+    virtual void compile(RenderContext* pRenderContext, const CompileData& compileData) override;
     virtual void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     virtual void renderUI(Gui::Widgets& widget) override;
     virtual void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override {}
@@ -60,7 +56,10 @@ public:
     virtual bool onKeyEvent(const KeyboardEvent& keyEvent) override { return false; }
 
 private:
-    ref<RenderingComponent> mpSimpleKernel;
-    ref<SubrenderGraph> mpSubrenderGraph;
+    void allocateFbos(uint2 dim, RenderContext* pRenderContext);
 
+    float mKernel[13][13];
+
+    ref<FullScreenPass> mpBlurFilter;
+    ref<Fbo> mpBlurringFbo;
 };
