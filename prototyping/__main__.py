@@ -1,5 +1,7 @@
 import torch
+import numpy as np
 import simple_kernel
+import kpcnn
 
 # We need this so OpenCV imports exr files
 import os
@@ -14,23 +16,45 @@ else:
     print("Utiilzing CPU for training and inference.")
 
 reference = cv2.imread("C:\\FalcorFiles\\Dataset0\\0-Reference.exr", cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
-print(f"Ref shape is {reference.shape}")
+color = cv2.imread("C:\\FalcorFiles\\Dataset0\\0-Color.exr", cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+albedo = cv2.imread("C:\\FalcorFiles\\Dataset0\\0-Albedo.exr", cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+worldpos = cv2.imread("C:\\FalcorFiles\\Dataset0\\0-WorldPosition.exr", cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+worldnorm = cv2.imread("C:\\FalcorFiles\\Dataset0\\0-WorldNormal.exr", cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
 
-model = simple_kernel.SimpleKernel().to(device)
+def print_shape(name, img):
+    print(f"{name}\tshape is {img.shape}")
 
-optimizer = torch.optim.SGD(model.parameters(), lr=0.0005, momentum=0.9)
+print_shape("Ref", reference)
+print_shape("Color", reference)
+print_shape("Albedo", reference)
+print_shape("Pos", reference)
+print_shape("Norm", reference)
+
+albedo[albedo < 0.001] = 1.0
+color = color / albedo
+
+raw_in = np.concatenate((color, albedo, worldpos, worldnorm), axis=2)
+print_shape("Raw in", raw_in)
+
+
+model = kpcnn.MiniKPCNN().to(device)
+
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)
 loss_fn = torch.nn.L1Loss()
 
-input = torch.tensor(reference, device=device).permute((2, 0, 1))
+input = torch.tensor(raw_in, device=device).permute((2, 0, 1))
 input = input[None, :]
 
-numIters = 1000
+target = torch.tensor(reference, device=device).permute((2, 0, 1))
+target = target[None, :]
+
+numIters = 10000
 for i in range(0, numIters):
     optimizer.zero_grad()
 
     output = model(input)
 
-    loss = loss_fn(output, input)
+    loss = loss_fn(output, target)
     loss.backward()
 
     optimizer.step()
@@ -42,7 +66,7 @@ for i in range(0, numIters):
         if i == (numIters - 1):
             traced = torch.jit.trace(model, input)
             traced.to("cpu")
-            traced.save("C:/FalcorFiles/Models/SimpleKernel4.pt")
+            traced.save("C:/FalcorFiles/Models/MiniKPCNN-1.pt")
 
         image = output.detach().squeeze().permute((1, 2, 0)).cpu().numpy()
         print(f"Output shape is now {image.shape}")
