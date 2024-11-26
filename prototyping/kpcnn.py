@@ -89,12 +89,22 @@ class MiniKPCNN(nn.Module):
 
         print("Using lightweight duty model!")
 
+        # initial feature extraction pass
+        modules = [
+            nn.Conv2d(12, 32, 7, padding=3, padding_mode="reflect"),
+            nn.ReLU(),
+            nn.Conv2d(32, 8, 5, padding=2, padding_mode="reflect"),
+        ]
+
+        for i in range(32):
+            modules.append(nn.ReLU())
+            modules.append(nn.Conv2d(8, 8, 5, padding=2, padding_mode="reflect"))
+
+
+
+
         self.model = nn.Sequential(
-            nn.Conv2d(12, 12, 7, padding=3, padding_mode="reflect"),
-            nn.ReLU(),
-            nn.Conv2d(12, 12, 5, padding=2, padding_mode="reflect"),
-            nn.ReLU(),
-            nn.Conv2d(12, 8, 5, padding=2, padding_mode="reflect"),
+            *modules
         )
 
         # https://discuss.pytorch.org/t/initialising-weights-in-nn-sequential/76553

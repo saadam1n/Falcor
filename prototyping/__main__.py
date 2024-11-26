@@ -66,7 +66,7 @@ for i in range(0, numIters):
         if i == (numIters - 1):
             traced = torch.jit.trace(model, input)
             traced.to("cpu")
-            traced.save("C:/FalcorFiles/Models/MiniKPCNN-1.pt")
+            traced.save("C:/FalcorFiles/Models/MiniKPCNN-2.pt")
 
         image = output.detach().squeeze().permute((1, 2, 0)).cpu().numpy()
         print(f"Output shape is now {image.shape}")
