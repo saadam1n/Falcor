@@ -54,9 +54,15 @@ for i in range(0, numIters):
 with torch.no_grad():
     input, target = training_data.get_full_img()
     input = input[None, :]
+    target = target[None, :]
 
     model = model.to(device)
     output = model(input)
+
+    loss = loss_fn(output, target)
+    print(f"Loss on entire image was {loss.item()}")
+
+
     image = output.detach()
     image = image[0].squeeze().permute((1, 2, 0)).cpu().numpy()
     image = image[:, :, -3:]
