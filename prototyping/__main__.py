@@ -2,11 +2,8 @@ import torch
 import numpy as np
 import simple_kernel
 import kpcnn
-
-# We need this so OpenCV imports exr files
-import os
-os.environ["OPENCV_IO_ENABLE_OPENEXR"]="1"
-
+import frame_data
+from torch.utils.data import DataLoader
 import cv2
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -15,42 +12,19 @@ if torch.cuda.is_available():
 else:
     print("Utiilzing CPU for training and inference.")
 
-reference = cv2.imread("C:\\FalcorFiles\\Dataset0\\0-Reference.exr", cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
-color = cv2.imread("C:\\FalcorFiles\\Dataset0\\0-Color.exr", cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
-albedo = cv2.imread("C:\\FalcorFiles\\Dataset0\\0-Albedo.exr", cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
-worldpos = cv2.imread("C:\\FalcorFiles\\Dataset0\\0-WorldPosition.exr", cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
-worldnorm = cv2.imread("C:\\FalcorFiles\\Dataset0\\0-WorldNormal.exr", cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
-
-def print_shape(name, img):
-    print(f"{name}\tshape is {img.shape}")
-
-print_shape("Ref", reference)
-print_shape("Color", reference)
-print_shape("Albedo", reference)
-print_shape("Pos", reference)
-print_shape("Norm", reference)
-
-#print_shape("Raw in", raw_in)
-
+training_data = frame_data.FrameData("C:\\FalcorFiles\\Dataset0\\", device)
+training_loader = DataLoader(training_data, batch_size=1, shuffle=True)
 
 model = kpcnn.MiniKPCNN().to(device)
 
 optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)
 loss_fn = torch.nn.L1Loss()
 
-
-
-target = torch.tensor(reference, device=device).permute((2, 0, 1))
-target = target[None, :]
-
 numIters = 1000
 for i in range(0, numIters):
+    input, target = next(iter(training_loader))
+
     optimizer.zero_grad()
-
-    raw_in = np.concatenate((color, albedo, worldpos, worldnorm), axis=2)
-
-    input = torch.tensor(raw_in, device=device).permute((2, 0, 1))
-    input = input[None, :]
 
     output = model(input)
 

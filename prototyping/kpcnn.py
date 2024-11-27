@@ -93,15 +93,10 @@ class MiniKPCNN(nn.Module):
         modules = [
             nn.Conv2d(12, 32, 7, padding=3, padding_mode="reflect"),
             nn.ReLU(),
+            nn.Conv2d(32, 32, 5, padding=2, padding_mode="reflect"),
+            nn.ReLU(),
             nn.Conv2d(32, 8, 5, padding=2, padding_mode="reflect"),
         ]
-
-        for i in range(32):
-            modules.append(nn.ReLU())
-            modules.append(nn.Conv2d(8, 8, 5, padding=2, padding_mode="reflect"))
-
-
-
 
         self.model = nn.Sequential(
             *modules
