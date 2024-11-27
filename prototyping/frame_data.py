@@ -26,6 +26,8 @@ class FrameData:
 
         self.data_cache = {}
 
+        self.patching = True
+
     def __len__(self):
         # length here is defined by the number of frame sequneces we have,
         # not the number of frames
@@ -81,10 +83,16 @@ class FrameData:
             np.save(cache_path, img)
 
 
-
-        img = img[self.yoff:self.yoff+720 // 2, self.xoff:self.xoff+1280 // 2, :]
+        if self.patching:
+            img = img[self.yoff:self.yoff+720 // 2, self.xoff:self.xoff+1280 // 2, :]
 
         return torch.tensor(img, device=self.device, dtype=torch.float32)
+
+    def get_full_img(self):
+        self.patching = False
+        input, target = self.__getitem__(0)
+        self.patching = True
+        return input, target
 
     def print_shape(name, img):
         print(f"{name}\tshape is {img.shape}")

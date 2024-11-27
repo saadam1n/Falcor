@@ -20,7 +20,7 @@ model = kpcnn.DPKPCNNHybrid().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.00025)
 loss_fn = torch.nn.L1Loss()
 
-numIters = 100
+numIters = 1
 for i in range(0, numIters):
     input, target = next(iter(training_loader))
 
@@ -51,3 +51,16 @@ for i in range(0, numIters):
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
+with torch.no_grad():
+    input, target = training_data.get_full_img()
+    input = input[None, :]
+
+    model = model.to(device)
+    output = model(input)
+    image = output.detach()
+    image = image[0].squeeze().permute((1, 2, 0)).cpu().numpy()
+    image = image[:, :, -3:]
+
+    cv2.imshow("Image", image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
