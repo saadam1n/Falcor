@@ -18,10 +18,6 @@ class FrameData:
             else:
                 break
 
-        # cap everything to 1 for now
-        if self.num_frames > 1:
-            self.num_frames = 1
-
         print(f"Dataset at {self.dataset_dir} has {self.num_frames} images")
 
         self.device=device
@@ -39,20 +35,33 @@ class FrameData:
         # N = number of frames
         # C = channels for each frame (color, albedo, world pos, world norm)
 
+        #print(f"Loading index {idx}")
+
         color = self.read_exr(idx, "Color")
         albedo = self.read_exr(idx, "Albedo")
+
+        albedo[albedo < 0.001] = 1.0
+        color = color / albedo
+
         worldpos = self.read_exr(idx, "WorldPosition")
         worldnorm = self.read_exr(idx, "WorldNormal")
-        raw_in = np.concatenate((color, albedo, worldpos, worldnorm), axis=2)
-        input = torch.tensor(raw_in, device=self.device).permute((2, 0, 1))
+        input = torch.concat((color, albedo, worldpos, worldnorm), dim=2).permute((2, 0, 1))
 
-        reference = self.read_exr(idx, "Reference")
-        target = torch.tensor(reference, device=self.device).permute((2, 0, 1))
+        reference = self.read_exr(idx, "Reference").permute((2, 0, 1))
 
-        return input, target
+        return input, reference
 
     def read_exr(self, idx, ext):
-        return cv2.imread(self.dataset_dir + str(idx) + "-" + ext + ".exr", cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+        filename = str(idx) + "-" + ext + ".exr"
+
+        cache_path = "C:/FalcorFiles/CacheV2/" + filename + ".npy"
+
+        if os.path.exists(cache_path):
+            img = np.load(cache_path)
+        else:
+            img = cv2.imread(self.dataset_dir + filename, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH).astype(np.float32)
+            np.save(cache_path, img)
+        return torch.tensor(img, device=self.device, dtype=torch.float32)
 
     def print_shape(name, img):
         print(f"{name}\tshape is {img.shape}")

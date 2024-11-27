@@ -91,11 +91,11 @@ class MiniKPCNN(nn.Module):
 
         # initial feature extraction pass
         modules = [
-            nn.Conv2d(12, 32, 7, padding=3, padding_mode="reflect"),
+            nn.Conv2d(12, 8, 7, padding=3, padding_mode="reflect"),
             nn.ReLU(),
-            nn.Conv2d(32, 32, 5, padding=2, padding_mode="reflect"),
+            nn.Conv2d(8, 8, 5, padding=2, padding_mode="reflect"),
             nn.ReLU(),
-            nn.Conv2d(32, 8, 5, padding=2, padding_mode="reflect"),
+            nn.Conv2d(8, 8, 5, padding=2, padding_mode="reflect"),
         ]
 
         self.model = nn.Sequential(
@@ -124,11 +124,6 @@ class MiniKPCNN(nn.Module):
         color = input[:, 0:3, :, :]
         # albedo is channels 3..5
         albedo = input[:, 3:6, :, :]
-
-        albedo[albedo < 0.001]=1.0
-        color=color/albedo
-        input[:, 0:3, :, :]=color
-        input[:, 3:6, :, :]=albedo
 
         # dim is (B, N, W, H)
         # where N is the number of output convolutions
