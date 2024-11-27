@@ -30,11 +30,7 @@ print_shape("Albedo", reference)
 print_shape("Pos", reference)
 print_shape("Norm", reference)
 
-albedo[albedo < 0.001] = 1.0
-color = color / albedo
-
-raw_in = np.concatenate((color, albedo, worldpos, worldnorm), axis=2)
-print_shape("Raw in", raw_in)
+#print_shape("Raw in", raw_in)
 
 
 model = kpcnn.MiniKPCNN().to(device)
@@ -42,15 +38,19 @@ model = kpcnn.MiniKPCNN().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)
 loss_fn = torch.nn.L1Loss()
 
-input = torch.tensor(raw_in, device=device).permute((2, 0, 1))
-input = input[None, :]
+
 
 target = torch.tensor(reference, device=device).permute((2, 0, 1))
 target = target[None, :]
 
-numIters = 10000
+numIters = 1000
 for i in range(0, numIters):
     optimizer.zero_grad()
+
+    raw_in = np.concatenate((color, albedo, worldpos, worldnorm), axis=2)
+
+    input = torch.tensor(raw_in, device=device).permute((2, 0, 1))
+    input = input[None, :]
 
     output = model(input)
 

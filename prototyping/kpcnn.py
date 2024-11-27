@@ -130,6 +130,10 @@ class MiniKPCNN(nn.Module):
         # albedo is channels 3..5
         albedo = input[:, 3:6, :, :]
 
+        albedo[albedo < 0.001]=1.0
+        color=color/albedo
+        input[:, 0:3, :, :]=color
+        input[:, 3:6, :, :]=albedo
 
         # dim is (B, N, W, H)
         # where N is the number of output convolutions
