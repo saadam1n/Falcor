@@ -87,11 +87,13 @@ class MiniKPCNN(nn.Module):
     def __init__(self):
         super().__init__()
 
+        self.num_input_channels = 12
+
         print("Using lightweight duty model!")
 
         # initial feature extraction pass
         modules = [
-            nn.Conv2d(12, 8, 7, padding=3, padding_mode="reflect"),
+            nn.Conv2d(self.num_input_channels, 8, 7, padding=3, padding_mode="reflect"),
             nn.ReLU(),
             nn.Conv2d(8, 8, 5, padding=2, padding_mode="reflect"),
             nn.ReLU(),
@@ -117,30 +119,40 @@ class MiniKPCNN(nn.Module):
     def forward(self, input):
 
         B = input.size(0)
+        num_frames = input.size(1) // self.num_input_channels
         W = input.size(2)
         H = input.size(3)
 
-        # color is channels 0..2
-        color = input[:, 0:3, :, :]
-        # albedo is channels 3..5
-        albedo = input[:, 3:6, :, :]
+        for i in range(num_frames):
+            base_channel_index = i * self.num_input_channels
+            frame_input = input[:, base_channel_index:base_channel_index + self.num_input_channels, :, :]
 
-        # dim is (B, N, W, H)
-        # where N is the number of output convolutions
-        # we want our dims to be (B, 3, N, W, H)
-        kernel = self.smax(self.model(input) / 5) # idea suggested in softmax paper to increase convergence rates
-        kernel = kernel.view(B, 1, -1, W, H).expand(-1, 3, -1, -1, -1)
+            # color is channels 0..2
+            color = frame_input[:, 0:3, :, :]
+            # albedo is channels 3..5
+            albedo = frame_input[:, 3:6, :, :]
 
-        # we need to do the same preconv
-        # we want the output to be also the same dimension as kernel
-        rpkernel = self.dwkernel.repeat(3, 1, 1, 1)
-        preconv = F.conv2d(color, rpkernel, stride=1, padding=3, groups=3).view(B, 3, -1, W, H)
-        # now each kernel has outputted N different channels
-        # so our dimensions are now (B, 3, N, W, H)
+            # dim is (B, N, W, H)
+            # where N is the number of output convolutions
+            # we want our dims to be (B, 3, N, W, H)
+            kernel = self.smax(self.model(frame_input) / 5) # idea suggested in softmax paper to increase convergence rates
+            kernel = kernel.view(B, 1, -1, W, H).expand(-1, 3, -1, -1, -1)
 
-        filtered = (kernel * preconv).sum(2)
+            # we need to do the same preconv
+            # we want the output to be also the same dimension as kernel
+            rpkernel = self.dwkernel.repeat(3, 1, 1, 1)
+            preconv = F.conv2d(color, rpkernel, stride=1, padding=3, groups=3).view(B, 3, -1, W, H)
+            # now each kernel has outputted N different channels
+            # so our dimensions are now (B, 3, N, W, H)
 
-        remodulated = albedo * filtered
+            filtered = (kernel * preconv).sum(2)
+
+            frame_remodulated = albedo * filtered
+            if i == 0:
+                remodulated = frame_remodulated
+            else:
+                remodulated = torch.concat((remodulated, frame_remodulated), dim=1)
+
         return remodulated
 
 
