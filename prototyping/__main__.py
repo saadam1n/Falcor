@@ -15,12 +15,12 @@ else:
 training_data = frame_data.FrameData("C:\\FalcorFiles\\Dataset0\\", device, 8)
 training_loader = DataLoader(training_data, batch_size=1, shuffle=True)
 
-model = kpcnn.MiniKPCNN().to(device)
+model = kpcnn.DPKPCNNHybrid().to(device)
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.00025)
 loss_fn = torch.nn.L1Loss()
 
-numIters = 1000
+numIters = 100
 for i in range(0, numIters):
     input, target = next(iter(training_loader))
 
@@ -45,11 +45,8 @@ for i in range(0, numIters):
         # get last few frames when it has stabilized
         image = output.detach()
         image = image[0].squeeze().permute((1, 2, 0)).cpu().numpy()
-        print(f"Prev shape: {image.shape}")
         image = image[:, :, -3:]
-        print(f"Aft shape: {image.shape}")
 
-        print(f"Output shape is now {image.shape}")
         cv2.imshow("Image", image)
         cv2.waitKey(0)
         cv2.destroyAllWindows()

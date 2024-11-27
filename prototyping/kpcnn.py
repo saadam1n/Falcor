@@ -83,21 +83,26 @@ class KPCNN(nn.Module):
         return remodulated
 
 
-class MiniKPCNN(nn.Module):
+class MiniKPCNNSingleFrame(nn.Module):
     def __init__(self):
         super().__init__()
 
         self.num_input_channels = 12
+        self.hidden_input_size = 8
+        self.num_preconv_kernls = 16
+        self.preconv_kernel_size = 9
 
         print("Using lightweight duty model!")
 
         # initial feature extraction pass
         modules = [
-            nn.Conv2d(self.num_input_channels, 8, 7, padding=3, padding_mode="reflect"),
+            nn.Conv2d(self.num_input_channels + self.hidden_input_size, 16, 7, padding=3, padding_mode="reflect"),
             nn.ReLU(),
-            nn.Conv2d(8, 8, 5, padding=2, padding_mode="reflect"),
+            nn.Conv2d(16, 32, 5, padding=2, padding_mode="reflect"),
             nn.ReLU(),
-            nn.Conv2d(8, 8, 5, padding=2, padding_mode="reflect"),
+            nn.Conv2d(32, 64, 5, padding=2, padding_mode="reflect"),
+            nn.ReLU(),
+            nn.Conv2d(64, self.hidden_input_size + self.num_preconv_kernls, 5, padding=2, padding_mode="reflect"),
         ]
 
         self.model = nn.Sequential(
@@ -114,7 +119,12 @@ class MiniKPCNN(nn.Module):
 
         self.smax = nn.Softmax(dim=1)
 
-        self.dwkernel = nn.Parameter(torch.randn(8, 1, 7, 7))
+        norm_factor = self.preconv_kernel_size * self.preconv_kernel_size
+        self.dwkernel = nn.Parameter(
+            (torch.ones(self.num_preconv_kernls, 1, self.preconv_kernel_size, self.preconv_kernel_size) +
+             torch.randn(self.num_preconv_kernls, 1, self.preconv_kernel_size, self.preconv_kernel_size) * 0.1)
+             / norm_factor
+        )
 
     def forward(self, input):
 
@@ -123,9 +133,149 @@ class MiniKPCNN(nn.Module):
         W = input.size(2)
         H = input.size(3)
 
+        # color is channels 0..2
+        color = input[:, 0:3, :, :]
+
+        # dim is (B, N, W, H)
+        # where N is the number of output convolutions
+        # we want our dims to be (B, 3, N, W, H)
+        raw_output = self.model(input)
+
+        # update our hidden input
+        hidden_input = raw_output[:, 0:self.hidden_input_size, :, :]
+
+        kernel = self.smax(raw_output[:, self.hidden_input_size:, :, :] / 5) # idea suggested in softmax paper to increase convergence rates
+        kernel = kernel.view(B, 1, -1, W, H).expand(-1, 3, -1, -1, -1)
+
+        # we need to do the same preconv
+        # we want the output to be also the same dimension as kernel
+        rpkernel = self.dwkernel.repeat(3, 1, 1, 1)
+        preconv = F.conv2d(color, rpkernel, stride=1, padding=self.preconv_kernel_size // 2, groups=3).view(B, 3, -1, W, H)
+        # now each kernel has outputted N different channels
+        # so our dimensions are now (B, 3, N, W, H)
+
+        filtered = (kernel * preconv).sum(2)
+
+        output = torch.concat((filtered, hidden_input), dim=1)
+
+        return output
+
+class MiniKPCNN2(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        print("Using double-frame model!")
+
+        self.sf0 = MiniKPCNNSingleFrame()
+        self.sf1 = MiniKPCNNSingleFrame()
+
+        self.num_input_channels = 12
+        self.hidden_input_size = 8
+        self.num_preconv_kernls = 16
+        self.preconv_kernel_size = 9
+
+    def forward(self, input):
+
+        B = input.size(0)
+        num_frames = input.size(1) // self.num_input_channels
+        W = input.size(2)
+        H = input.size(3)
+
+
+        hidden_input = torch.zeros(B, self.hidden_input_size, W, H, device=input.get_device())
         for i in range(num_frames):
             base_channel_index = i * self.num_input_channels
-            frame_input = input[:, base_channel_index:base_channel_index + self.num_input_channels, :, :]
+
+
+            frame_input = torch.concat(
+                (input[:, base_channel_index:base_channel_index + self.num_input_channels, :, :], hidden_input),
+                dim=1
+            )
+
+
+
+            # albedo is channels 3..5
+            albedo = frame_input[:, 3:6, :, :]
+
+            filtered0 = self.sf0(frame_input)
+
+            # combine the output
+            frame_input1 = torch.concat((filtered0[:, 0:3, :, :], frame_input[:, 3:self.num_input_channels], filtered0[:, 3:11, :, :]), dim=1)
+
+            filtered1 = self.sf1(frame_input1)
+            hidden_input = filtered1[:, 3:11, :, :]
+
+            frame_remodulated = albedo * filtered1[:, 0:3, :, :]
+            if i == 0:
+                remodulated = frame_remodulated
+                #saved_hidden_input = hidden_input[:, 0:3, :, :]
+                saved_color = filtered0[:, 0:3, :, :]
+            else:
+                remodulated = torch.concat((remodulated, frame_remodulated), dim=1)
+                #saved_hidden_input = torch.concat((saved_hidden_input, hidden_input[:, 0:3, :, :]), dim=1)
+                saved_color = torch.concat((saved_color, filtered0[:, 0:3, :, :]), dim=1)
+
+        return remodulated, saved_color
+
+class MiniKPCNN(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.num_input_channels = 12
+        self.hidden_input_size = 8
+        self.num_preconv_kernls = 16
+        self.preconv_kernel_size = 9
+
+        print("Using lightweight duty model!")
+
+        # initial feature extraction pass
+        modules = [
+            nn.Conv2d(self.num_input_channels + self.hidden_input_size, 16, 7, padding=3, padding_mode="reflect"),
+            nn.ReLU(),
+            nn.Conv2d(16, 32, 5, padding=2, padding_mode="reflect"),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, 5, padding=2, padding_mode="reflect"),
+            nn.ReLU(),
+            nn.Conv2d(64, self.hidden_input_size + self.num_preconv_kernls, 5, padding=2, padding_mode="reflect"),
+        ]
+
+        self.model = nn.Sequential(
+            *modules
+        )
+
+        # https://discuss.pytorch.org/t/initialising-weights-in-nn-sequential/76553
+        def weights_init(m):
+            if isinstance(m, nn.Conv2d):
+                torch.nn.init.xavier_uniform_(m.weight)
+                torch.nn.init.zeros_(m.bias)
+
+        self.model.apply(weights_init)
+
+        self.smax = nn.Softmax(dim=1)
+
+        norm_factor = self.preconv_kernel_size * self.preconv_kernel_size
+        self.dwkernel = nn.Parameter(
+            (torch.ones(self.num_preconv_kernls, 1, self.preconv_kernel_size, self.preconv_kernel_size) +
+             torch.randn(self.num_preconv_kernls, 1, self.preconv_kernel_size, self.preconv_kernel_size) * 0.1)
+             / norm_factor
+        )
+
+    def forward(self, input):
+
+        B = input.size(0)
+        num_frames = input.size(1) // self.num_input_channels
+        W = input.size(2)
+        H = input.size(3)
+
+
+        hidden_input = torch.zeros(B, self.hidden_input_size, W, H, device=input.get_device())
+        for i in range(num_frames):
+            base_channel_index = i * self.num_input_channels
+
+            frame_input = torch.concat(
+                (input[:, base_channel_index:base_channel_index + self.num_input_channels, :, :], hidden_input),
+                dim=1
+            )
 
             # color is channels 0..2
             color = frame_input[:, 0:3, :, :]
@@ -135,13 +285,18 @@ class MiniKPCNN(nn.Module):
             # dim is (B, N, W, H)
             # where N is the number of output convolutions
             # we want our dims to be (B, 3, N, W, H)
-            kernel = self.smax(self.model(frame_input) / 5) # idea suggested in softmax paper to increase convergence rates
+            raw_output = self.model(frame_input)
+
+            # update our hidden input
+            hidden_input = raw_output[:, 0:self.hidden_input_size, :, :]
+
+            kernel = self.smax(raw_output[:, self.hidden_input_size:, :, :] / 5) # idea suggested in softmax paper to increase convergence rates
             kernel = kernel.view(B, 1, -1, W, H).expand(-1, 3, -1, -1, -1)
 
             # we need to do the same preconv
             # we want the output to be also the same dimension as kernel
             rpkernel = self.dwkernel.repeat(3, 1, 1, 1)
-            preconv = F.conv2d(color, rpkernel, stride=1, padding=3, groups=3).view(B, 3, -1, W, H)
+            preconv = F.conv2d(color, rpkernel, stride=1, padding=self.preconv_kernel_size // 2, groups=3).view(B, 3, -1, W, H)
             # now each kernel has outputted N different channels
             # so our dimensions are now (B, 3, N, W, H)
 
@@ -156,3 +311,66 @@ class MiniKPCNN(nn.Module):
         return remodulated
 
 
+class DPKPCNNHybrid(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        print("Using double-frame model!")
+
+        self.num_input_channels = 12
+        self.hidden_input_size = 8
+
+        self.sf0 = MiniKPCNNSingleFrame()
+
+        # initial feature extraction pass
+        modules = [
+            nn.Conv2d(self.num_input_channels + self.hidden_input_size, 16, 7, padding=3, padding_mode="reflect"),
+            nn.ReLU(),
+            nn.Conv2d(16, 32, 5, padding=2, padding_mode="reflect"),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, 5, padding=2, padding_mode="reflect"),
+            nn.ReLU(),
+            nn.Conv2d(64, 3 + self.hidden_input_size, 5, padding=2, padding_mode="reflect"),
+        ]
+
+        self.model = nn.Sequential(
+            *modules
+        )
+
+
+
+    def forward(self, input):
+
+        B = input.size(0)
+        num_frames = input.size(1) // self.num_input_channels
+        W = input.size(2)
+        H = input.size(3)
+
+
+        hidden_input = torch.zeros(B, self.hidden_input_size, W, H, device=input.get_device())
+        for i in range(num_frames):
+            base_channel_index = i * self.num_input_channels
+
+            frame_input = torch.concat(
+                (input[:, base_channel_index:base_channel_index + self.num_input_channels, :, :], hidden_input),
+                dim=1
+            )
+
+            # albedo is channels 3..5
+            albedo = frame_input[:, 3:6, :, :]
+
+            filtered0 = self.sf0(frame_input)
+
+            # combine the output
+            frame_input1 = torch.concat((filtered0[:, 0:3, :, :], frame_input[:, 3:self.num_input_channels], filtered0[:, 3:11, :, :]), dim=1)
+
+            filtered1 = self.model(frame_input1)
+            hidden_input = filtered1[:, 3:11, :, :]
+
+            frame_remodulated = albedo * filtered1[:, 0:3, :, :]
+            if i == 0:
+                remodulated = frame_remodulated
+            else:
+                remodulated = torch.concat((remodulated, frame_remodulated), dim=1)
+
+        return remodulated

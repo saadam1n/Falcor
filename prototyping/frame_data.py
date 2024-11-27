@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import random
 
 # We need this so OpenCV imports exr files
 import os
@@ -41,6 +42,9 @@ class FrameData:
         if idx in self.data_cache:
             return self.data_cache.get(idx)
 
+        self.yoff = 200#random.randint(0, 800)
+        self.xoff = 200#random.randint(0, 1200)
+
         for i in range(self.seq_len):
             color = self.read_exr(idx, "Color")
             albedo = self.read_exr(idx, "Albedo")
@@ -61,7 +65,7 @@ class FrameData:
                 input = torch.concat((input, frame_input), dim=0)
                 reference = torch.concat((reference, frame_reference), dim=0)
 
-        self.data_cache[idx] = input, reference
+        #self.data_cache[idx] = input, reference
 
         return input, reference
 
@@ -75,6 +79,11 @@ class FrameData:
         else:
             img = cv2.imread(self.dataset_dir + filename, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH).astype(np.float32)
             np.save(cache_path, img)
+
+
+
+        img = img[self.yoff:self.yoff+720 // 2, self.xoff:self.xoff+1280 // 2, :]
+
         return torch.tensor(img, device=self.device, dtype=torch.float32)
 
     def print_shape(name, img):
