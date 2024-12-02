@@ -44,8 +44,8 @@ class FrameData:
         if idx in self.data_cache:
             return self.data_cache.get(idx)
 
-        self.yoff = 200#random.randint(0, 800)
-        self.xoff = 200#random.randint(0, 1200)
+        self.yoff = random.randint(0, 800)
+        self.xoff = random.randint(0, 1200)
 
         for i in range(self.seq_len):
             color = self.read_exr(idx, "Color")

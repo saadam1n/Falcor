@@ -20,7 +20,7 @@ model = kpcnn.DPKPCNNHybrid().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.00025)
 loss_fn = torch.nn.L1Loss()
 
-numIters = 1
+numIters = 100
 for i in range(0, numIters):
     input, target = next(iter(training_loader))
 
@@ -40,7 +40,7 @@ for i in range(0, numIters):
         if i == (numIters - 1):
             traced = torch.jit.trace(model, input)
             traced.to("cpu")
-            traced.save("C:/FalcorFiles/Models/MiniKPCNN-3.pt")
+            traced.save("C:/FalcorFiles/Models/DPKPCNNHybrid-3.pt")
 
         # get last few frames when it has stabilized
         image = output.detach()
