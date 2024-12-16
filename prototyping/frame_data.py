@@ -44,23 +44,23 @@ class FrameData:
         if idx in self.data_cache:
             return self.data_cache.get(idx)
 
-        self.yoff = random.randint(0, 800)
-        self.xoff = random.randint(0, 1200)
+        self.yoff = random.randint(0, 700) #475
+        self.xoff = random.randint(0, 1100) #420
 
-        for i in range(self.seq_len):
+        for idx in range(self.seq_len):
             color = self.read_exr(idx, "Color")
             albedo = self.read_exr(idx, "Albedo")
 
             albedo[albedo < 0.001] = 1.0
             color = color / albedo
 
-            worldpos = self.read_exr(idx, "WorldPosition")
+            worldpos = self.read_exr(idx, "WorldPosition") * 0.05
             worldnorm = self.read_exr(idx, "WorldNormal")
 
             frame_input = torch.concat((color, albedo, worldpos, worldnorm), dim=2).permute((2, 0, 1))
             frame_reference = self.read_exr(idx, "Reference").permute((2, 0, 1))
 
-            if i == 0:
+            if idx == 0:
                 input = frame_input
                 reference = frame_reference
             else:

@@ -1,0 +1,42 @@
+{
+    "cpp": {
+        "options": [],
+        "deps": [
+            [
+                "C:\\Github\\Falcor\\prototyping\\bilateral_filter.slang",
+                1733976157.014028
+            ],
+            [
+                "C:\\Users\\saada\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\slangtorch\\bin\\slangc.exe",
+                1733165567.466239
+            ],
+            [
+                "C:\\Users\\saada\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\slangtorch\\bin\\slang.dll",
+                1733165567.445321
+            ]
+        ],
+        "version": "1.3.2",
+        "includePaths": []
+    },
+    "cuda": {
+        "options": [],
+        "deps": [
+            [
+                "C:\\Github\\Falcor\\prototyping\\bilateral_filter.slang",
+                1733976157.014028
+            ],
+            [
+                "C:\\Users\\saada\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\slangtorch\\bin\\slangc.exe",
+                1733165567.466239
+            ],
+            [
+                "C:\\Users\\saada\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\slangtorch\\bin\\slang.dll",
+                1733165567.445321
+            ]
+        ],
+        "version": "1.3.2",
+        "includePaths": []
+    },
+    "moduleName": "_slangtorch_bilateral_filter_b9c103f6b206b8e5",
+    "moduleBinary": "./prototyping\\.slangtorch_cache\\bilateral_filter\\b9c103f6b206b8e5\\0\\_slangtorch_bilateral_filter_b9c103f6b206b8e5.pyd"
+}

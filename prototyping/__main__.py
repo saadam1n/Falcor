@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import simple_kernel
 import kpcnn
+import fpcnn
 import frame_data
 from torch.utils.data import DataLoader
 import cv2
@@ -15,12 +16,12 @@ else:
 training_data = frame_data.FrameData("C:\\FalcorFiles\\Dataset0\\", device, 8)
 training_loader = DataLoader(training_data, batch_size=1, shuffle=True)
 
-model = kpcnn.DPKPCNNHybrid().to(device)
+model = fpcnn.SimpleFPCNN3().to(device)
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.00025)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 loss_fn = torch.nn.L1Loss()
 
-numIters = 100
+numIters = 400
 for i in range(0, numIters):
     input, target = next(iter(training_loader))
 
@@ -32,20 +33,19 @@ for i in range(0, numIters):
     loss.backward()
 
     optimizer.step()
+    model.clamp()
 
     print(f"Loss at iteration {i}\tis {loss.item()}")
 
     if i == 0 or i == (numIters - 1):
         # first, export our model
         if i == (numIters - 1):
-            traced = torch.jit.trace(model, input)
-            traced.to("cpu")
-            traced.save("C:/FalcorFiles/Models/DPKPCNNHybrid-3.pt")
+            torch.save(model.state_dict(), "C:/FalcorFiles/Models/FPCNN-3.pt")
 
         # get last few frames when it has stabilized
         image = output.detach()
         image = image[0].squeeze().permute((1, 2, 0)).cpu().numpy()
-        image = image[:, :, -3:]
+        image = image[:, :, :3]
 
         cv2.imshow("Image", image)
         cv2.waitKey(0)
