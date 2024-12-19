@@ -4,18 +4,18 @@
         "deps": [
             [
                 "C:\\Github\\Falcor\\prototyping\\bilateral_filter.slang",
-                1733976157.014028
+                1734318148.7664602
             ],
             [
-                "C:\\Users\\saada\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\slangtorch\\bin\\slangc.exe",
-                1733165567.466239
+                "C:\\Users\\Saad Amin\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\slangtorch\\bin\\slangc.exe",
+                1734383065.9190457
             ],
             [
-                "C:\\Users\\saada\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\slangtorch\\bin\\slang.dll",
-                1733165567.445321
+                "C:\\Users\\Saad Amin\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\slangtorch\\bin\\slang.dll",
+                1734383065.9149475
             ]
         ],
-        "version": "1.3.2",
+        "version": "1.3.4",
         "includePaths": []
     },
     "cuda": {
@@ -23,18 +23,18 @@
         "deps": [
             [
                 "C:\\Github\\Falcor\\prototyping\\bilateral_filter.slang",
-                1733976157.014028
+                1734318148.7664602
             ],
             [
-                "C:\\Users\\saada\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\slangtorch\\bin\\slangc.exe",
-                1733165567.466239
+                "C:\\Users\\Saad Amin\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\slangtorch\\bin\\slangc.exe",
+                1734383065.9190457
             ],
             [
-                "C:\\Users\\saada\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\slangtorch\\bin\\slang.dll",
-                1733165567.445321
+                "C:\\Users\\Saad Amin\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\slangtorch\\bin\\slang.dll",
+                1734383065.9149475
             ]
         ],
-        "version": "1.3.2",
+        "version": "1.3.4",
         "includePaths": []
     },
     "moduleName": "_slangtorch_bilateral_filter_b9c103f6b206b8e5",

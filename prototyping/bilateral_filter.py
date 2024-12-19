@@ -78,5 +78,11 @@ class BilateralFilter(torch.autograd.Function):
             dialation
         )
 
+    @staticmethod
+    def _(input, params, kernel_size, dilation):
+        torch._check(input.size(1) + 2 == params.size(0))
+        torch._check(input.dtype == torch.float)
+        torch._check(params.dtype == torch.float)
+        return torch.empty_like(input)
 
 

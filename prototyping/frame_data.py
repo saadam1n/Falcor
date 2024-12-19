@@ -24,14 +24,16 @@ class FrameData:
 
         self.device=device
 
-        self.data_cache = {}
+        self.frame_cache = {}
+        self.ref_cache = {}
+        self.loaded = {}
 
         self.patching = True
 
     def __len__(self):
         # length here is defined by the number of frame sequneces we have,
         # not the number of frames
-        return 1
+        return 1000
 
     # this needs to manually convert things to a tensor
     def __getitem__(self, idx):
@@ -41,35 +43,56 @@ class FrameData:
         # N = number of frames
         # C = channels for each frame (color, albedo, world pos, world norm)
 
-        if idx in self.data_cache:
-            return self.data_cache.get(idx)
+        if False:
+            yoff = random.randint(0, 720)
+            xoff = random.randint(0, 1280)
+        else:
+            yoff = 475
+            xoff = 420
 
-        self.yoff = random.randint(0, 700) #475
-        self.xoff = random.randint(0, 1100) #420
+        frame_inputs = []
+        frame_references = []
 
-        for idx in range(self.seq_len):
-            color = self.read_exr(idx, "Color")
-            albedo = self.read_exr(idx, "Albedo")
+        for i in range(self.seq_len):
+            (frame_input, frame_reference) = self.read_frame(i)
+
+            if self.patching:
+                frame_input = frame_input[:, yoff:yoff+360, xoff:xoff+640]
+                frame_reference = frame_reference[:, yoff:yoff+360, xoff:xoff+640]
+
+            frame_inputs.append(frame_input)
+            frame_references.append(frame_reference)
+
+
+        input = torch.cat(tuple(frame_inputs), dim=0)
+        reference = torch.cat(tuple(frame_references), dim=0)
+
+        return input, reference
+
+    def read_frame(self, i):
+        if i not in self.loaded:
+            self.loaded[i] = True
+
+            color = self.read_exr(i, "Color")
+            albedo = self.read_exr(i, "Albedo")
 
             albedo[albedo < 0.001] = 1.0
             color = color / albedo
 
-            worldpos = self.read_exr(idx, "WorldPosition") * 0.05
-            worldnorm = self.read_exr(idx, "WorldNormal")
+            worldpos = self.read_exr(i, "WorldPosition") * 0.05
+            worldnorm = self.read_exr(i, "WorldNormal")
 
-            frame_input = torch.concat((color, albedo, worldpos, worldnorm), dim=2).permute((2, 0, 1))
-            frame_reference = self.read_exr(idx, "Reference").permute((2, 0, 1))
+            ref = self.read_exr(i, "Reference").permute(2, 0, 1)
 
-            if idx == 0:
-                input = frame_input
-                reference = frame_reference
-            else:
-                input = torch.concat((input, frame_input), dim=0)
-                reference = torch.concat((reference, frame_reference), dim=0)
+            frame_inputs = torch.cat((color, albedo, worldpos, worldnorm), dim=2).permute(2, 0, 1)
 
-        #self.data_cache[idx] = input, reference
+            self.frame_cache[i] = frame_inputs
+            self.ref_cache[i] = ref
 
-        return input, reference
+            return (frame_inputs, ref)
+        else:
+            return (self.frame_cache[i], self.ref_cache[i])
+
 
     def read_exr(self, idx, ext):
         filename = str(idx) + "-" + ext + ".exr"
@@ -81,10 +104,6 @@ class FrameData:
         else:
             img = cv2.imread(self.dataset_dir + filename, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH).astype(np.float32)
             np.save(cache_path, img)
-
-
-        if self.patching:
-            img = img[self.yoff:self.yoff+720 // 2, self.xoff:self.xoff+1280 // 2, :]
 
         return torch.tensor(img, device=self.device, dtype=torch.float32)
 

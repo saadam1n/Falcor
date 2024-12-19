@@ -1,31 +1,9 @@
 import torch
 import torch.nn as nn
-from bilateral_filter import BilateralFilter
-
-class SemiFixedBilateralFilter(nn.Module):
-    def __init__(self, total_dim, dynamic_size, kernel_size, dialation):
-        super().__init__()
-
-        self.kernel_size = kernel_size
-        self.dialation = dialation
-        self.dynamic_size = dynamic_size
-
-        self.params = nn.Parameter(torch.randn(total_dim + 2))
-
-        self.params.data.abs_().mul_(-0.01)
-
-        self.clamp()
-
-    def forward(self, input):
-        # format: (dynamic dim, fixed dim)
-        output = BilateralFilter.apply(input, self.params, self.kernel_size, self.dialation)
-
-        # return only dynamic component
-        return output[:, 0:self.dynamic_size, :, :]
-
-    def clamp(self):
-        with torch.no_grad():
-            self.params.clamp_(max=0.0)
+import torch.nn.functional as F
+from encoder import *
+from filter import *
+import torch.utils.checkpoint as checkpoint
 
 class SimpleBilateralFilter(nn.Module):
     def __init__(self):
@@ -348,180 +326,6 @@ class SimpleFPCNN2(nn.Module):
     def clamp(self):
         self.filter.clamp()
 
-class EncoderUNet(nn.Module):
-    def __init__(self, num_input_channels, num_output_channels):
-        super().__init__()
-
-        internal_channels = num_output_channels
-        self.conv0 = nn.Sequential(
-            nn.Conv2d(num_input_channels, internal_channels, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels, internal_channels * 2, kernel_size=3, padding=1),
-        )
-        self.pool0 = nn.MaxPool2d(2)
-
-        self.conv1 = nn.Sequential(
-            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels * 2, internal_channels * 4, kernel_size=3, padding=1),
-        )
-        self.pool1 = nn.MaxPool2d(2)
-
-        self.conv2 = nn.Sequential(
-            nn.Conv2d(internal_channels * 4, internal_channels * 8, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels * 8, internal_channels * 4, kernel_size=3, padding=1),
-        )
-
-        self.upscale0 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-        self.conv3 = nn.Sequential(
-            nn.Conv2d(internal_channels * 8, internal_channels * 4, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels * 4, internal_channels * 2, kernel_size=3, padding=1),
-        )
-        self.relu0 = nn.ReLU()
-
-        self.upscale1 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-
-        self.conv4 = nn.Sequential(
-            nn.Conv2d(internal_channels * 4, internal_channels * 2, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels * 2, num_output_channels, kernel_size=3, padding=1),
-        )
-
-    def forward(self, input):
-        input = self.conv0(input)
-
-        skip0 = input
-
-        input = self.pool0(input)
-        input = self.conv1(input)
-
-        skip1 = input
-
-        input = self.pool1(input)
-        input = self.conv2(input)
-        input = self.upscale0(input)
-
-        input = torch.cat((input, skip1), dim=1)
-        input = self.conv3(input)
-        input = self.relu0(input)
-
-        input = self.upscale1(input)
-        input = torch.cat((input, skip0), dim=1)
-
-        input = self.conv4(input)
-
-        return input
-
-class EncoderUNet2(nn.Module):
-    def __init__(self, num_input_channels, num_output_channels):
-        super().__init__()
-
-        internal_channels = num_output_channels
-        self.down0 = nn.Sequential(
-            nn.Conv2d(num_input_channels, internal_channels, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels, internal_channels * 2, kernel_size=3, padding=1),
-        )
-
-        self.pool0 = nn.MaxPool2d(2)
-
-        self.enc = nn.Sequential(
-            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
-            nn.ReLU(),
-        )
-
-        self.upsample0 = nn.ConvTranspose2d(internal_channels * 2, internal_channels * 2, stride=2, kernel_size=2)
-
-        self.up0 = nn.Sequential(
-            nn.Conv2d(internal_channels * 2, internal_channels, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(internal_channels, num_output_channels, kernel_size=3, padding=1),
-        )
-
-
-
-
-
-    def forward(self, input):
-        input = self.down0(input)
-
-        skip0 = input
-
-        input = self.pool0(input)
-        input = self.enc(input)
-
-        input = self.upsample0(input)
-        input = input + skip0
-
-        input = self.up0(input)
-
-        return input
-
-# format: (RGB hidden fixed)
-class ColorStableBilateralFilter(nn.Module):
-    def __init__(self, num_input_channels, num_hidden_channels, num_feature_channels, kernel_size, dilation):
-        super().__init__()
-
-        self.num_hidden_channels = num_hidden_channels
-
-        # for dialation 1, we want padding 1, for dialation 2 we want padding 2, for dialtion 4 we want padding 4
-        padding = 1#dilation
-
-        total_input_channels = num_input_channels + self.num_hidden_channels
-
-        """
-        self.encoder = nn.Sequential(
-            nn.Conv2d(total_input_channels, total_input_channels * 2, kernel_size=3, padding=padding, dilation=1),
-            nn.ReLU(),
-            nn.Conv2d(total_input_channels * 2, total_input_channels * 4, kernel_size=3, padding=padding, dilation=1),
-            nn.ReLU(),
-            nn.Conv2d(total_input_channels * 4, num_feature_channels , kernel_size=3, padding=padding, dilation=1)
-        )
-        """
-
-        self.encoder = EncoderUNet2(total_input_channels, num_feature_channels)
-        self.filter = SemiFixedBilateralFilter(num_feature_channels + self.num_hidden_channels + 3, self.num_hidden_channels + 3, kernel_size, dilation)
-
-
-    def forward(self, input):
-        B = input.size(0)
-        H = input.size(2)
-        W = input.size(3)
-
-        # extract features
-        features = self.encoder(input)
-
-        combined = torch.cat((input[:, 0:3 + self.num_hidden_channels , :, :], features), dim=1)
-        filtered = self.filter(combined)
-
-        return filtered
-
-    def clamp(self):
-        self.filter.clamp()
 
 class SimpleFPCNN3(nn.Module):
     def __init__(self):
@@ -541,14 +345,22 @@ class SimpleFPCNN3(nn.Module):
         ])
 
         for i in range(4):
-            self.filters.append(ColorStableBilateralFilter(self.num_input_channels, self.num_hidden_states, self.num_feature_channels, 5, 2 ** i))
+            self.filters.append(ColorStableBilateralFilter(self.num_input_channels, self.num_hidden_states, self.num_feature_channels, 7, 1))
+
+        self.color_recombiner = nn.Sequential(
+            nn.Conv2d(6, 6, kernel_size=3, padding=1, dilation=1),
+            nn.ReLU(),
+            nn.Conv2d(6, 12, kernel_size=3, padding=1, dilation=1),
+            nn.ReLU(),
+            nn.Conv2d(12, 3, kernel_size=3, padding=1, dilation=1),
+        )
 
         self.hidden_state_builder = nn.Sequential(
-            nn.Conv2d(self.num_input_channels, self.num_input_channels * 2, kernel_size=3, padding=1),
+            nn.Conv2d(self.num_input_channels, self.num_input_channels, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.Conv2d(self.num_input_channels * 2, self.num_input_channels * 4, kernel_size=3, padding=1),
+            nn.Conv2d(self.num_input_channels, self.num_input_channels, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.Conv2d(self.num_input_channels * 4, self.num_hidden_states, kernel_size=3, padding=1),
+            nn.Conv2d(self.num_input_channels, self.num_hidden_states, kernel_size=3, padding=1),
         )
 
         self.clamp()
@@ -568,10 +380,19 @@ class SimpleFPCNN3(nn.Module):
 
             frame_input = input[:, base_channel_index:base_channel_index + self.num_input_channels, :, :]
             # albedo is channels 3..5
+            color = frame_input[:, :3, :, :]
             albedo = frame_input[:, 3:6, :, :]
             fixed = frame_input[:, 3:, :, :]
 
-            hidden_state = self.hidden_state_builder(frame_input)
+            color = frame_input[:, :3, :, :]
+            norm_color = run_lcn(color, 3)
+
+            recombiner_input = torch.cat((norm_color, color), dim=1)
+            recombined = self.color_recombiner(recombiner_input)
+
+            hidden_state_input = torch.cat((recombined, frame_input[:, 3:, :, :]), dim=1)
+
+            hidden_state = self.hidden_state_builder(hidden_state_input)
             dynamic = torch.cat((frame_input[:, :3, :, :], hidden_state), dim=1)
 
             if i != 0:
@@ -603,3 +424,829 @@ class SimpleFPCNN3(nn.Module):
         filtered = self.filters[i](input)
         combined = torch.cat((filtered, fixed), dim=1)
         return combined
+
+
+
+
+
+
+
+
+
+class SimpleFPCNN4(nn.Module):
+    def __init__(self):
+        super().__init__()
+        print("Using FPCNN 4")
+
+        self.num_input_channels = 12
+        self.num_feature_channels = 8
+        self.num_hidden_states = 1
+
+        num_total_input_channels = self.num_feature_channels + self.num_hidden_states + 3
+        self.filters = nn.ModuleList([
+            AuxEncoderBilateralFilter(num_total_input_channels, self.num_hidden_states, self.num_feature_channels, ConvEncoder2, 7, 1)
+        ])
+
+        for i in range(3):
+            self.filters.append(AuxEncoderBilateralFilter(num_total_input_channels, self.num_hidden_states, self.num_feature_channels, ConvEncoder2, 5, 1))
+
+        self.filters.append(AuxEncoderBilateralFilter(num_total_input_channels, self.num_hidden_states, self.num_feature_channels, ConvEncoder2, 7, 2))
+        self.filters.append(AuxEncoderBilateralFilter(num_total_input_channels, self.num_hidden_states, self.num_feature_channels, ConvEncoder2, 7, 2))
+
+        base_enc_internal_channels = self.num_input_channels + 3 # extra 3 come from LCN preprocess
+
+        self.base_encoder = nn.Sequential(
+            nn.Conv2d(base_enc_internal_channels, base_enc_internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels * 2, base_enc_internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels * 4, self.num_feature_channels + self.num_hidden_states, kernel_size=3, padding=1),
+        )
+
+        self.skip_encoder = nn.Sequential(
+            nn.Conv2d(base_enc_internal_channels, base_enc_internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels * 2, base_enc_internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels * 4, self.num_feature_channels + self.num_hidden_states, kernel_size=3, padding=1),
+        )
+
+        alpha_feature_channels = self.num_feature_channels + self.num_hidden_states + 3
+        self.alpha_extractor = nn.Sequential(
+            nn.Conv2d(alpha_feature_channels, alpha_feature_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(alpha_feature_channels, alpha_feature_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(alpha_feature_channels, 2, kernel_size=3, padding=1),
+            nn.Softmax(dim=1)
+        )
+
+        self.final_denoiser = nn.Sequential(
+            DenoiseUNet(alpha_feature_channels + 3, 1),
+        )
+        self.clamp_bounds = 1.4
+
+    def forward(self, input):
+        B = input.size(0)
+        num_frames = input.size(1) // self.num_input_channels
+        H = input.size(2)
+        W = input.size(3)
+
+        output = torch.empty(B, 3 * num_frames, H, W, device=input.device)
+        temporal_state = torch.zeros(B, self.num_hidden_states + 3, H, W, device=input.device)
+
+        for i in range(num_frames):
+
+            base_channel_index = i * self.num_input_channels
+
+            frame_input = input[:, base_channel_index:base_channel_index + self.num_input_channels, :, :]
+            # albedo is channels 3..5
+            color = frame_input[:, :3, :, :]
+            albedo = frame_input[:, 3:6, :, :]
+
+            norm_color = run_lcn(color, 3)
+
+            enc_input = torch.cat((frame_input, norm_color), dim=1)
+
+            init_features = checkpoint.checkpoint_sequential(self.base_encoder, input=enc_input, segments=1)
+            skip_features = checkpoint.checkpoint_sequential(self.skip_encoder, input=enc_input, segments=1)
+
+            preprocessed_input = torch.cat((color, init_features), dim=1)
+
+            dynamic = preprocessed_input[:, :3 + self.num_hidden_states, :, :]
+            fixed = preprocessed_input[:, 3 + self.num_hidden_states:, :, :]
+
+            if i != 0:
+                alpha = checkpoint.checkpoint_sequential(self.alpha_extractor, input=preprocessed_input, segments=1)
+                dynamic = alpha[:, 0, :, :].unsqueeze(1) * dynamic + alpha[:, 1, :, :].unsqueeze(1) * temporal_state
+
+            filtered = torch.cat((dynamic, fixed), dim=1)
+
+            # loop unrolling cuz pytorch is dum dum sometimes
+            filtered = self.exec_checkpoint_filter(filtered, skip_features, 0)
+            filtered = self.exec_checkpoint_filter(filtered, skip_features, 1)
+            filtered = self.exec_checkpoint_filter(filtered, skip_features, 2)
+            filtered = self.exec_checkpoint_filter(filtered, skip_features, 3)
+            filtered = self.exec_checkpoint_filter(filtered, skip_features, 4)
+            filtered = self.exec_checkpoint_filter(filtered, skip_features, 5)
+
+            norm_color = run_lcn(filtered[:, :3, :, :], 5)
+            filtered = torch.cat((filtered, norm_color), dim=1)
+
+            if False:
+                readjustment_factor = self.final_denoiser(filtered)
+                readjustment_factor = torch.clamp(readjustment_factor, -self.clamp_bounds, self.clamp_bounds)
+                readjustment_factor = torch.exp(readjustment_factor)
+                denoised = readjustment_factor * filtered[:, :3, :, :]
+            else:
+                denoised = self.exec_checkpoint_final_denoise(self.final_denoiser, filtered)
+
+            oidx = i * 3
+            output[:, oidx:oidx + 3, :, :] = albedo * denoised[:, :3, :, :]
+
+            temporal_state = denoised#torch.cat((denoised, filtered[:, 3:3 + self.num_hidden_states, :, :]), dim=1)
+        return output
+
+    """
+    def exec_filter(self, input, skip, i):
+        filtered = self.filters[i](input)
+        readded_features = filtered[:, 3:, :, :] + skip
+        combined = torch.cat((filtered[:, :3, :, :], readded_features), dim=1)
+        return combined
+    """
+
+    def checkpoint_filter(self, filter):
+        def checkpoint_func(*args):
+            input = args[0]
+            skip = args[1]
+
+            filtered = filter(input)
+            readded_features = filtered[:, 3:, :, :] + skip
+            combined = torch.cat((filtered[:, :3, :, :], readded_features), dim=1)
+
+            return combined
+
+        return checkpoint_func
+
+    def exec_checkpoint_filter(self, input, skip, i):
+        output = checkpoint.checkpoint(self.checkpoint_filter(self.filters[i]), input, skip)
+        return output
+
+    def checkpoint_final_denoise(self, module):
+        def checkpoint_func(*args):
+            input = args[0]
+            return module(input)
+
+        return checkpoint_func
+
+    def exec_checkpoint_final_denoise(self, module, input):
+        output = checkpoint.checkpoint(self.checkpoint_final_denoise(module), input)
+        return output
+
+
+
+
+
+"""
+class SimpleFPCNN5(nn.Module):
+    def __init__(self):
+        super().__init__()
+        print("Using FPCNN 5")
+
+        self.num_input_channels = 12
+        self.num_compact_channels = 8
+        self.num
+        self.num_hidden_states = 1
+        self.alpha = nn.Parameter(torch.ones(1) * 0.5)
+
+        with torch.no_grad():
+            self.alpha.abs_()
+
+        num_total_input_channels = self.num_feature_channels + self.num_hidden_states + 3
+        self.filters = nn.ModuleList([
+            AuxEncoderBilateralFilter(num_total_input_channels, self.num_hidden_states, self.num_feature_channels, 7, 1)
+        ])
+
+        for i in range(3):
+            self.filters.append(AuxEncoderBilateralFilter(num_total_input_channels, self.num_hidden_states, self.num_feature_channels, 5, 1))
+
+        self.filters.append(AuxEncoderBilateralFilter(num_total_input_channels, self.num_hidden_states, self.num_feature_channels, 7, 2))
+        self.filters.append(AuxEncoderBilateralFilter(num_total_input_channels, self.num_hidden_states, self.num_feature_channels, 7, 2))
+
+        base_enc_internal_channels = self.num_input_channels + 3 # extra 3 come from LCN preprocess
+
+        self.base_encoder = nn.Sequential(
+            nn.Conv2d(base_enc_internal_channels, base_enc_internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels * 2, base_enc_internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels * 4, self.num_feature_channels + self.num_hidden_states, kernel_size=3, padding=1),
+        )
+
+        self.skip_encoder = nn.Sequential(
+            nn.Conv2d(base_enc_internal_channels, base_enc_internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels * 2, base_enc_internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels * 4, self.num_feature_channels + self.num_hidden_states, kernel_size=3, padding=1),
+        )
+
+        self.clamp()
+
+    def forward(self, input):
+        B = input.size(0)
+        num_frames = input.size(1) // self.num_input_channels
+        H = input.size(2)
+        W = input.size(3)
+
+        output = torch.empty(B, 3 * num_frames, H, W, device=input.device)
+        temporal_state = torch.zeros(B, self.num_hidden_states + 3, H, W, device=input.device)
+
+        for i in range(num_frames):
+
+            base_channel_index = i * self.num_input_channels
+
+            frame_input = input[:, base_channel_index:base_channel_index + self.num_input_channels, :, :]
+            # albedo is channels 3..5
+            color = frame_input[:, :3, :, :]
+            albedo = frame_input[:, 3:6, :, :]
+
+            color = frame_input[:, :3, :, :]
+            norm_color = run_lcn(color, 3)
+
+            enc_input = torch.cat((frame_input, norm_color), dim=1)
+            features = self.base_encoder(enc_input)
+
+            init_features = features[:, :self.num_feature_channels + self.num_hidden_states, :, :]
+            skip_features = features[:, self.num_feature_channels + self.num_hidden_states:, :, :]
+
+            preprocessed_input = torch.cat((color, init_features), dim=1)
+
+            dynamic = preprocessed_input[:, :3 + self.num_hidden_states, :, :]
+            fixed = preprocessed_input[:, 3 + self.num_hidden_states:, :, :]
+
+            if i != 0:
+                dynamic = self.alpha * dynamic + (1.0 - self.alpha) * temporal_state
+
+            filtered = torch.cat((dynamic, fixed), dim=1)
+
+            # loop unrolling cuz pytorch is dum dum sometimes
+            filtered = self.exec_filter(filtered, skip_features, 0)
+            filtered = self.exec_filter(filtered, skip_features, 1)
+            filtered = self.exec_filter(filtered, skip_features, 2)
+            filtered = self.exec_filter(filtered, skip_features, 3)
+            filtered = self.exec_filter(filtered, skip_features, 4)
+            filtered = self.exec_filter(filtered, skip_features, 5)
+
+            oidx = i * 3
+            output[:, oidx:oidx + 3, :, :] = albedo * filtered[:, :3, :, :]
+
+            temporal_state = filtered[:, :3 + self.num_hidden_states, :, :]
+        return output
+
+    def clamp(self):
+        for i, filter in enumerate(self.filters):
+            filter.clamp()
+
+        with torch.no_grad():
+            self.alpha.clamp_(0.0, 1.0)
+
+    def exec_filter(self, input, skip, i):
+        filtered = self.filters[i](input)
+        readded_features = filtered[:, 3:, :, :] + skip
+        combined = torch.cat((filtered[:, :3, :, :], readded_features), dim=1)
+        return combined
+"""
+
+class EncoderAugmentedFilter(nn.Module):
+    def __init__(self):
+        super().__init__()
+        print("Using Encoder Augmented Filter")
+
+        self.num_input_channels = 12
+        self.num_feature_channels = 8
+        self.num_hidden_states = 1
+
+        num_total_input_channels = self.num_feature_channels + self.num_hidden_states + 3
+        self.filters = nn.ModuleList([
+            #AuxEncoderBilateralFilter(num_total_input_channels, self.num_hidden_states, self.num_feature_channels, ConvEncoder3, 7, 1)
+        ])
+
+        for i in range(3):
+            self.filters.append(AuxEncoderBilateralFilter(num_total_input_channels, self.num_hidden_states, self.num_feature_channels, ConvEncoder3, 5, 1))
+
+        for i in range(3):
+            self.filters.append(AuxEncoderBilateralFilter(num_total_input_channels, self.num_hidden_states, self.num_feature_channels, ConvEncoder3, 5, 2))
+
+        #self.filters.append(AuxEncoderBilateralFilter(num_total_input_channels, self.num_hidden_states, self.num_feature_channels, ConvEncoder3, 7, 2))
+        #self.filters.append(AuxEncoderBilateralFilter(num_total_input_channels, self.num_hidden_states, self.num_feature_channels, ConvEncoder3, 7, 2))
+
+        base_enc_internal_channels = self.num_input_channels + 3 # extra 3 come from LCN preprocess
+
+        self.base_encoder = nn.Sequential(
+            nn.Conv2d(base_enc_internal_channels, base_enc_internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels * 2, base_enc_internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels * 4, self.num_feature_channels + self.num_hidden_states, kernel_size=3, padding=1),
+        )
+
+        self.skip_encoder = nn.Sequential(
+            nn.Conv2d(base_enc_internal_channels, base_enc_internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels * 2, base_enc_internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels * 4, self.num_feature_channels + self.num_hidden_states, kernel_size=3, padding=1),
+        )
+
+        alpha_feature_channels = self.num_feature_channels + self.num_hidden_states + 3
+        self.alpha_extractor = nn.Sequential(
+            nn.Conv2d(alpha_feature_channels, alpha_feature_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(alpha_feature_channels, alpha_feature_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(alpha_feature_channels, 2, kernel_size=3, padding=1),
+            nn.Softmax(dim=1)
+        )
+
+        self.clamp_bounds = 1.4
+
+    def forward(self, input):
+        B = input.size(0)
+        num_frames = input.size(1) // self.num_input_channels
+        H = input.size(2)
+        W = input.size(3)
+
+        output = torch.empty(B, 3 * num_frames, H, W, device=input.device)
+        temporal_state = torch.zeros(B, self.num_hidden_states + 3, H, W, device=input.device)
+
+        for i in range(num_frames):
+
+            base_channel_index = i * self.num_input_channels
+
+            frame_input = input[:, base_channel_index:base_channel_index + self.num_input_channels, :, :]
+
+            (frame_output, next_temporal_state) = checkpoint.checkpoint(self.run_frame, frame_input, temporal_state, i, use_reentrant=False)
+
+            oidx = i * 3
+            output[:, oidx:oidx + 3, :, :] = frame_output
+
+            temporal_state = next_temporal_state
+
+        return output
+
+    def exec_filter(self, input, skip, i):
+        filtered = self.filters[i](input)
+        readded_features = filtered[:, 3:, :, :] + skip
+        combined = torch.cat((filtered[:, :3, :, :], readded_features), dim=1)
+        return combined
+
+    def run_frame(self, frame_input, temporal_state, i):
+        # albedo is channels 3..5
+        color = frame_input[:, :3, :, :]
+        albedo = frame_input[:, 3:6, :, :]
+
+        norm_color = run_lcn(color, 3)
+
+        enc_input = torch.cat((frame_input, norm_color), dim=1)
+
+        init_features = self.base_encoder(enc_input)
+        skip_features = self.skip_encoder(enc_input)
+
+        preprocessed_input = torch.cat((color, init_features), dim=1)
+
+        dynamic = preprocessed_input[:, :3 + self.num_hidden_states, :, :]
+        fixed = preprocessed_input[:, 3 + self.num_hidden_states:, :, :]
+
+        if i != 0:
+            alpha = self.alpha_extractor(preprocessed_input)
+            dynamic = alpha[:, 0, :, :].unsqueeze(1) * dynamic + alpha[:, 1, :, :].unsqueeze(1) * temporal_state
+
+        filtered = torch.cat((dynamic, fixed), dim=1)
+
+        # loop unrolling cuz pytorch is dum dum sometimes
+        filtered = self.exec_filter(filtered, skip_features, 0)
+        filtered = self.exec_filter(filtered, skip_features, 1)
+        filtered = self.exec_filter(filtered, skip_features, 2)
+        filtered = self.exec_filter(filtered, skip_features, 3)
+        filtered = self.exec_filter(filtered, skip_features, 4)
+        filtered = self.exec_filter(filtered, skip_features, 5)
+
+        norm_color = run_lcn(filtered[:, :3, :, :], 5)
+        filtered = torch.cat((filtered, norm_color), dim=1)
+
+        denoised = filtered[:, :3 + self.num_hidden_states, :, :]
+
+        frame_output = albedo * denoised[:, :3, :, :]
+
+        temporal_state = denoised
+
+        return (frame_output, temporal_state)
+
+class EncoderAugmentedFilter2(nn.Module):
+    def __init__(self):
+        super().__init__()
+        print("Using Encoder Augmented Filter2")
+
+        self.num_input_channels = 12
+        self.num_passthrough_channels = 11
+        self.num_downturn_channels = 8
+        self.num_hidden_states = 1
+
+        self.filters = nn.ModuleList([])
+
+        for i in range(4):
+            self.filters.append(DownturnEncoderBilateralFilter(self.num_passthrough_channels, self.num_hidden_states, self.num_downturn_channels, ConvEncoder4, ConvEncoder5, 5, 1))
+
+        for i in range(4):
+            self.filters.append(DownturnEncoderBilateralFilter(self.num_passthrough_channels, self.num_hidden_states, self.num_downturn_channels, ConvEncoder4, ConvEncoder5, 5, 2))
+
+        base_enc_internal_channels = self.num_input_channels + 3 # extra 3 come from LCN preprocess
+        self.base_encoder = nn.Sequential(
+            nn.Conv2d(base_enc_internal_channels, base_enc_internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels * 2, base_enc_internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels * 4, self.num_passthrough_channels + self.num_hidden_states, kernel_size=3, padding=1),
+        )
+
+        alpha_feature_channels = self.num_passthrough_channels + self.num_hidden_states + 3
+        self.alpha_extractor = nn.Sequential(
+            nn.Conv2d(alpha_feature_channels, alpha_feature_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(alpha_feature_channels, alpha_feature_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(alpha_feature_channels, 2, kernel_size=3, padding=1),
+            nn.Softmax(dim=1)
+        )
+
+    def forward(self, input):
+        B = input.size(0)
+        num_frames = input.size(1) // self.num_input_channels
+        H = input.size(2)
+        W = input.size(3)
+
+        output = torch.empty(B, 3 * num_frames, H, W, device=input.device)
+        temporal_state = torch.zeros(B, self.num_hidden_states + 3, H, W, device=input.device)
+
+        for i in range(num_frames):
+
+            base_channel_index = i * self.num_input_channels
+
+            frame_input = input[:, base_channel_index:base_channel_index + self.num_input_channels, :, :]
+
+            (frame_output, next_temporal_state) = checkpoint.checkpoint(self.run_frame, frame_input, temporal_state, i, use_reentrant=False)
+
+            oidx = i * 3
+            output[:, oidx:oidx + 3, :, :] = frame_output
+
+            temporal_state = next_temporal_state
+
+        return output
+
+    def exec_filter(self, input, i):
+        skip = input[:, 3:, :, :]
+        filtered = self.filters[i](input)
+        readded_features = filtered[:, 3:, :, :] + skip
+        combined = torch.cat((filtered[:, :3, :, :], readded_features), dim=1)
+        return combined
+
+    def run_frame(self, frame_input, temporal_state, i):
+        # albedo is channels 3..5
+        color = frame_input[:, :3, :, :]
+        albedo = frame_input[:, 3:6, :, :]
+
+        norm_color = run_lcn(color, 3)
+
+        enc_input = torch.cat((frame_input, norm_color), dim=1)
+
+        init_features = self.base_encoder(enc_input)
+
+        preprocessed_input = torch.cat((color, init_features), dim=1)
+
+        dynamic = preprocessed_input[:, :3 + self.num_hidden_states, :, :]
+        fixed = preprocessed_input[:, 3 + self.num_hidden_states:, :, :]
+
+        if i != 0:
+            alpha = self.alpha_extractor(preprocessed_input)
+            dynamic = alpha[:, 0, :, :].unsqueeze(1) * dynamic + alpha[:, 1, :, :].unsqueeze(1) * temporal_state
+
+        filtered = torch.cat((dynamic, fixed), dim=1)
+
+        # loop unrolling cuz pytorch is dum dum sometimes
+        filtered = self.exec_filter(filtered, 0)
+        filtered = self.exec_filter(filtered, 1)
+        filtered = self.exec_filter(filtered, 2)
+        filtered = self.exec_filter(filtered, 3)
+        filtered = self.exec_filter(filtered, 4)
+        filtered = self.exec_filter(filtered, 5)
+        filtered = self.exec_filter(filtered, 6)
+        filtered = self.exec_filter(filtered, 7)
+
+        norm_color = run_lcn(filtered[:, :3, :, :], 5)
+        filtered = torch.cat((filtered, norm_color), dim=1)
+
+        denoised = filtered[:, :3 + self.num_hidden_states, :, :]
+
+        frame_output = albedo * denoised[:, :3, :, :]
+
+        temporal_state = denoised
+
+        return (frame_output, temporal_state)
+
+class UNetDLF(nn.Module):
+    def __init__(self):
+        super().__init__()
+        print("Using UNDLF")
+
+        self.num_input_channels = 12
+        self.num_feature_channels = 13
+        self.num_hidden_states = 3
+
+
+        num_total_input_channels = self.num_feature_channels + self.num_hidden_states + 3
+
+        self.filters = nn.ModuleList([])
+        for i in range(4):
+            self.filters.append(WeightTransformBilateralFilter(num_total_input_channels, self.num_hidden_states + 3, 5, 1))
+
+        base_enc_internal_channels = self.num_input_channels + 3 # extra 3 come from LCN preprocess
+        self.base_encoder = nn.Sequential(
+            nn.Conv2d(base_enc_internal_channels, base_enc_internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels, base_enc_internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels * 2, self.num_feature_channels + self.num_hidden_states, kernel_size=3, padding=1),
+        )
+
+        alpha_feature_channels = self.num_feature_channels + self.num_hidden_states + 3
+        self.alpha_extractor = nn.Sequential(
+            nn.Conv2d(alpha_feature_channels, alpha_feature_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(alpha_feature_channels, alpha_feature_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(alpha_feature_channels, 2, kernel_size=3, padding=1),
+            nn.Softmax(dim=1)
+        )
+
+        self.encoders = nn.ModuleList([])
+        for i in range(4):
+            self.encoders.append(
+                EESPEncoderSimple(self.num_feature_channels + self.num_hidden_states, self.num_hidden_states, 4, 1)
+            )
+
+        num_digest_channels_per_layer = 3
+
+        self.digest_encoders = nn.ModuleList([])
+        for i in range(4):
+            self.digest_encoders.append(
+                nn.Sequential(
+                    EESPEncoderSimple(self.num_feature_channels + self.num_hidden_states, self.num_hidden_states, 4, 1),
+                    nn.ReLU(),
+                    nn.Conv2d(self.num_feature_channels + self.num_hidden_states, self.num_feature_channels, kernel_size=3, padding=1),
+                    nn.ReLU(),
+                    nn.Conv2d(self.num_feature_channels, num_digest_channels_per_layer, kernel_size=3, padding=1),
+                )
+            )
+
+        self.upscale = nn.ModuleList([])
+        for i in range(3):
+            scale_factor = 2 ** (i + 1)
+            self.upscale.append(nn.Upsample(scale_factor=scale_factor, mode='bilinear', align_corners=True))
+
+        self.fixed_pool = nn.ModuleList([])
+        for i in range(3):
+            self.fixed_pool.append(
+                nn.Sequential(
+                    nn.Conv2d(self.num_feature_channels, self.num_feature_channels, kernel_size=1, groups=self.num_feature_channels),
+                    nn.MaxPool2d(2)
+                )
+            )
+
+        self.dyn_pool = nn.ModuleList([])
+        for i in range(3):
+            self.dyn_pool.append(nn.AvgPool2d(2))
+
+        weighting_channels = 4 * num_digest_channels_per_layer
+        self.weight_net = nn.Sequential(
+            nn.Conv2d(weighting_channels, weighting_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(weighting_channels, weighting_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(weighting_channels, weighting_channels * 2, kernel_size=1),
+            nn.ReLU(),
+            nn.Conv2d(weighting_channels * 2, weighting_channels * 4, kernel_size=1),
+            nn.ReLU(),
+            nn.Conv2d(weighting_channels * 4, 4, kernel_size=1),
+            nn.Softmax(dim=1)
+        )
+
+    def forward(self, input):
+        B = input.size(0)
+        num_frames = input.size(1) // self.num_input_channels
+        H = input.size(2)
+        W = input.size(3)
+
+        output = torch.empty(B, 3 * num_frames, H, W, device=input.device)
+        temporal_state = torch.zeros(B, self.num_hidden_states + 3, H, W, device=input.device)
+
+        for i in range(num_frames):
+
+            base_channel_index = i * self.num_input_channels
+
+            frame_input = input[:, base_channel_index:base_channel_index + self.num_input_channels, :, :]
+
+            (frame_output, next_temporal_state) = checkpoint.checkpoint(self.run_frame, frame_input, temporal_state, i, use_reentrant=False)
+
+            oidx = i * 3
+            output[:, oidx:oidx + 3, :, :] = frame_output
+
+            temporal_state = next_temporal_state
+
+        return output
+
+    def run_frame(self, frame_input, temporal_state, i):
+        # albedo is channels 3..5
+        color = frame_input[:, :3, :, :]
+        albedo = frame_input[:, 3:6, :, :]
+
+        norm_color = run_lcn(color, 3)
+
+        enc_input = torch.cat((frame_input, norm_color), dim=1)
+
+        init_features = self.base_encoder(enc_input)
+
+        preprocessed_input = torch.cat((color, init_features), dim=1)
+
+        dynamic = preprocessed_input[:, :3 + self.num_hidden_states, :, :]
+        fixed = preprocessed_input[:, 3 + self.num_hidden_states:, :, :]
+
+        if i != 0:
+            alpha = self.alpha_extractor(preprocessed_input)
+            dynamic = alpha[:, 0, :, :].unsqueeze(1) * dynamic + alpha[:, 1, :, :].unsqueeze(1) * temporal_state
+
+        filtered = torch.cat((dynamic, fixed), dim=1)
+
+        filtered_dynamic = []
+        digested_info = []
+        for i in range(4):
+            encoding = self.encoders[i](filtered)
+
+            filtered = torch.cat((filtered[:, :3, :, :], encoding), dim=1)
+
+            filtered = self.filters[i](filtered)
+
+            skip_hidden = filtered[:, 3:, :, :] + encoding[:, :self.num_hidden_states, :, :]
+            filtered = torch.cat((filtered[:, :3, :, :], skip_hidden, encoding[:, self.num_hidden_states:, :, :]), dim=1)
+
+
+            cur_dyn = filtered[:, :3 + self.num_hidden_states, :, :]
+            if i == 0:
+                digested_info.append(self.digest_encoders[i](filtered))
+                filtered_dynamic.append(cur_dyn)
+            else:
+                upscale = self.upscale[i - 1]
+                digested_info.append(self.digest_encoders[i](upscale(filtered)))
+                filtered_dynamic.append(upscale(cur_dyn))
+
+
+            if i != 3:
+                dyn_ds = self.dyn_pool[i](filtered[:, :3 + self.num_hidden_states, :, :])
+                fixed_ds = self.fixed_pool[i](filtered[:, 3 + self.num_hidden_states:, :, :])
+
+                filtered = torch.cat((dyn_ds, fixed_ds), dim=1)
+
+        weights = self.weight_net(torch.cat(digested_info, dim=1))
+
+        for i in range(4):
+            weighted = weights[:, i, :, :].unsqueeze(1) * filtered_dynamic[i]
+            if i == 0:
+                denoised = weighted
+            else:
+                denoised = denoised + weighted
+
+        frame_output = albedo * denoised[:, :3, :, :]
+
+        temporal_state = denoised
+
+        return (frame_output, temporal_state)
+
+# this is designed to be the heavyweight reference
+class UNetDLF2(nn.Module):
+    def __init__(self):
+        super().__init__()
+        print("Using UNDLF2")
+
+        self.num_input_channels = 12
+        self.num_feature_channels = 8
+        self.num_hidden_states = 3
+
+        base_enc_internal_channels = self.num_input_channels + 3 # extra 3 come from LCN preprocess
+        self.base_encoder = nn.Sequential(
+            nn.Conv2d(base_enc_internal_channels, base_enc_internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels, base_enc_internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(base_enc_internal_channels * 2, self.num_feature_channels + self.num_hidden_states, kernel_size=3, padding=1),
+        )
+
+        alpha_feature_channels = self.num_feature_channels + self.num_hidden_states + 3
+        self.alpha_extractor = nn.Sequential(
+            nn.Conv2d(alpha_feature_channels, alpha_feature_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(alpha_feature_channels, alpha_feature_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(alpha_feature_channels, 2, kernel_size=3, padding=1),
+            nn.Softmax(dim=1)
+        )
+
+        self.encoders = nn.ModuleList([])
+        self.filters = nn.ModuleList([])
+        self.pool = nn.ModuleList([])
+        self.upscale = nn.ModuleList([])
+
+        num_extracted_channels = self.num_feature_channels + self.num_hidden_states
+        total_weight_inputs = 0
+        for i in range(4):
+            input_size = num_extracted_channels * (2 ** i)
+
+            self.encoders.append(
+                nn.Sequential(
+                    nn.Conv2d(input_size + 3, input_size * 2, kernel_size=3, padding=1),
+                    nn.ReLU(),
+                    nn.Conv2d(input_size * 2, input_size * 2, kernel_size=3, padding=1),
+                    nn.ReLU(),
+                    nn.Conv2d(input_size * 2, input_size * 2, kernel_size=3, padding=1)
+                )
+            )
+
+            total_weight_inputs += input_size * 2 + 3
+            self.filters.append(WeightTransformBilateralFilter(input_size * 2 + 3, self.num_hidden_states + 3, 5, 1))
+
+            if i < 3:
+                self.pool.append(ColorStabilizingPool(3))
+
+            if i > 0:
+                self.upscale.append(nn.ConvTranspose2d(input_size * 2 + 3, input_size * 2 + 3, kernel_size=(2 ** i), stride=(2 ** i), groups=input_size * 2 + 3))
+
+        self.direct_predictor = nn.Sequential(
+            nn.Conv2d(total_weight_inputs, total_weight_inputs, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(total_weight_inputs, total_weight_inputs, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(total_weight_inputs, total_weight_inputs, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(total_weight_inputs, 3 + self.num_hidden_states, kernel_size=3, padding=1),
+        )
+
+    def forward(self, input):
+        B = input.size(0)
+        num_frames = input.size(1) // self.num_input_channels
+        H = input.size(2)
+        W = input.size(3)
+
+        output = torch.empty(B, 3 * num_frames, H, W, device=input.device)
+        temporal_state = torch.zeros(B, self.num_hidden_states + 3, H, W, device=input.device)
+
+        for i in range(num_frames):
+
+            base_channel_index = i * self.num_input_channels
+
+            frame_input = input[:, base_channel_index:base_channel_index + self.num_input_channels, :, :]
+
+            (frame_output, next_temporal_state) = checkpoint.checkpoint(self.run_frame, frame_input, temporal_state, i, use_reentrant=False)
+
+            oidx = i * 3
+            output[:, oidx:oidx + 3, :, :] = frame_output
+
+            temporal_state = next_temporal_state
+
+        return output
+
+    def run_frame(self, frame_input, temporal_state, i):
+        # albedo is channels 3..5
+        color = frame_input[:, :3, :, :]
+        albedo = frame_input[:, 3:6, :, :]
+
+        norm_color = run_lcn(color, 3)
+
+        enc_input = torch.cat((frame_input, norm_color), dim=1)
+
+        init_features = self.base_encoder(enc_input)
+
+        preprocessed_input = torch.cat((color, init_features), dim=1)
+
+        dynamic = preprocessed_input[:, :3 + self.num_hidden_states, :, :]
+        fixed = preprocessed_input[:, 3 + self.num_hidden_states:, :, :]
+
+        if i != 0:
+            alpha = self.alpha_extractor(preprocessed_input)
+            dynamic = alpha[:, 0, :, :].unsqueeze(1) * dynamic + alpha[:, 1, :, :].unsqueeze(1) * temporal_state
+
+        filtered = torch.cat((dynamic, fixed), dim=1)
+
+        skip_context = []
+        for i in range(4):
+            encoding = self.encoders[i](filtered)
+
+            filtered = torch.cat((filtered[:, :3, :, :], encoding), dim=1)
+            filtered = self.filters[i](filtered)
+            filtered = torch.cat((filtered[:, :3, :, :], encoding), dim=1)
+
+            upsampled = filtered
+            if i > 0:
+                upsampled = self.upscale[i - 1](upsampled)
+
+            skip_context.append(upsampled)
+
+            if i < 3:
+                filtered = self.pool[i](filtered)
+
+
+        denoised = self.direct_predictor(torch.cat(skip_context, dim=1))
+
+        frame_output = albedo * denoised[:, :3, :, :]
+
+        temporal_state = denoised
+
+        return (frame_output, temporal_state)
