@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from encoder import *
-from bilateral_filter import BilateralFilter
+from bilateral_filter import *
 
 def run_lcn(color, lcn_size):
     lcn_kernel = torch.ones(3, 1, lcn_size, lcn_size, device=color.device)
@@ -74,6 +74,32 @@ class WeightTransformBilateralFilter(nn.Module):
         # return only dynamic component
         return output[:, 0:self.dynamic_size, :, :]
 
+
+class WeightTransformKernelBilateralFilter(nn.Module):
+    def __init__(self, total_dim, dynamic_size, kernel_size, dialation):
+        super().__init__()
+
+        self.dialation = dialation
+        self.dynamic_size = dynamic_size
+
+        self.params = nn.Parameter(torch.randn(total_dim + 2))
+        self.kernel = nn.Parameter(torch.randn(kernel_size, kernel_size))
+
+        self.params.data.mul_(0.5)
+        self.kernel.data.zero_()
+
+    def forward(self, input):
+        transformed_params = -self.params * self.params
+
+        transformed_kernel = F.softmax(self.kernel.flatten() / self.kernel.size(0), dim=0).view_as(self.kernel)
+
+
+
+        # format: (dynamic dim, fixed dim)
+        output = KernelBilateralFilter.apply(input, transformed_params, transformed_kernel, self.dialation)
+
+        # return only dynamic component
+        return output[:, 0:self.dynamic_size, :, :]
 
 # format: (RGB hidden fixed)
 class ColorStableBilateralFilter(nn.Module):
@@ -223,3 +249,116 @@ class DownturnEncoderBilateralFilter(nn.Module):
         combined_hidden = filtered[:, 3:, :, :] + passthrough[:, :self.num_hidden_channels, :, :]
 
         return torch.cat((filtered[:, :3, :, :], combined_hidden, passthrough[:, self.num_hidden_channels:, :, :]), dim=1)
+
+class WeightTransformPixelBilateralFilter(nn.Module):
+    def __init__(self, dynamic_size, kernel_size, dilation):
+        super().__init__()
+
+        self.kernel_size = kernel_size
+        self.dilation = dilation
+        self.dynamic_size = dynamic_size
+
+    def forward(self, input, params):
+        # format: (dynamic dim, fixed dim)
+        output = PixelBilateralFilter.apply(input, params, self.kernel_size, self.dilation)
+
+        # return only dynamic component
+        return output[:, 0:self.dynamic_size, :, :]
+
+class BetterPixelBilateralFilter(nn.Module):
+    def __init__(self, dynamic_size, kernel_size, dilation):
+        super().__init__()
+
+        self.kernel_size = kernel_size
+        self.dilation = dilation
+        self.dynamic_size = dynamic_size
+
+    def forward(self, input):
+        # format: (dynamic dim, fixed dim)
+
+
+        if input.size(1) % 2 != 0:
+            raise RuntimeError(f"Uneven number of channels. Input was {input.shape}")
+
+        channels = input.size(1) // 2 - 1
+
+        filterable = input[:, :channels, :, :]
+        params = input[:, channels:, :, :]
+
+        params = -params * params
+
+        filtered = PixelBilateralFilter.apply(filterable, params, self.kernel_size, self.dilation)
+
+        # return only dynamic component
+        return filtered[:, :self.dynamic_size, :, :]
+
+
+class BetterPixelBilateralFilter2(nn.Module):
+    def __init__(self, num_input_channels, dynamic_size, kernel_size, dilation):
+        super().__init__()
+
+        self.kernel_size = kernel_size
+        self.dilation = dilation
+        self.dynamic_size = dynamic_size
+
+        self.coeffs = nn.Parameter(torch.randn(1, num_input_channels + 2, 1, 1))
+
+    def forward(self, input):
+        # format: (dynamic dim, fixed dim)
+
+
+        if input.size(1) % 2 != 0:
+            raise RuntimeError(f"Uneven number of channels. Input was {input.shape}")
+
+        channels = input.size(1) // 2 - 1
+
+        filterable = input[:, :channels, :, :]
+        scale = input[:, channels:, :, :]
+
+        range = -torch.exp(self.coeffs)
+        params = range * F.softplus(scale)
+
+        filtered = PixelBilateralFilter.apply(filterable, params, self.kernel_size, self.dilation)
+
+        # return only dynamic component
+        return filtered[:, :self.dynamic_size, :, :]
+
+import torch.distributed as dist
+# this is like the bilateral filter but based on dot product attention rather than diff^2
+# unlike bilateral filter we do not keep params here (they are redundant, rather we use output of external CNN to drive weights)
+class LocalAttention(nn.Module):
+    def __init__(self, total_dim, dynamic_size, kernel_size, dilation):
+        super().__init__()
+
+
+        self.total_dim = total_dim
+        self.kernel_size = kernel_size
+        self.dilation = dilation
+        self.dynamic_size = dynamic_size
+
+        padding = self.dilation * (self.kernel_size // 2)
+
+        self.unfold = nn.Unfold(kernel_size=(self.kernel_size, self.kernel_size), dilation=(self.dilation, self.dilation), padding=(padding, padding))
+        self.kernel = nn.Parameter(torch.randn(kernel_size * kernel_size, 1))
+
+    # we do not use dynamic components in filtration because we have no weights to adjust how strongly they contribute to the output
+    # instead we use fixed components only to filter dynamic components
+    def forward(self, input):
+        unfolded = self.unfold(input).view(input.size(0), self.total_dim, self.kernel_size ** 2, input.size(2), input.size(3))
+
+        reordered = unfolded.permute((0, 3, 4, 2, 1))
+        q = reordered.reshape(-1, self.kernel_size ** 2, self.total_dim)
+        k = input.permute((0, 2, 3, 1)).reshape(-1, self.total_dim, 1)
+
+        # introduce bias towards certain locations. works as positional encoding.
+        scores = torch.bmm(q[:, :, self.dynamic_size:], k[:, self.dynamic_size:, :]) * self.kernel / self.kernel_size
+        smax = nn.functional.softmax(scores, dim=1)
+
+        # reuse q for v
+        v = q[:, :, :self.dynamic_size]
+        attn = (smax * v).sum(1).view(input.size(0), input.size(2), input.size(3), self.dynamic_size).permute((0, 3, 1, 2))
+
+        return attn
+
+
+

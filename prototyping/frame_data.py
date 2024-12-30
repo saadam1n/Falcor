@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import random
+import math
 
 # We need this so OpenCV imports exr files
 import os
@@ -33,7 +34,7 @@ class FrameData:
     def __len__(self):
         # length here is defined by the number of frame sequneces we have,
         # not the number of frames
-        return 1000
+        return self.num_frames - self.seq_len + 1
 
     # this needs to manually convert things to a tensor
     def __getitem__(self, idx):
@@ -43,18 +44,29 @@ class FrameData:
         # N = number of frames
         # C = channels for each frame (color, albedo, world pos, world norm)
 
-        if False:
-            yoff = random.randint(0, 720)
-            xoff = random.randint(0, 1280)
+        if True:
+            if False:
+                yoff = random.randint(0, 720)
+                xoff = random.randint(0, 1280)
+            else:
+                yoff = int(random.gauss(450, 300))
+                xoff = int(random.gauss(450, 500))
+
+                yoff = 0 if yoff < 0 else 719 if yoff >= 720 else yoff
+                xoff = 0 if xoff < 0 else 1279 if xoff >= 1280 else xoff
+
         else:
-            yoff = 475
-            xoff = 420
+            if False:
+                yoff = 475
+                xoff = 420
+            else:
+                yoff = 0
+                xoff = 1280
 
         frame_inputs = []
         frame_references = []
-
         for i in range(self.seq_len):
-            (frame_input, frame_reference) = self.read_frame(i)
+            (frame_input, frame_reference) = self.read_frame(idx + i)
 
             if self.patching:
                 frame_input = frame_input[:, yoff:yoff+360, xoff:xoff+640]
@@ -62,7 +74,6 @@ class FrameData:
 
             frame_inputs.append(frame_input)
             frame_references.append(frame_reference)
-
 
         input = torch.cat(tuple(frame_inputs), dim=0)
         reference = torch.cat(tuple(frame_references), dim=0)
@@ -89,9 +100,9 @@ class FrameData:
             self.frame_cache[i] = frame_inputs
             self.ref_cache[i] = ref
 
-            return (frame_inputs, ref)
+            return (frame_inputs.to(self.device), ref.to(self.device))
         else:
-            return (self.frame_cache[i], self.ref_cache[i])
+            return (self.frame_cache[i].to(self.device), self.ref_cache[i].to(self.device))
 
 
     def read_exr(self, idx, ext):
@@ -105,7 +116,7 @@ class FrameData:
             img = cv2.imread(self.dataset_dir + filename, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH).astype(np.float32)
             np.save(cache_path, img)
 
-        return torch.tensor(img, device=self.device, dtype=torch.float32)
+        return torch.tensor(img, device="cpu", dtype=torch.float32)
 
     def get_full_img(self):
         self.patching = False

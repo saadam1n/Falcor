@@ -12407,175 +12407,548 @@ TensorView make_tensor_view(
 #define SLANG_PRELUDE_EXPORT
 
 
-#line 220 "./prototyping/bilateral_filter.slang"
+#line 619 "./prototyping/bilateral_filter.slang"
 SLANG_PRELUDE_EXPORT
 void __kernel__exec_bilateral_filter_wrapper(TensorView _0, TensorView _1, TensorView _2, int32_t _3, int32_t _4);
 
 
-#line 234
+#line 633
 SLANG_PRELUDE_EXPORT
 void __kernel__bwd_bilateral_filter_wrapper(TensorView _0, TensorView _1, TensorView _2, TensorView _3, TensorView _4, TensorView _5, int32_t _6, int32_t _7);
 
 
-#line 234
+#line 650
+SLANG_PRELUDE_EXPORT
+void __kernel__exec_kernel_bilateral_filter_wrapper(TensorView _0, TensorView _1, TensorView _2, TensorView _3, int32_t _4, int32_t _5);
+
+
+#line 665
+SLANG_PRELUDE_EXPORT
+void __kernel__bwd_kernel_bilateral_filter_wrapper(TensorView _0, TensorView _1, TensorView _2, TensorView _3, TensorView _4, TensorView _5, TensorView _6, TensorView _7, int32_t _8, int32_t _9);
+
+
+#line 684
+SLANG_PRELUDE_EXPORT
+void __kernel__exec_pixel_bilateral_filter_wrapper(TensorView _0, TensorView _1, TensorView _2, int32_t _3, int32_t _4);
+
+
+#line 698
+SLANG_PRELUDE_EXPORT
+void __kernel__bwd_pixel_bilateral_filter_wrapper(TensorView _0, TensorView _1, TensorView _2, TensorView _3, TensorView _4, TensorView _5, int32_t _6, int32_t _7);
+
+
+#line 698
 SLANG_PRELUDE_EXPORT
 void exec_bilateral_filter_wrapper(std::tuple<uint32_t, uint32_t, uint32_t> _blockSize_0, std::tuple<uint32_t, uint32_t, uint32_t> _gridSize_0, torch::Tensor input_0, torch::Tensor params_0, torch::Tensor output_0, int32_t kernel_boundary_0, int32_t dialation_0)
 {
 
-#line 234
+#line 698
     Vector<uint32_t, 3>  _S1 = Vector<uint32_t, 3> (std::get<int(0)>(_blockSize_0), std::get<int(1)>(_blockSize_0), std::get<int(2)>(_blockSize_0));
 
-#line 234
+#line 698
     Vector<uint32_t, 3>  _S2 = Vector<uint32_t, 3> (std::get<int(0)>(_gridSize_0), std::get<int(1)>(_gridSize_0), std::get<int(2)>(_gridSize_0));
 
-#line 234
+#line 698
     TensorView _S3 = make_tensor_view(params_0, "params", torch::kFloat32, false);
 
-#line 234
+#line 698
     TensorView _S4 = make_tensor_view(output_0, "output", torch::kFloat32, false);
 
-#line 234
+#line 698
     TensorView _S5 = make_tensor_view(input_0, "input", torch::kFloat32, false);
 
-#line 234
+#line 698
     FixedArray<void *, 5>  _S6;
 
-#line 234
+#line 698
     _S6[int(0)] = &_S5;
 
-#line 234
+#line 698
     TensorView _S7 = _S3;
 
-#line 234
+#line 698
     _S6[int(1)] = &_S7;
 
-#line 234
+#line 698
     TensorView _S8 = _S4;
 
-#line 234
+#line 698
     _S6[int(2)] = &_S8;
 
-#line 234
+#line 698
     int32_t _S9 = kernel_boundary_0;
 
-#line 234
+#line 698
     _S6[int(3)] = &_S9;
 
-#line 234
+#line 698
     int32_t _S10 = dialation_0;
 
-#line 234
+#line 698
     _S6[int(4)] = &_S10;
 
-#line 234
+#line 698
     AT_CUDA_CHECK(cudaLaunchKernel((const void*)(__kernel__exec_bilateral_filter_wrapper), slang_bit_cast<dim3>(_S2), slang_bit_cast<dim3>(_S1), &_S6[int(0)], 0, ((cudaStream_t)at::cuda::getCurrentCUDAStream())));
 
-#line 234
+#line 698
     return;
 }
 
 
-#line 234
+#line 698
 SLANG_PRELUDE_EXPORT
 static std::tuple<std::tuple<const char*, const char*, const char*, const char*, const char*, const char*, const char*>, std::tuple<const char*, const char*, const char*, const char*, const char*>, const char*, const char*> __funcinfo__exec_bilateral_filter_wrapper()
 {
 
-#line 234
+#line 698
     return std::make_tuple(std::make_tuple(Slang::toTerminatedSlice("__blockSize").getBuffer(), Slang::toTerminatedSlice("__gridSize").getBuffer(), Slang::toTerminatedSlice("input").getBuffer(), Slang::toTerminatedSlice("params").getBuffer(), Slang::toTerminatedSlice("output").getBuffer(), Slang::toTerminatedSlice("kernel_boundary").getBuffer(), Slang::toTerminatedSlice("dialation").getBuffer()), std::make_tuple(Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer()), Slang::toTerminatedSlice(""), Slang::toTerminatedSlice(""));
 }
 
 
-#line 234
+#line 698
 SLANG_PRELUDE_EXPORT
 void bwd_bilateral_filter_wrapper(std::tuple<uint32_t, uint32_t, uint32_t> _blockSize_1, std::tuple<uint32_t, uint32_t, uint32_t> _gridSize_1, torch::Tensor input_1, torch::Tensor input_grad_0, torch::Tensor params_1, torch::Tensor params_grad_0, torch::Tensor output_1, torch::Tensor output_grad_0, int32_t kernel_boundary_1, int32_t dialation_1)
 {
 
-#line 234
+#line 698
     Vector<uint32_t, 3>  _S11 = Vector<uint32_t, 3> (std::get<int(0)>(_blockSize_1), std::get<int(1)>(_blockSize_1), std::get<int(2)>(_blockSize_1));
 
-#line 234
+#line 698
     Vector<uint32_t, 3>  _S12 = Vector<uint32_t, 3> (std::get<int(0)>(_gridSize_1), std::get<int(1)>(_gridSize_1), std::get<int(2)>(_gridSize_1));
 
-#line 234
+#line 698
     TensorView _S13 = make_tensor_view(input_grad_0, "input_grad", torch::kFloat32, false);
 
-#line 234
+#line 698
     TensorView _S14 = make_tensor_view(params_1, "params", torch::kFloat32, false);
 
-#line 234
+#line 698
     TensorView _S15 = make_tensor_view(params_grad_0, "params_grad", torch::kFloat32, false);
 
-#line 234
+#line 698
     TensorView _S16 = make_tensor_view(output_1, "output", torch::kFloat32, false);
 
-#line 234
+#line 698
     TensorView _S17 = make_tensor_view(output_grad_0, "output_grad", torch::kFloat32, false);
 
-#line 234
+#line 698
     TensorView _S18 = make_tensor_view(input_1, "input", torch::kFloat32, false);
 
-#line 234
+#line 698
     FixedArray<void *, 8>  _S19;
 
-#line 234
+#line 698
     _S19[int(0)] = &_S18;
 
-#line 234
+#line 698
     TensorView _S20 = _S13;
 
-#line 234
+#line 698
     _S19[int(1)] = &_S20;
 
-#line 234
+#line 698
     TensorView _S21 = _S14;
 
-#line 234
+#line 698
     _S19[int(2)] = &_S21;
 
-#line 234
+#line 698
     TensorView _S22 = _S15;
 
-#line 234
+#line 698
     _S19[int(3)] = &_S22;
 
-#line 234
+#line 698
     TensorView _S23 = _S16;
 
-#line 234
+#line 698
     _S19[int(4)] = &_S23;
 
-#line 234
+#line 698
     TensorView _S24 = _S17;
 
-#line 234
+#line 698
     _S19[int(5)] = &_S24;
 
-#line 234
+#line 698
     int32_t _S25 = kernel_boundary_1;
 
-#line 234
+#line 698
     _S19[int(6)] = &_S25;
 
-#line 234
+#line 698
     int32_t _S26 = dialation_1;
 
-#line 234
+#line 698
     _S19[int(7)] = &_S26;
 
-#line 234
+#line 698
     AT_CUDA_CHECK(cudaLaunchKernel((const void*)(__kernel__bwd_bilateral_filter_wrapper), slang_bit_cast<dim3>(_S12), slang_bit_cast<dim3>(_S11), &_S19[int(0)], 0, ((cudaStream_t)at::cuda::getCurrentCUDAStream())));
 
-#line 234
+#line 698
     return;
 }
 
 
-#line 234
+#line 698
 SLANG_PRELUDE_EXPORT
 static std::tuple<std::tuple<const char*, const char*, const char*, const char*, const char*, const char*, const char*, const char*, const char*, const char*>, std::tuple<const char*, const char*, const char*, const char*, const char*, const char*, const char*, const char*>, const char*, const char*> __funcinfo__bwd_bilateral_filter_wrapper()
 {
 
-#line 234
+#line 698
+    return std::make_tuple(std::make_tuple(Slang::toTerminatedSlice("__blockSize").getBuffer(), Slang::toTerminatedSlice("__gridSize").getBuffer(), Slang::toTerminatedSlice("input").getBuffer(), Slang::toTerminatedSlice("input_grad").getBuffer(), Slang::toTerminatedSlice("params").getBuffer(), Slang::toTerminatedSlice("params_grad").getBuffer(), Slang::toTerminatedSlice("output").getBuffer(), Slang::toTerminatedSlice("output_grad").getBuffer(), Slang::toTerminatedSlice("kernel_boundary").getBuffer(), Slang::toTerminatedSlice("dialation").getBuffer()), std::make_tuple(Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer()), Slang::toTerminatedSlice(""), Slang::toTerminatedSlice(""));
+}
+
+
+#line 698
+SLANG_PRELUDE_EXPORT
+void exec_kernel_bilateral_filter_wrapper(std::tuple<uint32_t, uint32_t, uint32_t> _blockSize_2, std::tuple<uint32_t, uint32_t, uint32_t> _gridSize_2, torch::Tensor input_2, torch::Tensor params_2, torch::Tensor kernel_0, torch::Tensor output_2, int32_t kernel_boundary_2, int32_t dialation_2)
+{
+
+#line 698
+    Vector<uint32_t, 3>  _S27 = Vector<uint32_t, 3> (std::get<int(0)>(_blockSize_2), std::get<int(1)>(_blockSize_2), std::get<int(2)>(_blockSize_2));
+
+#line 698
+    Vector<uint32_t, 3>  _S28 = Vector<uint32_t, 3> (std::get<int(0)>(_gridSize_2), std::get<int(1)>(_gridSize_2), std::get<int(2)>(_gridSize_2));
+
+#line 698
+    TensorView _S29 = make_tensor_view(params_2, "params", torch::kFloat32, false);
+
+#line 698
+    TensorView _S30 = make_tensor_view(kernel_0, "kernel", torch::kFloat32, false);
+
+#line 698
+    TensorView _S31 = make_tensor_view(output_2, "output", torch::kFloat32, false);
+
+#line 698
+    TensorView _S32 = make_tensor_view(input_2, "input", torch::kFloat32, false);
+
+#line 698
+    FixedArray<void *, 6>  _S33;
+
+#line 698
+    _S33[int(0)] = &_S32;
+
+#line 698
+    TensorView _S34 = _S29;
+
+#line 698
+    _S33[int(1)] = &_S34;
+
+#line 698
+    TensorView _S35 = _S30;
+
+#line 698
+    _S33[int(2)] = &_S35;
+
+#line 698
+    TensorView _S36 = _S31;
+
+#line 698
+    _S33[int(3)] = &_S36;
+
+#line 698
+    int32_t _S37 = kernel_boundary_2;
+
+#line 698
+    _S33[int(4)] = &_S37;
+
+#line 698
+    int32_t _S38 = dialation_2;
+
+#line 698
+    _S33[int(5)] = &_S38;
+
+#line 698
+    AT_CUDA_CHECK(cudaLaunchKernel((const void*)(__kernel__exec_kernel_bilateral_filter_wrapper), slang_bit_cast<dim3>(_S28), slang_bit_cast<dim3>(_S27), &_S33[int(0)], 0, ((cudaStream_t)at::cuda::getCurrentCUDAStream())));
+
+#line 698
+    return;
+}
+
+
+#line 698
+SLANG_PRELUDE_EXPORT
+static std::tuple<std::tuple<const char*, const char*, const char*, const char*, const char*, const char*, const char*, const char*>, std::tuple<const char*, const char*, const char*, const char*, const char*, const char*>, const char*, const char*> __funcinfo__exec_kernel_bilateral_filter_wrapper()
+{
+
+#line 698
+    return std::make_tuple(std::make_tuple(Slang::toTerminatedSlice("__blockSize").getBuffer(), Slang::toTerminatedSlice("__gridSize").getBuffer(), Slang::toTerminatedSlice("input").getBuffer(), Slang::toTerminatedSlice("params").getBuffer(), Slang::toTerminatedSlice("kernel").getBuffer(), Slang::toTerminatedSlice("output").getBuffer(), Slang::toTerminatedSlice("kernel_boundary").getBuffer(), Slang::toTerminatedSlice("dialation").getBuffer()), std::make_tuple(Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer()), Slang::toTerminatedSlice(""), Slang::toTerminatedSlice(""));
+}
+
+
+#line 698
+SLANG_PRELUDE_EXPORT
+void bwd_kernel_bilateral_filter_wrapper(std::tuple<uint32_t, uint32_t, uint32_t> _blockSize_3, std::tuple<uint32_t, uint32_t, uint32_t> _gridSize_3, torch::Tensor input_3, torch::Tensor input_grad_1, torch::Tensor params_3, torch::Tensor params_grad_1, torch::Tensor kernel_1, torch::Tensor kernel_grad_0, torch::Tensor output_3, torch::Tensor output_grad_1, int32_t kernel_boundary_3, int32_t dialation_3)
+{
+
+#line 698
+    Vector<uint32_t, 3>  _S39 = Vector<uint32_t, 3> (std::get<int(0)>(_blockSize_3), std::get<int(1)>(_blockSize_3), std::get<int(2)>(_blockSize_3));
+
+#line 698
+    Vector<uint32_t, 3>  _S40 = Vector<uint32_t, 3> (std::get<int(0)>(_gridSize_3), std::get<int(1)>(_gridSize_3), std::get<int(2)>(_gridSize_3));
+
+#line 698
+    TensorView _S41 = make_tensor_view(input_grad_1, "input_grad", torch::kFloat32, false);
+
+#line 698
+    TensorView _S42 = make_tensor_view(params_3, "params", torch::kFloat32, false);
+
+#line 698
+    TensorView _S43 = make_tensor_view(params_grad_1, "params_grad", torch::kFloat32, false);
+
+#line 698
+    TensorView _S44 = make_tensor_view(kernel_1, "kernel", torch::kFloat32, false);
+
+#line 698
+    TensorView _S45 = make_tensor_view(kernel_grad_0, "kernel_grad", torch::kFloat32, false);
+
+#line 698
+    TensorView _S46 = make_tensor_view(output_3, "output", torch::kFloat32, false);
+
+#line 698
+    TensorView _S47 = make_tensor_view(output_grad_1, "output_grad", torch::kFloat32, false);
+
+#line 698
+    TensorView _S48 = make_tensor_view(input_3, "input", torch::kFloat32, false);
+
+#line 698
+    FixedArray<void *, 10>  _S49;
+
+#line 698
+    _S49[int(0)] = &_S48;
+
+#line 698
+    TensorView _S50 = _S41;
+
+#line 698
+    _S49[int(1)] = &_S50;
+
+#line 698
+    TensorView _S51 = _S42;
+
+#line 698
+    _S49[int(2)] = &_S51;
+
+#line 698
+    TensorView _S52 = _S43;
+
+#line 698
+    _S49[int(3)] = &_S52;
+
+#line 698
+    TensorView _S53 = _S44;
+
+#line 698
+    _S49[int(4)] = &_S53;
+
+#line 698
+    TensorView _S54 = _S45;
+
+#line 698
+    _S49[int(5)] = &_S54;
+
+#line 698
+    TensorView _S55 = _S46;
+
+#line 698
+    _S49[int(6)] = &_S55;
+
+#line 698
+    TensorView _S56 = _S47;
+
+#line 698
+    _S49[int(7)] = &_S56;
+
+#line 698
+    int32_t _S57 = kernel_boundary_3;
+
+#line 698
+    _S49[int(8)] = &_S57;
+
+#line 698
+    int32_t _S58 = dialation_3;
+
+#line 698
+    _S49[int(9)] = &_S58;
+
+#line 698
+    AT_CUDA_CHECK(cudaLaunchKernel((const void*)(__kernel__bwd_kernel_bilateral_filter_wrapper), slang_bit_cast<dim3>(_S40), slang_bit_cast<dim3>(_S39), &_S49[int(0)], 0, ((cudaStream_t)at::cuda::getCurrentCUDAStream())));
+
+#line 698
+    return;
+}
+
+
+#line 698
+SLANG_PRELUDE_EXPORT
+static std::tuple<std::tuple<const char*, const char*, const char*, const char*, const char*, const char*, const char*, const char*, const char*, const char*, const char*, const char*>, std::tuple<const char*, const char*, const char*, const char*, const char*, const char*, const char*, const char*, const char*, const char*>, const char*, const char*> __funcinfo__bwd_kernel_bilateral_filter_wrapper()
+{
+
+#line 698
+    return std::make_tuple(std::make_tuple(Slang::toTerminatedSlice("__blockSize").getBuffer(), Slang::toTerminatedSlice("__gridSize").getBuffer(), Slang::toTerminatedSlice("input").getBuffer(), Slang::toTerminatedSlice("input_grad").getBuffer(), Slang::toTerminatedSlice("params").getBuffer(), Slang::toTerminatedSlice("params_grad").getBuffer(), Slang::toTerminatedSlice("kernel").getBuffer(), Slang::toTerminatedSlice("kernel_grad").getBuffer(), Slang::toTerminatedSlice("output").getBuffer(), Slang::toTerminatedSlice("output_grad").getBuffer(), Slang::toTerminatedSlice("kernel_boundary").getBuffer(), Slang::toTerminatedSlice("dialation").getBuffer()), std::make_tuple(Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer()), Slang::toTerminatedSlice(""), Slang::toTerminatedSlice(""));
+}
+
+
+#line 698
+SLANG_PRELUDE_EXPORT
+void exec_pixel_bilateral_filter_wrapper(std::tuple<uint32_t, uint32_t, uint32_t> _blockSize_4, std::tuple<uint32_t, uint32_t, uint32_t> _gridSize_4, torch::Tensor input_4, torch::Tensor params_4, torch::Tensor output_4, int32_t kernel_boundary_4, int32_t dialation_4)
+{
+
+#line 698
+    Vector<uint32_t, 3>  _S59 = Vector<uint32_t, 3> (std::get<int(0)>(_blockSize_4), std::get<int(1)>(_blockSize_4), std::get<int(2)>(_blockSize_4));
+
+#line 698
+    Vector<uint32_t, 3>  _S60 = Vector<uint32_t, 3> (std::get<int(0)>(_gridSize_4), std::get<int(1)>(_gridSize_4), std::get<int(2)>(_gridSize_4));
+
+#line 698
+    TensorView _S61 = make_tensor_view(params_4, "params", torch::kFloat32, false);
+
+#line 698
+    TensorView _S62 = make_tensor_view(output_4, "output", torch::kFloat32, false);
+
+#line 698
+    TensorView _S63 = make_tensor_view(input_4, "input", torch::kFloat32, false);
+
+#line 698
+    FixedArray<void *, 5>  _S64;
+
+#line 698
+    _S64[int(0)] = &_S63;
+
+#line 698
+    TensorView _S65 = _S61;
+
+#line 698
+    _S64[int(1)] = &_S65;
+
+#line 698
+    TensorView _S66 = _S62;
+
+#line 698
+    _S64[int(2)] = &_S66;
+
+#line 698
+    int32_t _S67 = kernel_boundary_4;
+
+#line 698
+    _S64[int(3)] = &_S67;
+
+#line 698
+    int32_t _S68 = dialation_4;
+
+#line 698
+    _S64[int(4)] = &_S68;
+
+#line 698
+    AT_CUDA_CHECK(cudaLaunchKernel((const void*)(__kernel__exec_pixel_bilateral_filter_wrapper), slang_bit_cast<dim3>(_S60), slang_bit_cast<dim3>(_S59), &_S64[int(0)], 0, ((cudaStream_t)at::cuda::getCurrentCUDAStream())));
+
+#line 698
+    return;
+}
+
+
+#line 698
+SLANG_PRELUDE_EXPORT
+static std::tuple<std::tuple<const char*, const char*, const char*, const char*, const char*, const char*, const char*>, std::tuple<const char*, const char*, const char*, const char*, const char*>, const char*, const char*> __funcinfo__exec_pixel_bilateral_filter_wrapper()
+{
+
+#line 698
+    return std::make_tuple(std::make_tuple(Slang::toTerminatedSlice("__blockSize").getBuffer(), Slang::toTerminatedSlice("__gridSize").getBuffer(), Slang::toTerminatedSlice("input").getBuffer(), Slang::toTerminatedSlice("params").getBuffer(), Slang::toTerminatedSlice("output").getBuffer(), Slang::toTerminatedSlice("kernel_boundary").getBuffer(), Slang::toTerminatedSlice("dialation").getBuffer()), std::make_tuple(Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer()), Slang::toTerminatedSlice(""), Slang::toTerminatedSlice(""));
+}
+
+
+#line 698
+SLANG_PRELUDE_EXPORT
+void bwd_pixel_bilateral_filter_wrapper(std::tuple<uint32_t, uint32_t, uint32_t> _blockSize_5, std::tuple<uint32_t, uint32_t, uint32_t> _gridSize_5, torch::Tensor input_5, torch::Tensor input_grad_2, torch::Tensor params_5, torch::Tensor params_grad_2, torch::Tensor output_5, torch::Tensor output_grad_2, int32_t kernel_boundary_5, int32_t dialation_5)
+{
+
+#line 698
+    Vector<uint32_t, 3>  _S69 = Vector<uint32_t, 3> (std::get<int(0)>(_blockSize_5), std::get<int(1)>(_blockSize_5), std::get<int(2)>(_blockSize_5));
+
+#line 698
+    Vector<uint32_t, 3>  _S70 = Vector<uint32_t, 3> (std::get<int(0)>(_gridSize_5), std::get<int(1)>(_gridSize_5), std::get<int(2)>(_gridSize_5));
+
+#line 698
+    TensorView _S71 = make_tensor_view(input_grad_2, "input_grad", torch::kFloat32, false);
+
+#line 698
+    TensorView _S72 = make_tensor_view(params_5, "params", torch::kFloat32, false);
+
+#line 698
+    TensorView _S73 = make_tensor_view(params_grad_2, "params_grad", torch::kFloat32, false);
+
+#line 698
+    TensorView _S74 = make_tensor_view(output_5, "output", torch::kFloat32, false);
+
+#line 698
+    TensorView _S75 = make_tensor_view(output_grad_2, "output_grad", torch::kFloat32, false);
+
+#line 698
+    TensorView _S76 = make_tensor_view(input_5, "input", torch::kFloat32, false);
+
+#line 698
+    FixedArray<void *, 8>  _S77;
+
+#line 698
+    _S77[int(0)] = &_S76;
+
+#line 698
+    TensorView _S78 = _S71;
+
+#line 698
+    _S77[int(1)] = &_S78;
+
+#line 698
+    TensorView _S79 = _S72;
+
+#line 698
+    _S77[int(2)] = &_S79;
+
+#line 698
+    TensorView _S80 = _S73;
+
+#line 698
+    _S77[int(3)] = &_S80;
+
+#line 698
+    TensorView _S81 = _S74;
+
+#line 698
+    _S77[int(4)] = &_S81;
+
+#line 698
+    TensorView _S82 = _S75;
+
+#line 698
+    _S77[int(5)] = &_S82;
+
+#line 698
+    int32_t _S83 = kernel_boundary_5;
+
+#line 698
+    _S77[int(6)] = &_S83;
+
+#line 698
+    int32_t _S84 = dialation_5;
+
+#line 698
+    _S77[int(7)] = &_S84;
+
+#line 698
+    AT_CUDA_CHECK(cudaLaunchKernel((const void*)(__kernel__bwd_pixel_bilateral_filter_wrapper), slang_bit_cast<dim3>(_S70), slang_bit_cast<dim3>(_S69), &_S77[int(0)], 0, ((cudaStream_t)at::cuda::getCurrentCUDAStream())));
+
+#line 698
+    return;
+}
+
+
+#line 698
+SLANG_PRELUDE_EXPORT
+static std::tuple<std::tuple<const char*, const char*, const char*, const char*, const char*, const char*, const char*, const char*, const char*, const char*>, std::tuple<const char*, const char*, const char*, const char*, const char*, const char*, const char*, const char*>, const char*, const char*> __funcinfo__bwd_pixel_bilateral_filter_wrapper()
+{
+
+#line 698
     return std::make_tuple(std::make_tuple(Slang::toTerminatedSlice("__blockSize").getBuffer(), Slang::toTerminatedSlice("__gridSize").getBuffer(), Slang::toTerminatedSlice("input").getBuffer(), Slang::toTerminatedSlice("input_grad").getBuffer(), Slang::toTerminatedSlice("params").getBuffer(), Slang::toTerminatedSlice("params_grad").getBuffer(), Slang::toTerminatedSlice("output").getBuffer(), Slang::toTerminatedSlice("output_grad").getBuffer(), Slang::toTerminatedSlice("kernel_boundary").getBuffer(), Slang::toTerminatedSlice("dialation").getBuffer()), std::make_tuple(Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer(), Slang::toTerminatedSlice("").getBuffer()), Slang::toTerminatedSlice(""), Slang::toTerminatedSlice(""));
 }
 
@@ -12584,4 +12957,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("__funcinfo__exec_bilateral_filter_wrapper", &__funcinfo__exec_bilateral_filter_wrapper, "__funcinfo__exec_bilateral_filter_wrapper");
     m.def("bwd_bilateral_filter_wrapper", &bwd_bilateral_filter_wrapper, "bwd_bilateral_filter_wrapper");
     m.def("__funcinfo__bwd_bilateral_filter_wrapper", &__funcinfo__bwd_bilateral_filter_wrapper, "__funcinfo__bwd_bilateral_filter_wrapper");
+    m.def("exec_kernel_bilateral_filter_wrapper", &exec_kernel_bilateral_filter_wrapper, "exec_kernel_bilateral_filter_wrapper");
+    m.def("__funcinfo__exec_kernel_bilateral_filter_wrapper", &__funcinfo__exec_kernel_bilateral_filter_wrapper, "__funcinfo__exec_kernel_bilateral_filter_wrapper");
+    m.def("bwd_kernel_bilateral_filter_wrapper", &bwd_kernel_bilateral_filter_wrapper, "bwd_kernel_bilateral_filter_wrapper");
+    m.def("__funcinfo__bwd_kernel_bilateral_filter_wrapper", &__funcinfo__bwd_kernel_bilateral_filter_wrapper, "__funcinfo__bwd_kernel_bilateral_filter_wrapper");
+    m.def("exec_pixel_bilateral_filter_wrapper", &exec_pixel_bilateral_filter_wrapper, "exec_pixel_bilateral_filter_wrapper");
+    m.def("__funcinfo__exec_pixel_bilateral_filter_wrapper", &__funcinfo__exec_pixel_bilateral_filter_wrapper, "__funcinfo__exec_pixel_bilateral_filter_wrapper");
+    m.def("bwd_pixel_bilateral_filter_wrapper", &bwd_pixel_bilateral_filter_wrapper, "bwd_pixel_bilateral_filter_wrapper");
+    m.def("__funcinfo__bwd_pixel_bilateral_filter_wrapper", &__funcinfo__bwd_pixel_bilateral_filter_wrapper, "__funcinfo__bwd_pixel_bilateral_filter_wrapper");
 }

@@ -3668,49 +3668,49 @@ __device__ float bilteral_filter_0(int num_features_0, int width_0, int height_0
 }
 
 
-#line 220
+#line 619
 __global__ void __kernel__exec_bilateral_filter_wrapper(TensorView input_1, TensorView params_1, TensorView output_1, int kernel_boundary_1, int dialation_1)
 {
 
-#line 206
+#line 605
     int globalIdx_0 = int(((threadIdx)).x + ((blockIdx)).x * ((blockDim)).x);
     uint _S19 = ((input_1).sizes[(0U)]);
 
-#line 207
+#line 606
     int batch_size_0 = int(_S19);
     uint _S20 = ((input_1).sizes[(1U)]);
 
-#line 208
+#line 607
     int num_features_1 = int(_S20);
     uint _S21 = ((input_1).sizes[(3U)]);
 
-#line 209
+#line 608
     int width_1 = int(_S21);
     uint _S22 = ((input_1).sizes[(2U)]);
 
-#line 210
+#line 609
     int height_1 = int(_S22);
     if(globalIdx_0 >= batch_size_0 * width_1 * height_1)
     {
 
-#line 212
+#line 611
         return;
     }
     int x_1 = globalIdx_0 % width_1;
     int _S23 = globalIdx_0 / width_1;
 
-#line 215
+#line 614
     int y_1 = _S23 % height_1;
     int b_1 = globalIdx_0 / (width_1 * height_1);
 
-#line 229
+#line 628
     float _S24 = bilteral_filter_0(num_features_1, width_1, height_1, b_1, y_1, x_1, input_1, params_1, output_1, kernel_boundary_1, dialation_1, true);
     return;
 }
 
 
 #line 77
-__device__ __shared__ FixedArray<FixedArray<float, 24> , 256>  shr_dLdParam_0;
+__device__ __shared__ FixedArray<FixedArray<float, 256> , 32>  shr_dLdParam_0;
 
 __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int height_2, int b_2, int y_2, int x_2, TensorView input_2, TensorView input_grad_0, TensorView params_2, TensorView params_grad_0, TensorView output_2, TensorView output_grad_0, int kernel_boundary_2, int dialation_2)
 {
@@ -3719,21 +3719,24 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
     uint _S25 = ((threadIdx)).x;
 
 #line 95
-    int _S26 = int(_S25 % 256U);
+    int _S26 = int(_S25 % 32U);
 
 #line 95
     int i_2;
 
-    if(_S25 < 256U)
+    if(_S25 < 32U)
     {
 
 #line 97
         i_2 = int(0);
+        int _S27 = num_features_2 + int(2);
+
+#line 98
         for(;;)
         {
 
 #line 98
-            if(i_2 < int(24))
+            if(i_2 < _S27)
             {
             }
             else
@@ -3756,7 +3759,7 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
     }
 
 #line 104
-    float _S27 = bilteral_filter_0(num_features_2, width_2, height_2, b_2, y_2, x_2, input_2, params_2, output_2, kernel_boundary_2, dialation_2, false);
+    float _S28 = bilteral_filter_0(num_features_2, width_2, height_2, b_2, y_2, x_2, input_2, params_2, output_2, kernel_boundary_2, dialation_2, false);
 
 #line 104
     i_2 = int(0);
@@ -3766,26 +3769,26 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
 
 
 
-    uint _S28 = uint(b_2);
+    uint _S29 = uint(b_2);
 
 #line 108
-    uint _S29 = uint(y_2);
+    uint _S30 = uint(y_2);
 
 #line 108
-    uint _S30 = uint(x_2);
+    uint _S31 = uint(x_2);
 
 #line 108
-    float _S31 = _S27 * _S27;
+    float _S32 = _S28 * _S28;
 
 
-    int _S32 = - kernel_boundary_2;
+    int _S33 = - kernel_boundary_2;
 
 #line 178
     int j_0 = int(_S25);
-    int _S33 = num_features_2 + int(2);
+    int _S34 = num_features_2 + int(2);
 
 #line 179
-    bool _S34 = j_0 < _S33;
+    bool _S35 = j_0 < _S34;
 
 #line 107
     for(;;)
@@ -3803,16 +3806,16 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
         }
 
 #line 108
-        float _S35 = ((output_grad_0).load<float>((_S28), (uint(i_2)), (_S29), (_S30)));
+        float _S36 = ((output_grad_0).load<float>((_S29), (uint(i_2)), (_S30), (_S31)));
 
 #line 108
-        float _S36 = - _S35;
+        float _S37 = - _S36;
 
 #line 108
-        float _S37 = ((output_2).load<float>((_S28), (uint(i_2)), (_S29), (_S30)));
+        float _S38 = ((output_2).load<float>((_S29), (uint(i_2)), (_S30), (_S31)));
 
 #line 108
-        float dLdTotalWeight_1 = dLdTotalWeight_0 + _S36 * _S37 / _S31;
+        float dLdTotalWeight_1 = dLdTotalWeight_0 + _S37 * _S38 / _S32;
 
 #line 107
         i_2 = i_2 + int(1);
@@ -3824,7 +3827,7 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
     }
 
 #line 107
-    int yoff_1 = _S32;
+    int yoff_1 = _S33;
 
 
 
@@ -3843,7 +3846,7 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
         }
 
 #line 111
-        int xoff_1 = _S32;
+        int xoff_1 = _S33;
         for(;;)
         {
 
@@ -3863,31 +3866,10 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
             int yp_1 = y_2 + yoff_1 * dialation_2;
 
 #line 114
-            bool _S38;
+            bool _S39;
 
 
             if(xp_1 < int(0))
-            {
-
-#line 117
-                _S38 = true;
-
-#line 117
-            }
-            else
-            {
-
-#line 117
-                _S38 = yp_1 < int(0);
-
-#line 117
-            }
-
-#line 117
-            bool _S39;
-
-#line 117
-            if(_S38)
             {
 
 #line 117
@@ -3899,7 +3881,7 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
             {
 
 #line 117
-                _S39 = xp_1 >= width_2;
+                _S39 = yp_1 < int(0);
 
 #line 117
             }
@@ -3920,13 +3902,34 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
             {
 
 #line 117
-                _S40 = yp_1 >= height_2;
+                _S40 = xp_1 >= width_2;
 
 #line 117
             }
 
 #line 117
+            bool _S41;
+
+#line 117
             if(_S40)
+            {
+
+#line 117
+                _S41 = true;
+
+#line 117
+            }
+            else
+            {
+
+#line 117
+                _S41 = yp_1 >= height_2;
+
+#line 117
+            }
+
+#line 117
+            if(_S41)
             {
 
 #line 118
@@ -3952,17 +3955,17 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
             float sample_weight_2 = 1.0f;
 
 #line 127
-            uint _S41 = uint(yp_1);
+            uint _S42 = uint(yp_1);
 
 #line 127
-            uint _S42 = uint(xp_1);
+            uint _S43 = uint(xp_1);
 
 #line 122
             for(;;)
             {
 
 #line 122
-                if(i_2 < _S33)
+                if(i_2 < _S34)
                 {
                 }
                 else
@@ -3976,14 +3979,14 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
                 {
 
 #line 126
-                    float _S43 = ((input_2).load<float>((_S28), (uint(i_2)), (_S29), (_S30)));
-                    float _S44 = ((input_2).load<float>((_S28), (uint(i_2)), (_S41), (_S42)));
+                    float _S44 = ((input_2).load<float>((_S29), (uint(i_2)), (_S30), (_S31)));
+                    float _S45 = ((input_2).load<float>((_S29), (uint(i_2)), (_S42), (_S43)));
 
 #line 127
-                    sample_val_1 = _S44;
+                    sample_val_1 = _S45;
 
 #line 127
-                    center_val_1 = _S43;
+                    center_val_1 = _S44;
 
 #line 125
                 }
@@ -4020,9 +4023,9 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
 #line 133
                 float diff_1 = sample_val_1 - center_val_1;
 
-                float _S45 = ((params_2).load<float>((uint(i_2))));
+                float _S46 = ((params_2).load<float>((uint(i_2))));
 
-                float sample_weight_3 = sample_weight_2 * (F32_exp((_S45 * diff_1 * diff_1)));
+                float sample_weight_3 = sample_weight_2 * (F32_exp((_S46 * diff_1 * diff_1)));
 
 #line 122
                 i_2 = i_2 + int(1);
@@ -4055,13 +4058,13 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
                 }
 
 #line 142
-                float _S46 = ((output_grad_0).load<float>((_S28), (uint(i_3)), (_S29), (_S30)));
+                float _S47 = ((output_grad_0).load<float>((_S29), (uint(i_3)), (_S30), (_S31)));
 
 #line 142
-                float _S47 = ((input_2).load<float>((_S28), (uint(i_3)), (_S41), (_S42)));
+                float _S48 = ((input_2).load<float>((_S29), (uint(i_3)), (_S42), (_S43)));
 
 #line 142
-                float dLdSampleWeight_1 = dLdSampleWeight_0 + _S46 * _S47 / _S27;
+                float dLdSampleWeight_1 = dLdSampleWeight_0 + _S47 * _S48 / _S28;
 
 #line 141
                 i_3 = i_3 + int(1);
@@ -4080,7 +4083,7 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
             {
 
 #line 146
-                if(i_4 < _S33)
+                if(i_4 < _S34)
                 {
                 }
                 else
@@ -4094,14 +4097,14 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
                 {
 
 #line 150
-                    float _S48 = ((input_2).load<float>((_S28), (uint(i_4)), (_S29), (_S30)));
-                    float _S49 = ((input_2).load<float>((_S28), (uint(i_4)), (_S41), (_S42)));
+                    float _S49 = ((input_2).load<float>((_S29), (uint(i_4)), (_S30), (_S31)));
+                    float _S50 = ((input_2).load<float>((_S29), (uint(i_4)), (_S42), (_S43)));
 
 #line 151
-                    sample_val_1 = _S49;
+                    sample_val_1 = _S50;
 
 #line 151
-                    center_val_1 = _S48;
+                    center_val_1 = _S49;
 
 #line 149
                 }
@@ -4109,14 +4112,14 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
                 {
 
 #line 149
-                    int _S50;
+                    int _S51;
 
 #line 154
                     if(i_4 == num_features_2)
                     {
 
 #line 154
-                        _S50 = yoff_1;
+                        _S51 = yoff_1;
 
 #line 154
                     }
@@ -4124,13 +4127,13 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
                     {
 
 #line 154
-                        _S50 = xoff_1;
+                        _S51 = xoff_1;
 
 #line 154
                     }
 
 #line 154
-                    sample_val_1 = float(_S50);
+                    sample_val_1 = float(_S51);
 
 #line 154
                     center_val_1 = 0.0f;
@@ -4142,38 +4145,38 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
                 float diff_2 = sample_val_1 - center_val_1;
 
 
-                float _S51 = atomicAdd(&(*&shr_dLdParam_0)[_S26][i_4], dLdSampleWeight_0 * sample_weight_2 * diff_2 * diff_2);
+                float _S52 = atomicAdd(&(*&shr_dLdParam_0)[_S26][i_4], dLdSampleWeight_0 * sample_weight_2 * diff_2 * diff_2);
 
 
                 if(i_4 < num_features_2)
                 {
 
-                    float _S52 = dLdSampleWeight_0 * sample_weight_2;
+                    float _S53 = dLdSampleWeight_0 * sample_weight_2;
 
 #line 166
-                    float _S53 = ((params_2).load<float>((uint(i_4))));
+                    float _S54 = ((params_2).load<float>((uint(i_4))));
 
 #line 166
-                    float dLdCenterVal_0 = _S52 * _S53 * -2.0f * diff_2;
-                    int4  _S54 = make_int4 (b_2, i_4, y_2, x_2);
+                    float dLdCenterVal_0 = _S53 * _S54 * -2.0f * diff_2;
+                    int4  _S55 = make_int4 (b_2, i_4, y_2, x_2);
 
 #line 167
-                    uint4  _S55 = make_uint4 ((uint)_S54.x, (uint)_S54.y, (uint)_S54.z, (uint)_S54.w);
+                    uint4  _S56 = make_uint4 ((uint)_S55.x, (uint)_S55.y, (uint)_S55.z, (uint)_S55.w);
 
 #line 164
                     float junk_0;
 
 
-                    *((&junk_0)) = atomicAdd((input_grad_0).data_ptr_at<float>((_S55)), (dLdCenterVal_0));
+                    *((&junk_0)) = atomicAdd((input_grad_0).data_ptr_at<float>((_S56)), (dLdCenterVal_0));
 
-                    float _S56 = ((output_grad_0).load<float>((_S28), (uint(i_4)), (_S29), (_S30)));
-                    int4  _S57 = make_int4 (b_2, i_4, yp_1, xp_1);
-
-#line 170
-                    uint4  _S58 = make_uint4 ((uint)_S57.x, (uint)_S57.y, (uint)_S57.z, (uint)_S57.w);
+                    float _S57 = ((output_grad_0).load<float>((_S29), (uint(i_4)), (_S30), (_S31)));
+                    int4  _S58 = make_int4 (b_2, i_4, yp_1, xp_1);
 
 #line 170
-                    *((&junk_0)) = atomicAdd((input_grad_0).data_ptr_at<float>((_S58)), (_S56 * sample_weight_2 / _S27 - dLdCenterVal_0));
+                    uint4  _S59 = make_uint4 ((uint)_S58.x, (uint)_S58.y, (uint)_S58.z, (uint)_S58.w);
+
+#line 170
+                    *((&junk_0)) = atomicAdd((input_grad_0).data_ptr_at<float>((_S59)), (_S57 * sample_weight_2 / _S28 - dLdCenterVal_0));
 
 #line 163
                 }
@@ -4199,21 +4202,21 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
 #line 177
     __syncthreads();
 
-    if(_S34)
+    if(_S35)
     {
 
 #line 179
         i_2 = int(1);
 
 #line 198
-        uint _S59 = uint(j_0);
+        uint _S60 = uint(j_0);
 
 #line 180
         for(;;)
         {
 
 #line 180
-            if(i_2 < int(256))
+            if(i_2 < int(32))
             {
             }
             else
@@ -4232,53 +4235,2044 @@ __device__ void bwd_bilteral_filter_0(int num_features_2, int width_2, int heigh
 
 #line 197
         float junk_1;
-        *((&junk_1)) = atomicAdd((params_grad_0).data_ptr_at<float>((_S59)), ((*&shr_dLdParam_0)[int(0)][j_0]));
+        *((&junk_1)) = atomicAdd((params_grad_0).data_ptr_at<float>((_S60)), ((*&shr_dLdParam_0)[int(0)][j_0]));
 
 #line 179
     }
 
-#line 203
+#line 201
     return;
 }
 
 
-#line 234
+#line 633
 __global__ void __kernel__bwd_bilateral_filter_wrapper(TensorView input_3, TensorView input_grad_1, TensorView params_3, TensorView params_grad_1, TensorView output_3, TensorView output_grad_1, int kernel_boundary_3, int dialation_3)
 {
 
-#line 206
+#line 605
     int globalIdx_1 = int(((threadIdx)).x + ((blockIdx)).x * ((blockDim)).x);
-    uint _S60 = ((input_3).sizes[(0U)]);
+    uint _S61 = ((input_3).sizes[(0U)]);
 
-#line 207
-    int batch_size_1 = int(_S60);
-    uint _S61 = ((input_3).sizes[(1U)]);
+#line 606
+    int batch_size_1 = int(_S61);
+    uint _S62 = ((input_3).sizes[(1U)]);
 
-#line 208
-    int num_features_3 = int(_S61);
-    uint _S62 = ((input_3).sizes[(3U)]);
+#line 607
+    int num_features_3 = int(_S62);
+    uint _S63 = ((input_3).sizes[(3U)]);
 
-#line 209
-    int width_3 = int(_S62);
-    uint _S63 = ((input_3).sizes[(2U)]);
+#line 608
+    int width_3 = int(_S63);
+    uint _S64 = ((input_3).sizes[(2U)]);
 
-#line 210
-    int height_3 = int(_S63);
+#line 609
+    int height_3 = int(_S64);
     if(globalIdx_1 >= batch_size_1 * width_3 * height_3)
     {
 
-#line 212
+#line 611
         return;
     }
     int x_3 = globalIdx_1 % width_3;
-    int _S64 = globalIdx_1 / width_3;
+    int _S65 = globalIdx_1 / width_3;
 
-#line 215
-    int y_3 = _S64 % height_3;
+#line 614
+    int y_3 = _S65 % height_3;
     int b_3 = globalIdx_1 / (width_3 * height_3);
 
-#line 246
+#line 645
     bwd_bilteral_filter_0(num_features_3, width_3, height_3, b_3, y_3, x_3, input_3, input_grad_1, params_3, params_grad_1, output_3, output_grad_1, kernel_boundary_3, dialation_3);
+    return;
+}
+
+
+#line 204
+__device__ float kernel_bilteral_filter_0(int num_features_4, int width_4, int height_4, int b_4, int y_4, int x_4, TensorView input_4, TensorView params_4, TensorView kernel_0, TensorView output_4, int kernel_boundary_4, int dialation_4, bool normalize_1)
+{
+
+#line 217
+    int xoff_2;
+
+
+
+    int _S66 = - kernel_boundary_4;
+
+#line 221
+    int yoff_2 = _S66;
+
+#line 221
+    float total_weight_2 = 0.0f;
+
+#line 232
+    int _S67 = num_features_4 + int(2);
+
+
+
+    uint _S68 = uint(b_4);
+
+#line 236
+    uint _S69 = uint(y_4);
+
+#line 236
+    uint _S70 = uint(x_4);
+
+#line 221
+    for(;;)
+    {
+
+#line 221
+        if(yoff_2 <= kernel_boundary_4)
+        {
+        }
+        else
+        {
+
+#line 221
+            break;
+        }
+
+#line 221
+        xoff_2 = _S66;
+
+#line 221
+        float total_weight_3 = total_weight_2;
+        for(;;)
+        {
+
+#line 222
+            if(xoff_2 <= kernel_boundary_4)
+            {
+            }
+            else
+            {
+
+#line 222
+                break;
+            }
+
+#line 223
+            int xp_2 = x_4 + xoff_2 * dialation_4;
+            int yp_2 = y_4 + yoff_2 * dialation_4;
+
+#line 224
+            bool _S71;
+
+
+            if(xp_2 < int(0))
+            {
+
+#line 227
+                _S71 = true;
+
+#line 227
+            }
+            else
+            {
+
+#line 227
+                _S71 = yp_2 < int(0);
+
+#line 227
+            }
+
+#line 227
+            bool _S72;
+
+#line 227
+            if(_S71)
+            {
+
+#line 227
+                _S72 = true;
+
+#line 227
+            }
+            else
+            {
+
+#line 227
+                _S72 = xp_2 >= width_4;
+
+#line 227
+            }
+
+#line 227
+            bool _S73;
+
+#line 227
+            if(_S72)
+            {
+
+#line 227
+                _S73 = true;
+
+#line 227
+            }
+            else
+            {
+
+#line 227
+                _S73 = yp_2 >= height_4;
+
+#line 227
+            }
+
+#line 227
+            if(_S73)
+            {
+
+#line 228
+                xoff_2 = xoff_2 + int(1);
+
+#line 222
+                continue;
+            }
+
+#line 222
+            int i_5;
+
+#line 231
+            float _S74 = ((kernel_0).load<float>((uint(yoff_2 + kernel_boundary_4)), (uint(xoff_2 + kernel_boundary_4))));
+
+#line 231
+            int i_6 = int(0);
+
+#line 231
+            float sample_weight_4 = _S74;
+
+#line 237
+            uint _S75 = uint(yp_2);
+
+#line 237
+            uint _S76 = uint(xp_2);
+
+#line 232
+            for(;;)
+            {
+
+#line 232
+                if(i_6 < _S67)
+                {
+                }
+                else
+                {
+
+#line 232
+                    break;
+                }
+
+#line 232
+                float sample_val_2;
+
+#line 232
+                float center_val_2;
+
+
+                if(i_6 < num_features_4)
+                {
+
+#line 236
+                    float _S77 = ((input_4).load<float>((_S68), (uint(i_6)), (_S69), (_S70)));
+                    float _S78 = ((input_4).load<float>((_S68), (uint(i_6)), (_S75), (_S76)));
+
+#line 237
+                    sample_val_2 = _S78;
+
+#line 237
+                    center_val_2 = _S77;
+
+#line 235
+                }
+                else
+                {
+
+
+                    if(i_6 == num_features_4)
+                    {
+
+#line 240
+                        i_5 = yoff_2;
+
+#line 240
+                    }
+                    else
+                    {
+
+#line 240
+                        i_5 = xoff_2;
+
+#line 240
+                    }
+
+#line 240
+                    sample_val_2 = float(i_5);
+
+#line 240
+                    center_val_2 = 0.0f;
+
+#line 235
+                }
+
+#line 243
+                float diff_3 = sample_val_2 - center_val_2;
+
+#line 251
+                float _S79 = ((params_4).load<float>((uint(i_6))));
+
+                float sample_weight_5 = sample_weight_4 * (F32_exp((_S79 * diff_3 * diff_3)));
+
+#line 232
+                i_6 = i_6 + int(1);
+
+#line 232
+                sample_weight_4 = sample_weight_5;
+
+#line 232
+            }
+
+#line 232
+            i_5 = int(0);
+
+#line 256
+            for(;;)
+            {
+
+#line 256
+                if(i_5 < num_features_4)
+                {
+                }
+                else
+                {
+
+#line 256
+                    break;
+                }
+
+#line 257
+                float _S80 = ((input_4).load<float>((_S68), (uint(i_5)), (_S75), (_S76)));
+                uint _S81 = uint(i_5);
+
+#line 258
+                float _S82 = ((output_4).load<float>((_S68), (_S81), (_S69), (_S70)));
+
+#line 258
+                (output_4).store<float>((_S68), (_S81), (_S69), (_S70), (_S82 + sample_weight_4 * _S80));
+
+#line 256
+                i_5 = i_5 + int(1);
+
+#line 256
+            }
+
+#line 256
+            total_weight_3 = total_weight_3 + sample_weight_4;
+
+#line 222
+            xoff_2 = xoff_2 + int(1);
+
+#line 222
+        }
+
+#line 221
+        yoff_2 = yoff_2 + int(1);
+
+#line 221
+        total_weight_2 = total_weight_3;
+
+#line 221
+    }
+
+#line 265
+    if(total_weight_2 < 0.00100000004749745f)
+    {
+
+#line 265
+        total_weight_2 = 0.00100000004749745f;
+
+#line 265
+    }
+
+    if(normalize_1)
+    {
+
+#line 267
+        xoff_2 = int(0);
+        for(;;)
+        {
+
+#line 268
+            if(xoff_2 < num_features_4)
+            {
+            }
+            else
+            {
+
+#line 268
+                break;
+            }
+
+#line 269
+            uint _S83 = uint(xoff_2);
+
+#line 269
+            float _S84 = ((output_4).load<float>((_S68), (_S83), (_S69), (_S70)));
+
+#line 269
+            (output_4).store<float>((_S68), (_S83), (_S69), (_S70), (_S84 / total_weight_2));
+
+#line 268
+            xoff_2 = xoff_2 + int(1);
+
+#line 268
+        }
+
+#line 267
+    }
+
+#line 273
+    return total_weight_2;
+}
+
+
+#line 650
+__global__ void __kernel__exec_kernel_bilateral_filter_wrapper(TensorView input_5, TensorView params_5, TensorView kernel_1, TensorView output_5, int kernel_boundary_5, int dialation_5)
+{
+
+#line 605
+    int globalIdx_2 = int(((threadIdx)).x + ((blockIdx)).x * ((blockDim)).x);
+    uint _S85 = ((input_5).sizes[(0U)]);
+
+#line 606
+    int batch_size_2 = int(_S85);
+    uint _S86 = ((input_5).sizes[(1U)]);
+
+#line 607
+    int num_features_5 = int(_S86);
+    uint _S87 = ((input_5).sizes[(3U)]);
+
+#line 608
+    int width_5 = int(_S87);
+    uint _S88 = ((input_5).sizes[(2U)]);
+
+#line 609
+    int height_5 = int(_S88);
+    if(globalIdx_2 >= batch_size_2 * width_5 * height_5)
+    {
+
+#line 611
+        return;
+    }
+    int x_5 = globalIdx_2 % width_5;
+    int _S89 = globalIdx_2 / width_5;
+
+#line 614
+    int y_5 = _S89 % height_5;
+    int b_5 = globalIdx_2 / (width_5 * height_5);
+
+#line 660
+    float _S90 = kernel_bilteral_filter_0(num_features_5, width_5, height_5, b_5, y_5, x_5, input_5, params_5, kernel_1, output_5, kernel_boundary_5, dialation_5, true);
+    return;
+}
+
+
+#line 278
+__device__ __shared__ FixedArray<FixedArray<FixedArray<float, 7> , 7> , 16>  shr_dLdKernel_0;
+
+__device__ void bwd_kernel_bilteral_filter_0(int num_features_6, int width_6, int height_6, int b_6, int y_6, int x_6, TensorView input_6, TensorView input_grad_2, TensorView params_6, TensorView params_grad_2, TensorView kernel_2, TensorView kernel_grad_0, TensorView output_6, TensorView output_grad_2, int kernel_boundary_6, int dialation_6)
+{
+
+#line 298
+    uint _S91 = ((threadIdx)).x;
+
+#line 298
+    int _S92 = int(_S91 % 32U);
+    int _S93 = int(_S91 % 16U);
+
+#line 299
+    int i_7;
+
+    if(_S91 < 32U)
+    {
+
+#line 301
+        i_7 = int(0);
+        int _S94 = num_features_6 + int(2);
+
+#line 302
+        for(;;)
+        {
+
+#line 302
+            if(i_7 < _S94)
+            {
+            }
+            else
+            {
+
+#line 302
+                break;
+            }
+
+#line 303
+            (*&shr_dLdParam_0)[_S91][i_7] = 0.0f;
+
+#line 302
+            i_7 = i_7 + int(1);
+
+#line 302
+        }
+
+#line 301
+    }
+
+#line 301
+    int yoff_3;
+
+#line 307
+    if(_S91 < 16U)
+    {
+
+#line 307
+        i_7 = int(0);
+        for(;;)
+        {
+
+#line 308
+            if(i_7 < int(7))
+            {
+            }
+            else
+            {
+
+#line 308
+                break;
+            }
+
+#line 308
+            yoff_3 = int(0);
+            for(;;)
+            {
+
+#line 309
+                if(yoff_3 < int(7))
+                {
+                }
+                else
+                {
+
+#line 309
+                    break;
+                }
+
+#line 310
+                (*&shr_dLdKernel_0)[_S91][i_7][yoff_3] = 0.0f;
+
+#line 309
+                yoff_3 = yoff_3 + int(1);
+
+#line 309
+            }
+
+#line 308
+            i_7 = i_7 + int(1);
+
+#line 308
+        }
+
+#line 307
+    }
+
+#line 316
+    float _S95 = kernel_bilteral_filter_0(num_features_6, width_6, height_6, b_6, y_6, x_6, input_6, params_6, kernel_2, output_6, kernel_boundary_6, dialation_6, false);
+
+#line 316
+    i_7 = int(0);
+
+#line 316
+    float dLdTotalWeight_2 = 0.0f;
+
+
+
+    uint _S96 = uint(b_6);
+
+#line 320
+    uint _S97 = uint(y_6);
+
+#line 320
+    uint _S98 = uint(x_6);
+
+#line 320
+    float _S99 = _S95 * _S95;
+
+
+    int _S100 = - kernel_boundary_6;
+
+#line 394
+    int j_1 = int(_S91);
+    int _S101 = num_features_6 + int(2);
+
+#line 395
+    bool _S102 = j_1 < _S101;
+
+#line 319
+    for(;;)
+    {
+
+#line 319
+        if(i_7 < num_features_6)
+        {
+        }
+        else
+        {
+
+#line 319
+            break;
+        }
+
+#line 320
+        float _S103 = ((output_grad_2).load<float>((_S96), (uint(i_7)), (_S97), (_S98)));
+
+#line 320
+        float _S104 = - _S103;
+
+#line 320
+        float _S105 = ((output_6).load<float>((_S96), (uint(i_7)), (_S97), (_S98)));
+
+#line 320
+        float dLdTotalWeight_3 = dLdTotalWeight_2 + _S104 * _S105 / _S99;
+
+#line 319
+        i_7 = i_7 + int(1);
+
+#line 319
+        dLdTotalWeight_2 = dLdTotalWeight_3;
+
+#line 319
+    }
+
+#line 319
+    float sample_weight_6;
+
+#line 319
+    yoff_3 = _S100;
+
+
+
+    for(;;)
+    {
+
+#line 323
+        if(yoff_3 <= kernel_boundary_6)
+        {
+        }
+        else
+        {
+
+#line 323
+            break;
+        }
+
+#line 323
+        int xoff_3 = _S100;
+        for(;;)
+        {
+
+#line 324
+            if(xoff_3 <= kernel_boundary_6)
+            {
+            }
+            else
+            {
+
+#line 324
+                break;
+            }
+
+#line 325
+            int xp_3 = x_6 + xoff_3 * dialation_6;
+            int yp_3 = y_6 + yoff_3 * dialation_6;
+
+#line 326
+            bool _S106;
+
+
+            if(xp_3 < int(0))
+            {
+
+#line 329
+                _S106 = true;
+
+#line 329
+            }
+            else
+            {
+
+#line 329
+                _S106 = yp_3 < int(0);
+
+#line 329
+            }
+
+#line 329
+            bool _S107;
+
+#line 329
+            if(_S106)
+            {
+
+#line 329
+                _S107 = true;
+
+#line 329
+            }
+            else
+            {
+
+#line 329
+                _S107 = xp_3 >= width_6;
+
+#line 329
+            }
+
+#line 329
+            bool _S108;
+
+#line 329
+            if(_S107)
+            {
+
+#line 329
+                _S108 = true;
+
+#line 329
+            }
+            else
+            {
+
+#line 329
+                _S108 = yp_3 >= height_6;
+
+#line 329
+            }
+
+#line 329
+            if(_S108)
+            {
+
+#line 330
+                xoff_3 = xoff_3 + int(1);
+
+#line 324
+                continue;
+            }
+
+#line 324
+            float center_val_3;
+
+#line 324
+            float sample_val_3;
+
+#line 324
+            int i_8;
+
+#line 333
+            float _S109 = ((kernel_2).load<float>((uint(yoff_3 + kernel_boundary_6)), (uint(xoff_3 + kernel_boundary_6))));
+
+#line 333
+            i_7 = int(0);
+
+#line 333
+            sample_weight_6 = _S109;
+
+#line 333
+            float non_kernel_weight_0 = 1.0f;
+
+#line 340
+            uint _S110 = uint(yp_3);
+
+#line 340
+            uint _S111 = uint(xp_3);
+
+#line 335
+            for(;;)
+            {
+
+#line 335
+                if(i_7 < _S101)
+                {
+                }
+                else
+                {
+
+#line 335
+                    break;
+                }
+
+                if(i_7 < num_features_6)
+                {
+
+#line 339
+                    float _S112 = ((input_6).load<float>((_S96), (uint(i_7)), (_S97), (_S98)));
+                    float _S113 = ((input_6).load<float>((_S96), (uint(i_7)), (_S110), (_S111)));
+
+#line 340
+                    sample_val_3 = _S113;
+
+#line 340
+                    center_val_3 = _S112;
+
+#line 338
+                }
+                else
+                {
+
+
+                    if(i_7 == num_features_6)
+                    {
+
+#line 343
+                        i_8 = yoff_3;
+
+#line 343
+                    }
+                    else
+                    {
+
+#line 343
+                        i_8 = xoff_3;
+
+#line 343
+                    }
+
+#line 343
+                    sample_val_3 = float(i_8);
+
+#line 343
+                    center_val_3 = 0.0f;
+
+#line 338
+                }
+
+#line 346
+                float diff_4 = sample_val_3 - center_val_3;
+
+                float _S114 = ((params_6).load<float>((uint(i_7))));
+
+#line 348
+                float weight_0 = (F32_exp((_S114 * diff_4 * diff_4)));
+
+                float sample_weight_7 = sample_weight_6 * weight_0;
+                float non_kernel_weight_1 = non_kernel_weight_0 * weight_0;
+
+#line 335
+                i_7 = i_7 + int(1);
+
+#line 335
+                sample_weight_6 = sample_weight_7;
+
+#line 335
+                non_kernel_weight_0 = non_kernel_weight_1;
+
+#line 335
+            }
+
+#line 335
+            i_8 = int(0);
+
+#line 335
+            float dLdSampleWeight_2 = dLdTotalWeight_2;
+
+#line 355
+            for(;;)
+            {
+
+#line 355
+                if(i_8 < num_features_6)
+                {
+                }
+                else
+                {
+
+#line 355
+                    break;
+                }
+
+#line 356
+                float _S115 = ((output_grad_2).load<float>((_S96), (uint(i_8)), (_S97), (_S98)));
+
+#line 356
+                float _S116 = ((input_6).load<float>((_S96), (uint(i_8)), (_S110), (_S111)));
+
+#line 356
+                float dLdSampleWeight_3 = dLdSampleWeight_2 + _S115 * _S116 / _S95;
+
+#line 355
+                i_8 = i_8 + int(1);
+
+#line 355
+                dLdSampleWeight_2 = dLdSampleWeight_3;
+
+#line 355
+            }
+
+#line 360
+            float _S117 = atomicAdd(&(*&shr_dLdKernel_0)[_S93][yoff_3 + kernel_boundary_6][xoff_3 + kernel_boundary_6], non_kernel_weight_0 * dLdSampleWeight_2);
+
+#line 360
+            int i_9 = int(0);
+
+
+            for(;;)
+            {
+
+#line 363
+                if(i_9 < _S101)
+                {
+                }
+                else
+                {
+
+#line 363
+                    break;
+                }
+
+                if(i_9 < num_features_6)
+                {
+
+#line 367
+                    float _S118 = ((input_6).load<float>((_S96), (uint(i_9)), (_S97), (_S98)));
+                    float _S119 = ((input_6).load<float>((_S96), (uint(i_9)), (_S110), (_S111)));
+
+#line 368
+                    sample_val_3 = _S119;
+
+#line 368
+                    center_val_3 = _S118;
+
+#line 366
+                }
+                else
+                {
+
+#line 366
+                    int _S120;
+
+#line 371
+                    if(i_9 == num_features_6)
+                    {
+
+#line 371
+                        _S120 = yoff_3;
+
+#line 371
+                    }
+                    else
+                    {
+
+#line 371
+                        _S120 = xoff_3;
+
+#line 371
+                    }
+
+#line 371
+                    sample_val_3 = float(_S120);
+
+#line 371
+                    center_val_3 = 0.0f;
+
+#line 366
+                }
+
+#line 374
+                float diff_5 = sample_val_3 - center_val_3;
+
+
+                float _S121 = atomicAdd(&(*&shr_dLdParam_0)[_S92][i_9], dLdSampleWeight_2 * sample_weight_6 * diff_5 * diff_5);
+
+
+                if(i_9 < num_features_6)
+                {
+
+                    float _S122 = dLdSampleWeight_2 * sample_weight_6;
+
+#line 383
+                    float _S123 = ((params_6).load<float>((uint(i_9))));
+
+#line 383
+                    float dLdCenterVal_1 = _S122 * _S123 * -2.0f * diff_5;
+                    int4  _S124 = make_int4 (b_6, i_9, y_6, x_6);
+
+#line 384
+                    uint4  _S125 = make_uint4 ((uint)_S124.x, (uint)_S124.y, (uint)_S124.z, (uint)_S124.w);
+
+#line 381
+                    float junk_2;
+
+
+                    *((&junk_2)) = atomicAdd((input_grad_2).data_ptr_at<float>((_S125)), (dLdCenterVal_1));
+
+                    float _S126 = ((output_grad_2).load<float>((_S96), (uint(i_9)), (_S97), (_S98)));
+                    int4  _S127 = make_int4 (b_6, i_9, yp_3, xp_3);
+
+#line 387
+                    uint4  _S128 = make_uint4 ((uint)_S127.x, (uint)_S127.y, (uint)_S127.z, (uint)_S127.w);
+
+#line 387
+                    *((&junk_2)) = atomicAdd((input_grad_2).data_ptr_at<float>((_S128)), (_S126 * sample_weight_6 / _S95 - dLdCenterVal_1));
+
+#line 380
+                }
+
+#line 363
+                i_9 = i_9 + int(1);
+
+#line 363
+            }
+
+#line 324
+            xoff_3 = xoff_3 + int(1);
+
+#line 324
+        }
+
+#line 323
+        yoff_3 = yoff_3 + int(1);
+
+#line 323
+    }
+
+#line 393
+    __syncthreads();
+
+    if(_S102)
+    {
+
+#line 395
+        i_7 = int(1);
+
+#line 414
+        uint _S129 = uint(j_1);
+
+#line 396
+        for(;;)
+        {
+
+#line 396
+            if(i_7 < int(32))
+            {
+            }
+            else
+            {
+
+#line 396
+                break;
+            }
+            (*&shr_dLdParam_0)[int(0)][j_1] = (*&shr_dLdParam_0)[int(0)][j_1] + (*&shr_dLdParam_0)[i_7][j_1];
+
+#line 396
+            i_7 = i_7 + int(1);
+
+#line 396
+        }
+
+#line 413
+        float junk_3;
+        *((&junk_3)) = atomicAdd((params_grad_2).data_ptr_at<float>((_S129)), ((*&shr_dLdParam_0)[int(0)][j_1]));
+
+#line 395
+    }
+
+#line 417
+    uint _S130 = uint(j_1);
+
+#line 417
+    uint _S131 = ((kernel_2).sizes[(0U)]);
+
+#line 417
+    uint _S132 = ((kernel_2).sizes[(0U)]);
+
+#line 417
+    if(_S130 < _S131 * _S132)
+    {
+
+#line 418
+        uint _S133 = ((kernel_2).sizes[(0U)]);
+
+#line 418
+        uint _S134 = _S130 / _S133;
+
+#line 418
+        int y_7 = int(_S134);
+        uint _S135 = ((kernel_2).sizes[(0U)]);
+
+#line 419
+        uint _S136 = _S130 % _S135;
+
+#line 419
+        int x_7 = int(_S136);
+
+#line 419
+        i_7 = int(0);
+
+#line 419
+        sample_weight_6 = 0.0f;
+
+#line 427
+        uint2  _S137 = make_uint2 (uint(y_7), uint(x_7));
+
+#line 422
+        for(;;)
+        {
+
+#line 422
+            if(i_7 < int(16))
+            {
+            }
+            else
+            {
+
+#line 422
+                break;
+            }
+
+#line 423
+            float accum_0 = sample_weight_6 + (*&shr_dLdKernel_0)[i_7][y_7][x_7];
+
+#line 422
+            i_7 = i_7 + int(1);
+
+#line 422
+            sample_weight_6 = accum_0;
+
+#line 422
+        }
+
+
+
+        float junk_4;
+        *((&junk_4)) = atomicAdd((kernel_grad_0).data_ptr_at<float>((_S137)), (sample_weight_6));
+
+#line 417
+    }
+
+#line 429
+    return;
+}
+
+
+#line 665
+__global__ void __kernel__bwd_kernel_bilateral_filter_wrapper(TensorView input_7, TensorView input_grad_3, TensorView params_7, TensorView params_grad_3, TensorView kernel_3, TensorView kernel_grad_1, TensorView output_7, TensorView output_grad_3, int kernel_boundary_7, int dialation_7)
+{
+
+#line 605
+    int globalIdx_3 = int(((threadIdx)).x + ((blockIdx)).x * ((blockDim)).x);
+    uint _S138 = ((input_7).sizes[(0U)]);
+
+#line 606
+    int batch_size_3 = int(_S138);
+    uint _S139 = ((input_7).sizes[(1U)]);
+
+#line 607
+    int num_features_7 = int(_S139);
+    uint _S140 = ((input_7).sizes[(3U)]);
+
+#line 608
+    int width_7 = int(_S140);
+    uint _S141 = ((input_7).sizes[(2U)]);
+
+#line 609
+    int height_7 = int(_S141);
+    if(globalIdx_3 >= batch_size_3 * width_7 * height_7)
+    {
+
+#line 611
+        return;
+    }
+    int x_8 = globalIdx_3 % width_7;
+    int _S142 = globalIdx_3 / width_7;
+
+#line 614
+    int y_8 = _S142 % height_7;
+    int b_7 = globalIdx_3 / (width_7 * height_7);
+
+#line 679
+    bwd_kernel_bilteral_filter_0(num_features_7, width_7, height_7, b_7, y_8, x_8, input_7, input_grad_3, params_7, params_grad_3, kernel_3, kernel_grad_1, output_7, output_grad_3, kernel_boundary_7, dialation_7);
+    return;
+}
+
+
+#line 438
+__device__ float pixel_bilteral_filter_0(int num_features_8, int width_8, int height_8, int b_8, int y_9, int x_9, TensorView input_8, TensorView params_8, TensorView output_8, int kernel_boundary_8, int dialation_8, bool normalize_2)
+{
+
+#line 450
+    int xoff_4;
+
+
+
+    int _S143 = - kernel_boundary_8;
+
+#line 454
+    int yoff_4 = _S143;
+
+#line 454
+    float total_weight_4 = 0.0f;
+
+#line 465
+    int _S144 = num_features_8 + int(2);
+
+#line 484
+    uint _S145 = uint(b_8);
+
+#line 484
+    uint _S146 = uint(y_9);
+
+#line 484
+    uint _S147 = uint(x_9);
+
+#line 454
+    for(;;)
+    {
+
+#line 454
+        if(yoff_4 <= kernel_boundary_8)
+        {
+        }
+        else
+        {
+
+#line 454
+            break;
+        }
+
+#line 454
+        xoff_4 = _S143;
+
+#line 454
+        float total_weight_5 = total_weight_4;
+        for(;;)
+        {
+
+#line 455
+            if(xoff_4 <= kernel_boundary_8)
+            {
+            }
+            else
+            {
+
+#line 455
+                break;
+            }
+
+#line 456
+            int xp_4 = x_9 + xoff_4 * dialation_8;
+            int yp_4 = y_9 + yoff_4 * dialation_8;
+
+#line 457
+            bool _S148;
+
+
+            if(xp_4 < int(0))
+            {
+
+#line 460
+                _S148 = true;
+
+#line 460
+            }
+            else
+            {
+
+#line 460
+                _S148 = yp_4 < int(0);
+
+#line 460
+            }
+
+#line 460
+            bool _S149;
+
+#line 460
+            if(_S148)
+            {
+
+#line 460
+                _S149 = true;
+
+#line 460
+            }
+            else
+            {
+
+#line 460
+                _S149 = xp_4 >= width_8;
+
+#line 460
+            }
+
+#line 460
+            bool _S150;
+
+#line 460
+            if(_S149)
+            {
+
+#line 460
+                _S150 = true;
+
+#line 460
+            }
+            else
+            {
+
+#line 460
+                _S150 = yp_4 >= height_8;
+
+#line 460
+            }
+
+#line 460
+            if(_S150)
+            {
+
+#line 461
+                xoff_4 = xoff_4 + int(1);
+
+#line 455
+                continue;
+            }
+
+#line 455
+            int i_10;
+
+#line 455
+            int i_11 = int(0);
+
+#line 455
+            float sample_weight_8 = 1.0f;
+
+#line 470
+            uint _S151 = uint(yp_4);
+
+#line 470
+            uint _S152 = uint(xp_4);
+
+#line 465
+            for(;;)
+            {
+
+#line 465
+                if(i_11 < _S144)
+                {
+                }
+                else
+                {
+
+#line 465
+                    break;
+                }
+
+#line 465
+                float sample_val_4;
+
+#line 465
+                float center_val_4;
+
+
+                if(i_11 < num_features_8)
+                {
+
+#line 469
+                    float _S153 = ((input_8).load<float>((_S145), (uint(i_11)), (_S146), (_S147)));
+                    float _S154 = ((input_8).load<float>((_S145), (uint(i_11)), (_S151), (_S152)));
+
+#line 470
+                    sample_val_4 = _S154;
+
+#line 470
+                    center_val_4 = _S153;
+
+#line 468
+                }
+                else
+                {
+
+
+                    if(i_11 == num_features_8)
+                    {
+
+#line 473
+                        i_10 = yoff_4;
+
+#line 473
+                    }
+                    else
+                    {
+
+#line 473
+                        i_10 = xoff_4;
+
+#line 473
+                    }
+
+#line 473
+                    sample_val_4 = float(i_10);
+
+#line 473
+                    center_val_4 = 0.0f;
+
+#line 468
+                }
+
+#line 476
+                float diff_6 = sample_val_4 - center_val_4;
+
+#line 484
+                float _S155 = ((params_8).load<float>((_S145), (uint(i_11)), (_S146), (_S147)));
+
+                float sample_weight_9 = sample_weight_8 * (F32_exp((_S155 * diff_6 * diff_6)));
+
+#line 465
+                i_11 = i_11 + int(1);
+
+#line 465
+                sample_weight_8 = sample_weight_9;
+
+#line 465
+            }
+
+#line 465
+            i_10 = int(0);
+
+#line 489
+            for(;;)
+            {
+
+#line 489
+                if(i_10 < num_features_8)
+                {
+                }
+                else
+                {
+
+#line 489
+                    break;
+                }
+
+#line 490
+                float _S156 = ((input_8).load<float>((_S145), (uint(i_10)), (_S151), (_S152)));
+                uint _S157 = uint(i_10);
+
+#line 491
+                float _S158 = ((output_8).load<float>((_S145), (_S157), (_S146), (_S147)));
+
+#line 491
+                (output_8).store<float>((_S145), (_S157), (_S146), (_S147), (_S158 + sample_weight_8 * _S156));
+
+#line 489
+                i_10 = i_10 + int(1);
+
+#line 489
+            }
+
+#line 489
+            total_weight_5 = total_weight_5 + sample_weight_8;
+
+#line 455
+            xoff_4 = xoff_4 + int(1);
+
+#line 455
+        }
+
+#line 454
+        yoff_4 = yoff_4 + int(1);
+
+#line 454
+        total_weight_4 = total_weight_5;
+
+#line 454
+    }
+
+#line 498
+    if(total_weight_4 < 0.00100000004749745f)
+    {
+
+#line 498
+        total_weight_4 = 0.00100000004749745f;
+
+#line 498
+    }
+
+    if(normalize_2)
+    {
+
+#line 500
+        xoff_4 = int(0);
+        for(;;)
+        {
+
+#line 501
+            if(xoff_4 < num_features_8)
+            {
+            }
+            else
+            {
+
+#line 501
+                break;
+            }
+
+#line 502
+            uint _S159 = uint(xoff_4);
+
+#line 502
+            float _S160 = ((output_8).load<float>((_S145), (_S159), (_S146), (_S147)));
+
+#line 502
+            (output_8).store<float>((_S145), (_S159), (_S146), (_S147), (_S160 / total_weight_4));
+
+#line 501
+            xoff_4 = xoff_4 + int(1);
+
+#line 501
+        }
+
+#line 500
+    }
+
+#line 506
+    return total_weight_4;
+}
+
+
+#line 684
+__global__ void __kernel__exec_pixel_bilateral_filter_wrapper(TensorView input_9, TensorView params_9, TensorView output_9, int kernel_boundary_9, int dialation_9)
+{
+
+#line 605
+    int globalIdx_4 = int(((threadIdx)).x + ((blockIdx)).x * ((blockDim)).x);
+    uint _S161 = ((input_9).sizes[(0U)]);
+
+#line 606
+    int batch_size_4 = int(_S161);
+    uint _S162 = ((input_9).sizes[(1U)]);
+
+#line 607
+    int num_features_9 = int(_S162);
+    uint _S163 = ((input_9).sizes[(3U)]);
+
+#line 608
+    int width_9 = int(_S163);
+    uint _S164 = ((input_9).sizes[(2U)]);
+
+#line 609
+    int height_9 = int(_S164);
+    if(globalIdx_4 >= batch_size_4 * width_9 * height_9)
+    {
+
+#line 611
+        return;
+    }
+    int x_10 = globalIdx_4 % width_9;
+    int _S165 = globalIdx_4 / width_9;
+
+#line 614
+    int y_10 = _S165 % height_9;
+    int b_9 = globalIdx_4 / (width_9 * height_9);
+
+#line 693
+    float _S166 = pixel_bilteral_filter_0(num_features_9, width_9, height_9, b_9, y_10, x_10, input_9, params_9, output_9, kernel_boundary_9, dialation_9, true);
+    return;
+}
+
+
+#line 509
+__device__ void bwd_pixel_bilteral_filter_0(int num_features_10, int width_10, int height_10, int b_10, int y_11, int x_11, TensorView input_10, TensorView input_grad_4, TensorView params_10, TensorView params_grad_4, TensorView output_10, TensorView output_grad_4, int kernel_boundary_10, int dialation_10)
+{
+
+#line 526
+    float _S167 = pixel_bilteral_filter_0(num_features_10, width_10, height_10, b_10, y_11, x_11, input_10, params_10, output_10, kernel_boundary_10, dialation_10, false);
+
+#line 526
+    int i_12 = int(0);
+
+#line 526
+    float dLdTotalWeight_4 = 0.0f;
+
+
+
+    uint _S168 = uint(b_10);
+
+#line 530
+    uint _S169 = uint(y_11);
+
+#line 530
+    uint _S170 = uint(x_11);
+
+#line 530
+    float _S171 = _S167 * _S167;
+
+
+    int _S172 = - kernel_boundary_10;
+
+#line 544
+    int _S173 = num_features_10 + int(2);
+
+#line 529
+    for(;;)
+    {
+
+#line 529
+        if(i_12 < num_features_10)
+        {
+        }
+        else
+        {
+
+#line 529
+            break;
+        }
+
+#line 530
+        float _S174 = ((output_grad_4).load<float>((_S168), (uint(i_12)), (_S169), (_S170)));
+
+#line 530
+        float _S175 = - _S174;
+
+#line 530
+        float _S176 = ((output_10).load<float>((_S168), (uint(i_12)), (_S169), (_S170)));
+
+#line 530
+        float dLdTotalWeight_5 = dLdTotalWeight_4 + _S175 * _S176 / _S171;
+
+#line 529
+        i_12 = i_12 + int(1);
+
+#line 529
+        dLdTotalWeight_4 = dLdTotalWeight_5;
+
+#line 529
+    }
+
+#line 529
+    int yoff_5 = _S172;
+
+
+
+    for(;;)
+    {
+
+#line 533
+        if(yoff_5 <= kernel_boundary_10)
+        {
+        }
+        else
+        {
+
+#line 533
+            break;
+        }
+
+#line 533
+        int xoff_5 = _S172;
+        for(;;)
+        {
+
+#line 534
+            if(xoff_5 <= kernel_boundary_10)
+            {
+            }
+            else
+            {
+
+#line 534
+                break;
+            }
+
+#line 535
+            int xp_5 = x_11 + xoff_5 * dialation_10;
+            int yp_5 = y_11 + yoff_5 * dialation_10;
+
+#line 536
+            bool _S177;
+
+
+            if(xp_5 < int(0))
+            {
+
+#line 539
+                _S177 = true;
+
+#line 539
+            }
+            else
+            {
+
+#line 539
+                _S177 = yp_5 < int(0);
+
+#line 539
+            }
+
+#line 539
+            bool _S178;
+
+#line 539
+            if(_S177)
+            {
+
+#line 539
+                _S178 = true;
+
+#line 539
+            }
+            else
+            {
+
+#line 539
+                _S178 = xp_5 >= width_10;
+
+#line 539
+            }
+
+#line 539
+            bool _S179;
+
+#line 539
+            if(_S178)
+            {
+
+#line 539
+                _S179 = true;
+
+#line 539
+            }
+            else
+            {
+
+#line 539
+                _S179 = yp_5 >= height_10;
+
+#line 539
+            }
+
+#line 539
+            if(_S179)
+            {
+
+#line 540
+                xoff_5 = xoff_5 + int(1);
+
+#line 534
+                continue;
+            }
+
+#line 534
+            float center_val_5;
+
+#line 534
+            float sample_val_5;
+
+#line 534
+            int i_13;
+
+#line 534
+            i_12 = int(0);
+
+#line 534
+            float sample_weight_10 = 1.0f;
+
+#line 549
+            uint _S180 = uint(yp_5);
+
+#line 549
+            uint _S181 = uint(xp_5);
+
+#line 544
+            for(;;)
+            {
+
+#line 544
+                if(i_12 < _S173)
+                {
+                }
+                else
+                {
+
+#line 544
+                    break;
+                }
+
+                if(i_12 < num_features_10)
+                {
+
+#line 548
+                    float _S182 = ((input_10).load<float>((_S168), (uint(i_12)), (_S169), (_S170)));
+                    float _S183 = ((input_10).load<float>((_S168), (uint(i_12)), (_S180), (_S181)));
+
+#line 549
+                    sample_val_5 = _S183;
+
+#line 549
+                    center_val_5 = _S182;
+
+#line 547
+                }
+                else
+                {
+
+
+                    if(i_12 == num_features_10)
+                    {
+
+#line 552
+                        i_13 = yoff_5;
+
+#line 552
+                    }
+                    else
+                    {
+
+#line 552
+                        i_13 = xoff_5;
+
+#line 552
+                    }
+
+#line 552
+                    sample_val_5 = float(i_13);
+
+#line 552
+                    center_val_5 = 0.0f;
+
+#line 547
+                }
+
+#line 555
+                float diff_7 = sample_val_5 - center_val_5;
+
+                float _S184 = ((params_10).load<float>((_S168), (uint(i_12)), (_S169), (_S170)));
+
+                float sample_weight_11 = sample_weight_10 * (F32_exp((_S184 * diff_7 * diff_7)));
+
+#line 544
+                i_12 = i_12 + int(1);
+
+#line 544
+                sample_weight_10 = sample_weight_11;
+
+#line 544
+            }
+
+#line 544
+            i_13 = int(0);
+
+#line 544
+            float dLdSampleWeight_4 = dLdTotalWeight_4;
+
+#line 563
+            for(;;)
+            {
+
+#line 563
+                if(i_13 < num_features_10)
+                {
+                }
+                else
+                {
+
+#line 563
+                    break;
+                }
+
+#line 564
+                float _S185 = ((output_grad_4).load<float>((_S168), (uint(i_13)), (_S169), (_S170)));
+
+#line 564
+                float _S186 = ((input_10).load<float>((_S168), (uint(i_13)), (_S180), (_S181)));
+
+#line 564
+                float dLdSampleWeight_5 = dLdSampleWeight_4 + _S185 * _S186 / _S167;
+
+#line 563
+                i_13 = i_13 + int(1);
+
+#line 563
+                dLdSampleWeight_4 = dLdSampleWeight_5;
+
+#line 563
+            }
+
+#line 563
+            int i_14 = int(0);
+
+#line 568
+            for(;;)
+            {
+
+#line 568
+                if(i_14 < _S173)
+                {
+                }
+                else
+                {
+
+#line 568
+                    break;
+                }
+
+                if(i_14 < num_features_10)
+                {
+
+#line 572
+                    float _S187 = ((input_10).load<float>((_S168), (uint(i_14)), (_S169), (_S170)));
+                    float _S188 = ((input_10).load<float>((_S168), (uint(i_14)), (_S180), (_S181)));
+
+#line 573
+                    sample_val_5 = _S188;
+
+#line 573
+                    center_val_5 = _S187;
+
+#line 571
+                }
+                else
+                {
+
+#line 571
+                    int _S189;
+
+#line 576
+                    if(i_14 == num_features_10)
+                    {
+
+#line 576
+                        _S189 = yoff_5;
+
+#line 576
+                    }
+                    else
+                    {
+
+#line 576
+                        _S189 = xoff_5;
+
+#line 576
+                    }
+
+#line 576
+                    sample_val_5 = float(_S189);
+
+#line 576
+                    center_val_5 = 0.0f;
+
+#line 571
+                }
+
+#line 580
+                float junk_5;
+
+                float diff_8 = sample_val_5 - center_val_5;
+
+                float dLdParam_0 = dLdSampleWeight_4 * sample_weight_10 * diff_8 * diff_8;
+                uint _S190 = uint(i_14);
+
+#line 585
+                float _S191 = ((params_grad_4).load<float>((_S168), (_S190), (_S169), (_S170)));
+
+#line 585
+                (params_grad_4).store<float>((_S168), (_S190), (_S169), (_S170), (_S191 + dLdParam_0));
+
+                if(i_14 < num_features_10)
+                {
+                    float _S192 = dLdSampleWeight_4 * sample_weight_10;
+
+#line 589
+                    float _S193 = ((params_10).load<float>((_S168), (uint(i_14)), (_S169), (_S170)));
+
+#line 589
+                    float dLdCenterVal_2 = _S192 * _S193 * -2.0f * diff_8;
+                    int4  _S194 = make_int4 (b_10, i_14, y_11, x_11);
+
+#line 590
+                    uint4  _S195 = make_uint4 ((uint)_S194.x, (uint)_S194.y, (uint)_S194.z, (uint)_S194.w);
+
+#line 590
+                    *((&junk_5)) = atomicAdd((input_grad_4).data_ptr_at<float>((_S195)), (dLdCenterVal_2));
+
+                    float _S196 = ((output_grad_4).load<float>((_S168), (uint(i_14)), (_S169), (_S170)));
+                    int4  _S197 = make_int4 (b_10, i_14, yp_5, xp_5);
+
+#line 593
+                    uint4  _S198 = make_uint4 ((uint)_S197.x, (uint)_S197.y, (uint)_S197.z, (uint)_S197.w);
+
+#line 593
+                    *((&junk_5)) = atomicAdd((input_grad_4).data_ptr_at<float>((_S198)), (_S196 * sample_weight_10 / _S167 - dLdCenterVal_2));
+
+#line 587
+                }
+
+#line 568
+                i_14 = i_14 + int(1);
+
+#line 568
+            }
+
+#line 534
+            xoff_5 = xoff_5 + int(1);
+
+#line 534
+        }
+
+#line 533
+        yoff_5 = yoff_5 + int(1);
+
+#line 533
+    }
+
+#line 600
+    return;
+}
+
+
+#line 698
+__global__ void __kernel__bwd_pixel_bilateral_filter_wrapper(TensorView input_11, TensorView input_grad_5, TensorView params_11, TensorView params_grad_5, TensorView output_11, TensorView output_grad_5, int kernel_boundary_11, int dialation_11)
+{
+
+#line 605
+    int globalIdx_5 = int(((threadIdx)).x + ((blockIdx)).x * ((blockDim)).x);
+    uint _S199 = ((input_11).sizes[(0U)]);
+
+#line 606
+    int batch_size_5 = int(_S199);
+    uint _S200 = ((input_11).sizes[(1U)]);
+
+#line 607
+    int num_features_11 = int(_S200);
+    uint _S201 = ((input_11).sizes[(3U)]);
+
+#line 608
+    int width_11 = int(_S201);
+    uint _S202 = ((input_11).sizes[(2U)]);
+
+#line 609
+    int height_11 = int(_S202);
+    if(globalIdx_5 >= batch_size_5 * width_11 * height_11)
+    {
+
+#line 611
+        return;
+    }
+    int x_12 = globalIdx_5 % width_11;
+    int _S203 = globalIdx_5 / width_11;
+
+#line 614
+    int y_12 = _S203 % height_11;
+    int b_11 = globalIdx_5 / (width_11 * height_11);
+
+#line 710
+    bwd_pixel_bilteral_filter_0(num_features_11, width_11, height_11, b_11, y_12, x_12, input_11, input_grad_5, params_11, params_grad_5, output_11, output_grad_5, kernel_boundary_11, dialation_11);
     return;
 }
 

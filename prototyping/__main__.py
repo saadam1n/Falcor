@@ -7,90 +7,131 @@ import frame_data
 from torch.utils.data import DataLoader
 import cv2
 import matplotlib.pyplot as plt
+import keyboard
+import time
+import datetime
+from noisebase import Noisebase
 
-def trace_handler(prof):
-    print(prof.key_averages().table(
-        sort_by="self_cuda_time_total", row_limit=-1))
-    prof.export_chrome_trace("./test_trace_" + str(prof.step_num) + ".json")
+if __name__ == "__main__":
+    device = "cpu"
+    if torch.cuda.is_available():
+        device = "cuda"
 
-device = "cpu"
-if torch.cuda.is_available():
-    device = "cuda"
+        print(f"Utilizing GPU {torch.cuda.get_device_name(0)} for training and inference.")
+    else:
+        print("Utiilzing CPU for training and inference.")
 
-    print(f"Utilizing GPU {torch.cuda.get_device_name(0)} for training and inference.")
-else:
-    print("Utiilzing CPU for training and inference.")
+    if False:
+        seq_len = 8
+        batch_size = 4
+    else:
+        seq_len = 8
+        batch_size = 12
 
-if False:
-    seq_len = 8
-    batch_size = 7
-else:
-    seq_len = 1
-    batch_size = 1
+    if False:
+        training_data = frame_data.FrameData("C:\\FalcorFiles\\Dataset0\\", device, seq_len)
+        training_loader = DataLoader(training_data, batch_size=batch_size, shuffle=True)
+    else:
+        training_loader = Noisebase(
+            'sampleset_v1',
+            {
+                'framework': 'torch',
+                'buffers': ['color', 'diffuse', 'position', 'normal', 'reference'],
+                'samples': 8,
+                'batch_size': 16
+            }
+        )
 
-training_data = frame_data.FrameData("C:\\FalcorFiles\\Dataset0\\", device, seq_len)
-training_loader = DataLoader(training_data, batch_size=batch_size, shuffle=True)
-
-model = fpcnn.UNetDLF2()
-model = torch.nn.DataParallel(model)
-model = model.to(device)
-#model = torch.compile(model)
-
-optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=200, gamma=0.9)
-loss_fn = torch.nn.L1Loss()
-
-numIters = 3500
-lossHistory = []
-for i in range(0, numIters):
-    input, target = next(iter(training_loader))
-
-    optimizer.zero_grad()
-
-    output = model(input)
-
-    loss = loss_fn(output, target)
-    loss.backward()
-
-    optimizer.step()
-    scheduler.step()
-
-    print(f"Loss at iteration {i}\tis {loss.item()}")
-    lossHistory.append(loss.item())
-
-    if i == 0 or i == (numIters - 1):
-        # first, export our model
-        if i == (numIters - 1):
-            torch.save(model.state_dict(), "C:/FalcorFiles/Models/FPCNN-3.pt")
-
-        # get last few frames when it has stabilized
-        image = output.detach()
-        image = image[0].squeeze().permute((1, 2, 0)).cpu().numpy()
-        image = image[:, :, -3:]
-
-        cv2.imshow("Image", image)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-
-with torch.no_grad():
-    input, target = training_data.get_full_img()
-    input = input[None, :]
-    target = target[None, :]
-
+    model = fpcnn.ImageEnhancementFilter()
+    model = torch.nn.DataParallel(model)
     model = model.to(device)
-    output = model(input)
+    #model = torch.compile(model)
 
-    loss = loss_fn(output, target)
-    print(f"Loss on entire image was {loss.item()}")
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=200, gamma=0.9)
+    loss_fn = torch.nn.L1Loss()
+
+    def display_full_image(model, training_data, loss_fn):
+        with torch.no_grad():
+            input, target = training_data.get_full_img()
+            input = input[None, :]
+            target = target[None, :]
+
+            model = model.to(device)
+            output = model(input)
+
+            loss = loss_fn(output, target)
+            print(f"Loss on entire image was {loss.item()}")
 
 
-    image = output.detach()
-    image = image[0].squeeze().permute((1, 2, 0)).cpu().numpy()
-    image = image[:, :, -3:]
+            image = output.detach().pow(1 / 2.2)
+            image = image[0].squeeze().permute((1, 2, 0)).cpu().numpy()
+            image = image[:, :, -3:]
 
-    cv2.imshow("Image", image)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+            cv2.imshow("Image", image)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
 
-plt.plot(lossHistory)
-plt.show()
+    numIters = 5000
+    lossHistory = []
+    for i in range(0, numIters):
+        start = time.time()
+        input, target = next(iter(training_loader))
+
+        optimizer.zero_grad()
+
+        output = model(input)
+
+        loss = loss_fn(output, target)
+        loss.backward()
+
+        optimizer.step()
+        scheduler.step()
+
+
+        total_loss = loss.item()
+        end = time.time()
+
+        eta = (end - start) * (numIters - i)
+
+        duration = str(datetime.timedelta(seconds=int(eta)))
+
+        print(f"ETA [{duration}]:\tLoss at iteration {i}\tis {total_loss}")
+        lossHistory.append(total_loss)
+
+
+        if i == 0 or i == (numIters - 1) or keyboard.is_pressed("f10"):
+            # first, export our model
+            if i == (numIters - 1):
+                torch.save(model.state_dict(), "C:/FalcorFiles/Models/IFWE.pt") # global pre-context filter
+
+            # get last few frames when it has stabilized
+            image = output.detach()
+            image = image[0].squeeze().permute((1, 2, 0)).cpu().numpy()
+            image = image[:, :, -3:]
+
+            first_iter = True
+            while keyboard.is_pressed("f10"):
+                if first_iter:
+                    print("Please release the key to display the window.")
+                    first_iter = False
+
+
+            cv2.imshow("Image", image)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+
+
+        if keyboard.is_pressed("f9"):
+            first_iter = True
+            while keyboard.is_pressed("f9"):
+                if first_iter:
+                    print("Please release the key to display the window.")
+                    first_iter = False
+
+            display_full_image(model, training_data, loss_fn)
+
+    display_full_image(model, training_data, loss_fn)
+
+    plt.plot(lossHistory)
+    plt.show()

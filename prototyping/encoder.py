@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.utils.checkpoint as checkpoint
 
 class EncoderUNet(nn.Module):
     def __init__(self, num_input_channels, num_output_channels, dilation=None):
@@ -395,3 +396,777 @@ class ColorStabilizingPool(nn.Module):
         return output
 
 
+class NoisePredictingUNet(nn.Module):
+    def __init__(self, num_input_channels, num_output_channels, dilation=None):
+        super().__init__()
+
+        if type(dilation) is not None:
+            print("WARNING: NoisePredictingUNet does not take a dilation argument!")
+
+        internal_channels = num_input_channels
+        self.conv0 = nn.Sequential(
+            nn.Conv2d(num_input_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels * 2, kernel_size=3, padding=1),
+        )
+
+        self.conv1 = nn.Sequential(
+            nn.AvgPool2d(2),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 4, kernel_size=3, padding=1),
+        )
+
+        self.conv2 = nn.Sequential(
+            nn.AvgPool2d(2),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 8, kernel_size=3, padding=1),
+        )
+
+        self.conv3 = nn.Sequential(
+            nn.AvgPool2d(2),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(internal_channels * 8, internal_channels * 8, kernel_size=2, stride=2),
+        )
+
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(internal_channels * 8, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(internal_channels * 4, internal_channels * 4, kernel_size=2, stride=2),
+        )
+
+        self.conv5 = nn.Sequential(
+            nn.Conv2d(internal_channels * 4, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(internal_channels * 2, internal_channels * 2, kernel_size=2, stride=2),
+        )
+
+        self.conv6 = nn.Sequential(
+            nn.Conv2d(internal_channels * 2, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, num_output_channels, kernel_size=3, padding=1),
+        )
+
+    def forward(self, input):
+        x0 = self.conv0(input)
+        x1 = self.conv1(x0)
+        x2 = self.conv2(x1)
+        x = self.conv3(x2)
+        x = self.conv4(x + x2)
+        x = self.conv5(x + x1)
+        x = self.conv6(x + x0)
+
+        return x
+
+
+class TransformPredictingUNet(nn.Module):
+    def __init__(self, num_input_channels, num_output_channels, dilation=None):
+        super().__init__()
+
+        if type(dilation) is not None:
+            print("WARNING: TransformPredictingUNet does not take a dilation argument!")
+
+        internal_channels = num_output_channels
+        self.conv0 = nn.Sequential(
+            nn.Conv2d(num_input_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels * 2, kernel_size=3, padding=1),
+        )
+
+        self.conv1 = nn.Sequential(
+            nn.AvgPool2d(2),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 4, kernel_size=3, padding=1),
+        )
+
+        self.conv2 = nn.Sequential(
+            nn.AvgPool2d(2),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 8, kernel_size=3, padding=1),
+        )
+
+        self.conv3 = nn.Sequential(
+            nn.AvgPool2d(2),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(internal_channels * 8, internal_channels * 8, kernel_size=2, stride=2),
+        )
+
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(internal_channels * 8, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(internal_channels * 4, internal_channels * 4, kernel_size=2, stride=2),
+        )
+
+        self.conv5 = nn.Sequential(
+            nn.Conv2d(internal_channels * 4, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(internal_channels * 2, internal_channels * 2, kernel_size=2, stride=2),
+        )
+
+        self.conv6 = nn.Sequential(
+            nn.Conv2d(internal_channels * 2, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, num_output_channels, kernel_size=3, padding=1),
+        )
+
+    def forward(self, input):
+        x0 = self.conv0(input)
+        x1 = self.conv1(x0)
+        x2 = self.conv2(x1)
+        x = self.conv3(x2)
+        x = self.conv4(x + x2)
+        x = self.conv5(x + x1)
+        x = self.conv6(x + x0)
+
+        return x
+
+
+class TransformPredictingUNet2(nn.Module):
+    def __init__(self, num_input_channels, num_output_channels):
+        super().__init__()
+
+        # base
+        internal_channels = num_output_channels // 4
+        self.conv0 = nn.Sequential(
+            nn.Conv2d(num_input_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels * 2, kernel_size=3, padding=1),
+        )
+
+        # base / 2
+        self.conv1 = nn.Sequential(
+            nn.AvgPool2d(2),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 4, kernel_size=3, padding=1),
+        )
+
+        # base / 4
+        self.conv2 = nn.Sequential(
+            nn.AvgPool2d(2),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 8, kernel_size=3, padding=1),
+        )
+
+        # base / 4
+        self.conv3 = nn.Sequential(
+            nn.AvgPool2d(2),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+        )
+
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(internal_channels * 8, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+        )
+
+        self.conv5 = nn.Sequential(
+            nn.Conv2d(internal_channels * 4, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+        )
+
+        self.conv6 = nn.Sequential(
+            nn.Conv2d(internal_channels * 2, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, num_output_channels, kernel_size=3, padding=1),
+        )
+
+    def forward(self, input):
+        B, C, H, W = input.shape
+
+
+        x0 = checkpoint.checkpoint_sequential(self.conv0, segments=1, input=input, use_reentrant=False)
+        x1 = checkpoint.checkpoint_sequential(self.conv1, segments=1, input=x0, use_reentrant=False)
+        x2 = checkpoint.checkpoint_sequential(self.conv2, segments=1, input=x1, use_reentrant=False)
+        x = checkpoint.checkpoint_sequential(self.conv3, segments=1, input=x2, use_reentrant=False)
+        x = nn.functional.interpolate(x, size=(H // 4, W // 4), mode="bilinear", align_corners=True)
+
+        x = checkpoint.checkpoint_sequential(self.conv4, segments=1, input=x + x2, use_reentrant=False)
+        x = nn.functional.interpolate(x, size=(H // 2, W // 2), mode="bilinear", align_corners=True)
+
+
+        x = checkpoint.checkpoint_sequential(self.conv5, segments=1, input=x + x1, use_reentrant=False)
+        x = nn.functional.interpolate(x, size=(H, W), mode="bilinear", align_corners=True)
+
+        x = checkpoint.checkpoint_sequential(self.conv6, segments=1, input=x + x0, use_reentrant=False)
+
+        return x
+
+class LookAheadUNet(nn.Module):
+    def __init__(self, num_input_channels, num_output_channels, dilation=None):
+        super().__init__()
+
+        if type(dilation) is not None:
+            print("WARNING: Look Ahead UNet does not take a dilation argument!")
+
+        internal_channels = num_output_channels
+        self.conv0 = nn.Sequential(
+            nn.Conv2d(num_input_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels * 2, kernel_size=3, padding=1),
+        )
+
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=2, stride=2, groups=internal_channels * 2),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 4, kernel_size=3, padding=1),
+        )
+
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=2, stride=2, groups=internal_channels * 4),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 8, kernel_size=3, padding=1),
+        )
+
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=2, stride=2, groups=internal_channels * 8),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(internal_channels * 8, internal_channels * 8, kernel_size=2, stride=2),
+        )
+
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(internal_channels * 8, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(internal_channels * 4, internal_channels * 4, kernel_size=2, stride=2),
+        )
+
+        self.conv5 = nn.Sequential(
+            nn.Conv2d(internal_channels * 4, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(internal_channels * 2, internal_channels * 2, kernel_size=2, stride=2),
+        )
+
+        self.conv6 = nn.Sequential(
+            nn.Conv2d(internal_channels * 2, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, num_output_channels, kernel_size=3, padding=1),
+        )
+
+        self.upscale0 = nn.ConvTranspose2d(internal_channels * 4, internal_channels * 4, kernel_size=2, stride=2)
+        self.upscale1 = nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=5, padding=2)
+
+    def forward(self, input):
+        x0 = self.conv0(input)
+        x1 = self.conv1(x0)
+        x2 = self.conv2(x1)
+        x3 = self.conv3(x2)
+        x4 = self.conv4(x3 + x2)
+        x5 = self.conv5(x4 + x1)
+        x6 = self.conv6(x5 + x0)
+
+        x4 = self.upscale0(x4)
+        x5 = self.upscale1(x5)
+
+        return (x6, x5, x4)
+
+class PreEncodingUNet(nn.Module):
+    def __init__(self, num_input_channels, num_output_channels, num_filters):
+        super().__init__()
+
+        internal_channels = num_filters * num_output_channels
+        self.conv0 = nn.Sequential(
+            nn.Conv2d(num_input_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels * 2, kernel_size=3, padding=1),
+        )
+
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=2, stride=2, groups=internal_channels * 2),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 4, kernel_size=3, padding=1),
+        )
+
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=2, stride=2, groups=internal_channels * 4),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 8, kernel_size=3, padding=1),
+        )
+
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=2, stride=2, groups=internal_channels * 8),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(internal_channels * 8, internal_channels * 8, kernel_size=2, stride=2),
+        )
+
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(internal_channels * 8, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(internal_channels * 4, internal_channels * 4, kernel_size=2, stride=2),
+        )
+
+        self.conv5 = nn.Sequential(
+            nn.Conv2d(internal_channels * 4, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(internal_channels * 2, internal_channels * 2, kernel_size=2, stride=2),
+        )
+
+        self.conv6 = nn.Sequential(
+            nn.Conv2d(internal_channels * 2, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, num_output_channels * num_filters, kernel_size=3, padding=1),
+        )
+
+    def forward(self, input):
+        x0 = self.conv0(input)
+        x1 = self.conv1(x0)
+        x2 = self.conv2(x1)
+        x3 = self.conv3(x2) # downsamples then upsamples
+        x4 = self.conv4(x3 + x2)
+        x5 = self.conv5(x4 + x1)
+        x6 = self.conv6(x5 + x0)
+
+        return x6
+
+
+
+class PreEncodingUNet2(nn.Module):
+    def __init__(self, num_input_channels, num_feature_channels, num_dynamic_channels, num_filters):
+        super().__init__()
+
+        internal_channels = num_filters * num_feature_channels + num_dynamic_channels
+        self.conv0 = nn.Sequential(
+            nn.Conv2d(num_input_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1), # extra layer to aid early on
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels * 2, kernel_size=3, padding=1),
+        )
+
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=2, stride=2, groups=internal_channels * 2),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 4, kernel_size=3, padding=1),
+        )
+
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=2, stride=2, groups=internal_channels * 4),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 8, kernel_size=3, padding=1),
+        )
+
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=2, stride=2, groups=internal_channels * 8),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(internal_channels * 8, internal_channels * 8, kernel_size=2, stride=2),
+        )
+
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(internal_channels * 8, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(internal_channels * 4, internal_channels * 4, kernel_size=2, stride=2),
+        )
+
+        self.conv5 = nn.Sequential(
+            nn.Conv2d(internal_channels * 4, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(internal_channels * 2, internal_channels * 2, kernel_size=2, stride=2),
+        )
+
+        self.conv6 = nn.Sequential(
+            nn.Conv2d(internal_channels * 2, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, num_feature_channels * num_filters + num_dynamic_channels, kernel_size=3, padding=1),
+        )
+
+    def forward(self, input):
+        x0 = self.conv0(input)
+        x1 = self.conv1(x0)
+        x2 = self.conv2(x1)
+        x3 = self.conv3(x2) # downsamples then upsamples
+        x4 = self.conv4(x3 + x2)
+        x5 = self.conv5(x4 + x1)
+        x6 = self.conv6(x5 + x0)
+
+        return x6
+
+
+
+class ResNeXtBlock(nn.Module):
+    def __init__(self, num_input_channels, num_intermediate_channels, num_groups, dilation):
+        super().__init__()
+
+        self.num_groups = num_groups
+
+        self.encode = nn.Conv2d(num_input_channels, num_intermediate_channels * num_groups, kernel_size=1)
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(num_intermediate_channels * num_groups, num_intermediate_channels * num_groups, kernel_size=5, padding=2 * dilation, dilation=dilation, groups=self.num_groups),
+            nn.ReLU(),
+            nn.Conv2d(num_intermediate_channels * num_groups, num_intermediate_channels * num_groups, kernel_size=5, padding=2 * dilation, dilation=dilation, groups=self.num_groups),
+            nn.ReLU(),
+            nn.Conv2d(num_intermediate_channels * num_groups, num_intermediate_channels * num_groups, kernel_size=5, padding=2 * dilation, dilation=dilation, groups=self.num_groups),
+        )
+
+        self.decode = nn.Conv2d(num_intermediate_channels * num_groups, num_input_channels, kernel_size=1)
+
+    def forward(self, input):
+        skip = input
+
+        enc = self.encode(input)
+        conv = self.conv(enc)
+        dec = self.decode(conv)
+
+        output = dec + skip
+
+        return output
+
+
+class PreEncodingUNet3(nn.Module):
+    def __init__(self, num_input_channels, num_output_channels, intermediate_channels, num_filters):
+        super().__init__()
+
+        internal_channels = num_filters * num_output_channels
+        self.num_blocks = 4
+        self.conv0 = nn.Sequential(
+            nn.Conv2d(num_input_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels * 2, kernel_size=3, padding=1),
+        )
+
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=2, stride=2, groups=internal_channels * 2),
+            nn.ReLU(),
+            ResNeXtBlock(internal_channels * 2, intermediate_channels, self.num_blocks, 1),
+            nn.Conv2d(internal_channels * 2, internal_channels * 4, kernel_size=3, padding=1),
+        )
+
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=2, stride=2, groups=internal_channels * 4),
+            nn.ReLU(),
+            ResNeXtBlock(internal_channels * 4, intermediate_channels, self.num_blocks * 2, 1),
+            nn.Conv2d(internal_channels * 4, internal_channels * 8, kernel_size=3, padding=1),
+        )
+
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(internal_channels * 8, internal_channels * 8, kernel_size=2, stride=2, groups=internal_channels * 8),
+            nn.ReLU(),
+            ResNeXtBlock(internal_channels * 8, intermediate_channels, self.num_blocks * 4, 1),
+            nn.ConvTranspose2d(internal_channels * 8, internal_channels * 8, kernel_size=2, stride=2),
+        )
+
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(internal_channels * 8, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            ResNeXtBlock(internal_channels * 4, intermediate_channels, self.num_blocks * 2, 1),
+            nn.ConvTranspose2d(internal_channels * 4, internal_channels * 4, kernel_size=2, stride=2),
+        )
+
+        self.conv5 = nn.Sequential(
+            nn.Conv2d(internal_channels * 4, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            ResNeXtBlock(internal_channels * 2, intermediate_channels, self.num_blocks, 1),
+            nn.ConvTranspose2d(internal_channels * 2, internal_channels * 2, kernel_size=2, stride=2),
+        )
+
+        self.conv6 = nn.Sequential(
+            nn.Conv2d(internal_channels * 2, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, num_output_channels * num_filters, kernel_size=3, padding=1),
+        )
+
+    def forward(self, input):
+        x0 = self.conv0(input)
+        x1 = self.conv1(x0)
+        x2 = self.conv2(x1)
+        x3 = self.conv3(x2) # downsamples then upsamples
+        x4 = self.conv4(x3 + x2)
+        x5 = self.conv5(x4 + x1)
+        x6 = self.conv6(x5 + x0)
+
+        return x6
+
+
+
+
+class EESPv2Block(nn.Module):
+    def __init__(self, num_input_channels, num_intermediate_channels, num_groups, summate=False):
+        super().__init__()
+
+        self.num_groups = num_groups
+        self.num_intermediate_channels = num_intermediate_channels
+
+        self.encode = nn.Sequential(
+            nn.Conv2d(num_input_channels, num_intermediate_channels * num_groups, kernel_size=1),
+            nn.ReLU(),
+            nn.BatchNorm2d(num_intermediate_channels * num_groups),
+        )
+
+        self.conv = nn.ModuleList([])
+        for i in range(self.num_groups):
+            dilation = 2 ** i
+            padding = 2 * dilation
+
+            self.conv.append(
+                nn.Sequential(
+                    nn.Conv2d(num_intermediate_channels, num_intermediate_channels, kernel_size=5, dilation=dilation, padding=padding),
+                    nn.ReLU(),
+                    nn.BatchNorm2d(num_intermediate_channels),
+                    nn.Conv2d(num_intermediate_channels, num_intermediate_channels, kernel_size=5, dilation=dilation, padding=padding),
+                    nn.ReLU(),
+                    nn.BatchNorm2d(num_intermediate_channels),
+                )
+            )
+
+            for layer in self.conv[i]:
+                if isinstance(layer, nn.Conv2d):
+                    layer.weight.data.zero_()
+
+
+        self.decode = nn.Sequential(
+            nn.BatchNorm2d(num_intermediate_channels * num_groups),
+            nn.Conv2d(num_intermediate_channels * num_groups, num_input_channels, kernel_size=1)
+        )
+
+        self.summate = summate
+
+    def forward(self, input):
+        skip = input
+
+        enc = self.encode(input)
+        intermediates = []
+        for i in range(self.num_groups):
+            base = i * self.num_intermediate_channels
+
+            lane = enc[:, base:base + self.num_intermediate_channels, :, :]
+
+            lane = checkpoint.checkpoint_sequential(self.conv[i], segments=1, input=lane, use_reentrant=False)
+
+            if(self.summate):
+                lane = lane.unsqueeze(1)
+
+            intermediates.append(lane)
+
+        tied = torch.cat(intermediates, dim=1)
+        if(self.summate):
+            summed = torch.cumsum(tied, dim=1)
+            tied = summed.flatten(1, 2)
+
+        dec = self.decode(tied)
+
+        output = dec + skip
+
+        return output
+
+class EESPPreencoder(nn.Module):
+    def __init__(self, num_input_channels, num_output_channels, num_intermediate_channels, num_filters, num_groups, num_additional_channels):
+        super().__init__()
+
+        print("\tUsing a EESP Preencoder with a denoiser")
+
+        self.num_groups = num_groups
+        self.num_intermediate_channels = num_intermediate_channels
+
+        internal_channels = num_output_channels * num_filters + num_additional_channels
+        self.encoder = nn.Sequential(
+            nn.Conv2d(num_input_channels + 4, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            EESPv2Block(internal_channels, self.num_intermediate_channels, self.num_groups, False),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            EESPv2Block(internal_channels, self.num_intermediate_channels, self.num_groups, False),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+        )
+
+    def forward(self, input):
+        output = checkpoint.checkpoint_sequential(self.encoder, segments=3, input=input, use_reentrant=False)
+
+        return output
+
+
+class EESPPreencoder2(nn.Module):
+    def __init__(self, num_input_channels, num_output_channels, num_intermediate_channels, num_filters, num_groups):
+        super().__init__()
+
+        print("\tUsing a EESP Preencoder V2")
+
+        self.num_groups = num_groups
+        self.num_intermediate_channels = num_intermediate_channels
+
+        internal_channels = num_output_channels * num_filters
+        self.encoder = nn.Sequential(
+            nn.Conv2d(num_input_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            EESPv2Block(internal_channels, self.num_intermediate_channels, self.num_groups, False),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            EESPv2Block(internal_channels, self.num_intermediate_channels, self.num_groups, False),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+        )
+
+    def forward(self, input):
+        output = checkpoint.checkpoint_sequential(self.encoder, segments=3, input=input, use_reentrant=False)
+
+        return output
