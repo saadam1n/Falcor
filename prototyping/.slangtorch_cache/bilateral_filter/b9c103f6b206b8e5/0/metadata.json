@@ -3,16 +3,16 @@
         "options": [],
         "deps": [
             [
-                "C:\\Github\\Falcor\\prototyping\\bilateral_filter.slang",
-                1734983533.1063607
+                "/home/saad/Falcor/prototyping/bilateral_filter.slang",
+                1735547326.4050097
             ],
             [
-                "C:\\Users\\Saad Amin\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\slangtorch\\bin\\slangc.exe",
-                1734383065.9190457
+                "/home/saad/.local/lib/python3.10/site-packages/slangtorch/bin/slangc",
+                1735700181.7629688
             ],
             [
-                "C:\\Users\\Saad Amin\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\slangtorch\\bin\\slang.dll",
-                1734383065.9149475
+                "/home/saad/.local/lib/python3.10/site-packages/slangtorch/bin/libslang.so",
+                1735700181.677969
             ]
         ],
         "version": "1.3.4",
@@ -22,21 +22,21 @@
         "options": [],
         "deps": [
             [
-                "C:\\Github\\Falcor\\prototyping\\bilateral_filter.slang",
-                1734983533.1063607
+                "/home/saad/Falcor/prototyping/bilateral_filter.slang",
+                1735547326.4050097
             ],
             [
-                "C:\\Users\\Saad Amin\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\slangtorch\\bin\\slangc.exe",
-                1734383065.9190457
+                "/home/saad/.local/lib/python3.10/site-packages/slangtorch/bin/slangc",
+                1735700181.7629688
             ],
             [
-                "C:\\Users\\Saad Amin\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\slangtorch\\bin\\slang.dll",
-                1734383065.9149475
+                "/home/saad/.local/lib/python3.10/site-packages/slangtorch/bin/libslang.so",
+                1735700181.677969
             ]
         ],
         "version": "1.3.4",
         "includePaths": []
     },
     "moduleName": "_slangtorch_bilateral_filter_b9c103f6b206b8e5",
-    "moduleBinary": "./prototyping\\.slangtorch_cache\\bilateral_filter\\b9c103f6b206b8e5\\0\\_slangtorch_bilateral_filter_b9c103f6b206b8e5.pyd"
+    "moduleBinary": "./prototyping/.slangtorch_cache/bilateral_filter/b9c103f6b206b8e5/0/_slangtorch_bilateral_filter_b9c103f6b206b8e5.pyd"
 }

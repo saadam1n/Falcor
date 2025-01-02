@@ -4068,3 +4068,267 @@ class LocalFrequencyDenoiser2(nn.Module):
         recolored = albedo * reconstructed
 
         return (recolored, temporal_state)
+
+
+
+
+
+
+class LocalFrequencyDenoiser3(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        print("Using LocalFrequencyDenoiser3")
+
+        self.num_input_channels = 12
+        self.num_feature_channels = 8
+        self.num_intermediate_channels = 4
+        self.num_groups = 5
+
+        self.num_output_frequencies = 6
+
+        self.num_frequencies_per_dilation = [4, 4, 4, 4]
+        self.neural_freq = nn.ParameterList([
+            torch.randn(num_freq, 1, 3, 3) for num_freq in self.num_frequencies_per_dilation
+        ])
+
+        self.batch_norm = nn.BatchNorm2d(self.num_input_channels - 3)
+
+
+        self.feature_encoder = EESPPreencoder3(self.num_input_channels - 3, self.num_feature_channels, self.num_intermediate_channels, self.num_groups)
+
+        # need to output RGB coeffs + bias for each channel
+        # since we are working on a channel indepdent approach
+        # we then combine frequency + bias information into one channel for final biases
+
+        freq_proc_num_input_channels = sum(self.num_frequencies_per_dilation) + self.num_feature_channels
+        freq_proc_internal_channels = self.num_output_frequencies * 2
+        self.freq_proc = nn.Sequential(
+            # project to the dim we care about
+            nn.Conv2d(freq_proc_num_input_channels, freq_proc_num_input_channels * 2, kernel_size=1), 
+            nn.ReLU(),
+            nn.BatchNorm2d(freq_proc_num_input_channels * 2),
+            nn.Conv2d(freq_proc_num_input_channels * 2, freq_proc_internal_channels, kernel_size=1), 
+            nn.ReLU(),
+            nn.BatchNorm2d(freq_proc_internal_channels),
+
+            ResConvBlock(freq_proc_internal_channels, kernel_size=1, expansion_ratio=2),
+            ResConvBlock(freq_proc_internal_channels, kernel_size=1, expansion_ratio=2),
+
+            # aggreate spatial information
+            nn.Conv2d(freq_proc_internal_channels, freq_proc_internal_channels, kernel_size=7, dilation=1, padding=3, groups=freq_proc_internal_channels), 
+            nn.ReLU(),
+            nn.BatchNorm2d(freq_proc_internal_channels),
+
+            ResConvBlock(freq_proc_internal_channels, kernel_size=1, expansion_ratio=2),
+            ResConvBlock(freq_proc_internal_channels, kernel_size=1, expansion_ratio=2),
+
+            nn.Conv2d(freq_proc_internal_channels, freq_proc_internal_channels, kernel_size=7, dilation=2, padding=6, groups=freq_proc_internal_channels), 
+            nn.ReLU(),
+            nn.BatchNorm2d(freq_proc_internal_channels),
+
+            ResConvBlock(freq_proc_internal_channels, kernel_size=1, expansion_ratio=2),
+            ResConvBlock(freq_proc_internal_channels, kernel_size=1, expansion_ratio=2),
+
+            nn.Conv2d(freq_proc_internal_channels, freq_proc_internal_channels, kernel_size=7, dilation=2, padding=6, groups=freq_proc_internal_channels), 
+        )
+
+        self.bias_proc = nn.Sequential(
+            nn.Conv2d(self.num_output_frequencies * 3, self.num_output_frequencies * 6, kernel_size=1),
+            nn.ReLU(),
+            nn.BatchNorm2d(self.num_output_frequencies * 6),
+            nn.Conv2d(self.num_output_frequencies * 6, self.num_output_frequencies, kernel_size=1),
+        )
+
+    def forward(self, input):
+        B = input.size(0)
+        num_frames = input.size(1) // self.num_input_channels
+        H = input.size(2)
+        W = input.size(3)
+
+        output = torch.empty(B, 3 * num_frames, H, W, device=input.device)
+        temporal_state = None
+
+        for i in range(num_frames):
+
+            base_channel_index = i * self.num_input_channels
+
+            frame_input = input[:, base_channel_index:base_channel_index + self.num_input_channels, :, :]
+
+            (frame_output, next_temporal_state) = checkpoint.checkpoint(self.run_frame, frame_input, temporal_state, i, use_reentrant=False)
+
+            oidx = i * 3
+            output[:, oidx:oidx + 3, :, :] = frame_output
+
+            temporal_state = next_temporal_state
+
+        return output
+
+    def run_frame(self, frame_input, temporal_state, i):
+        B = frame_input.size(0)
+        H = frame_input.size(2)
+        W = frame_input.size(3)
+
+        # albedo is channels 3..5
+        color = frame_input[:, 0:3, :, :]
+        albedo = frame_input[:, 3:6, :, :]
+
+        norm_aux = self.batch_norm(frame_input[:, 3:, :, :])
+        extracted_features = self.feature_encoder(norm_aux)
+
+        extracted_frequencies = [
+            nn.functional.conv2d(color, freq_pattern.repeat(3, 1, 1, 1), dilation=2 ** i, padding=2 ** i, groups=3) for i, freq_pattern in enumerate(self.neural_freq)
+        ]
+        extracted_frequencies = torch.cat(extracted_frequencies, dim=1)
+
+        # format is (RGB0 RGB1 RGB2 etc)
+        # for matmul we want all frequencies to undergo different linear layers
+        # we can do this easily by turning RGB into a "batch dimension" and 1x1 convs
+
+        per_pixel_state = torch.cat(
+            (extracted_frequencies.reshape(B, -1, 3, H, W).transpose(1, 2).reshape(B * 3, -1, H, W),
+             extracted_features.repeat(3, 1, 1, 1)),
+             dim=1
+        )
+
+        freq_bias = checkpoint.checkpoint_sequential(self.freq_proc, segments=3, input=per_pixel_state, use_reentrant=False)
+
+        freq = freq_bias[:, :self.num_output_frequencies, :, :].reshape(B, 3, -1, H, W)
+        bias = freq_bias[:, self.num_output_frequencies:, :, :].reshape(B, -1, H, W)
+
+        corrected_bias = self.bias_proc(bias)
+        wave = torch.sin(corrected_bias).unsqueeze(1)
+
+        reconstructed = (freq * wave).sum(2)
+
+        recolored = albedo * reconstructed
+
+        return (recolored, temporal_state)
+
+
+
+
+class JointUpsamplingDenoising(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        print("Using JointUpsamplingDenoising")
+
+    def forward(self, input):
+        B = input.size(0)
+        num_frames = input.size(1) // self.num_input_channels
+        H = input.size(2)
+        W = input.size(3)
+
+        output = torch.empty(B, 3 * num_frames, H, W, device=input.device)
+        temporal_state = None
+
+        for i in range(num_frames):
+
+            base_channel_index = i * self.num_input_channels
+
+            frame_input = input[:, base_channel_index:base_channel_index + self.num_input_channels, :, :]
+
+            (frame_output, next_temporal_state) = checkpoint.checkpoint(self.run_frame, frame_input, temporal_state, i, use_reentrant=False)
+
+            oidx = i * 3
+            output[:, oidx:oidx + 3, :, :] = frame_output
+
+            temporal_state = next_temporal_state
+
+        return output
+
+    def run_frame(self, frame_input, temporal_state, i):
+        B = frame_input.size(0)
+        H = frame_input.size(2)
+        W = frame_input.size(3)
+
+        # albedo is channels 3..5
+        albedo = frame_input[:, 3:6, :, :]
+
+        # lazy version of joint upsampling/denoising
+        # we do not do supersampling
+
+
+        return (None, temporal_state)
+    
+
+
+"""
+The idea behind this denoiser is to combine direct-prediction and kernel-prediction approachs.
+We want the simplicty of direct-prediction but also combine it with kernel-prediction. To do this,
+we first do direct-prediction and then use "kernel regression" to determine the optimal way to filter 
+the image. Basically, given a raw image I we predict I_D which is the direct-prediction denoised
+version of I. Then we use some network that takes (I, I_D) and finds the optimal per-pixel kernel
+to get I_K which is the kernel-prediction denoised version of I. We repeat this process multiple
+times for varying levels of refinement/kernel sizes. 
+
+Now actually there's two approaches: you could set up regression to predict the denoised transformation
+matrix (easy) or you could predict the kernel itself with softmax limitations. The former is not color 
+stable as you mix channels and can easily result in unintended color shift. So how do we do the latter?
+
+We want to find the optimal vector K = argmin ||D-AK||^2 where A is flattened inputs to the kernel. 
+Essentially we are trying to find the optimal kernel that maps AK to the direct prediction output.
+
+For a kernel size of N, A is a 3 x N^2 matrix and K is a N^2 x 1 vector. Since N^2 > 3 almost always,
+if the columns of A span R^3 we can perfectly fit D and we don't want that because it restores color
+instability (well not quite but it does something similair). We can prevent this by ensuring that the
+elements of K are in [-1, 1] but optimizing with inequality-defined bounds is a PITA so instead we will
+set the requirement that K = softmax(C) where C is also a N^2 x 1 vector. If we optimize the previous 
+equation, our derivative becomes 2(D - Asoftmax(C)) * d/dC softmax(C). 
+
+Nah this is too hard. I'm bad at math. Let's do gradient descent (or just predict the network directly)
+"""
+class KernelRegressionDenoiser(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        print("Using KernelRegressionDenoiser")
+
+        self.num_input_channels = 9
+        # 
+        self.batch_norm = PartialBatchNorm(self.num_input_channels, 3)
+        self.direct_denoiser = LightweightDirectDenoiseUNet2(self.num_input_channels, 3)
+
+    def forward(self, input):
+        B = input.size(0)
+        num_frames = input.size(1) // self.num_input_channels
+        H = input.size(2)
+        W = input.size(3)
+
+        output = torch.empty(B, 3 * num_frames, H, W, device=input.device)
+        temporal_state = None
+
+        for i in range(num_frames):
+
+            base_channel_index = i * self.num_input_channels
+
+            frame_input = input[:, base_channel_index:base_channel_index + self.num_input_channels, :, :]
+
+            (frame_output, next_temporal_state) = checkpoint.checkpoint(self.run_frame, frame_input, temporal_state, i, use_reentrant=False)
+
+            oidx = i * 3
+            output[:, oidx:oidx + 3, :, :] = frame_output
+
+            temporal_state = next_temporal_state
+
+        return output
+
+    def run_frame(self, frame_input, temporal_state, i):
+        B = frame_input.size(0)
+        H = frame_input.size(2)
+        W = frame_input.size(3)
+
+        # albedo is channels 3..5
+        albedo = frame_input[:, 3:6, :, :]
+
+        # remove world pos
+        trunc_input = frame_input[:, :9, :, :]
+
+        denoised = self.direct_denoiser(trunc_input)
+
+        recolored = albedo * denoised
+
+
+        return (recolored, temporal_state)
+    

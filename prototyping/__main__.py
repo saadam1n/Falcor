@@ -7,10 +7,12 @@ import frame_data
 from torch.utils.data import DataLoader
 import cv2
 import matplotlib.pyplot as plt
-import keyboard
+import portable_keyboard
+from pynput import keyboard
 import time
 import datetime
 from noisebase import Noisebase
+import platform
 
 if __name__ == "__main__":
     device = "cpu"
@@ -25,11 +27,14 @@ if __name__ == "__main__":
         seq_len = 8
         batch_size = 4
     else:
-        seq_len = 8
-        batch_size = 12
+        seq_len = 1
+        batch_size = 8
 
-    if False:
-        training_data = frame_data.FrameData("C:\\FalcorFiles\\Dataset0\\", device, seq_len)
+    if True:
+        #                                                                            /media/saad/00486DF1486DE5BE/FalcorFiles/Dataset0/
+        path = "C:\\FalcorFiles\\Dataset0\\" if platform.system() == "Windows" else "/media/saad/00486DF1486DE5BE/FalcorFiles/Dataset0/"
+
+        training_data = frame_data.FrameData(path, device, seq_len)
         training_loader = DataLoader(training_data, batch_size=batch_size, shuffle=True)
     else:
         training_loader = Noisebase(
@@ -42,7 +47,7 @@ if __name__ == "__main__":
             }
         )
 
-    model = fpcnn.ImageEnhancementFilter()
+    model = fpcnn.KernelRegressionDenoiser()
     model = torch.nn.DataParallel(model)
     model = model.to(device)
     #model = torch.compile(model)
@@ -72,9 +77,13 @@ if __name__ == "__main__":
             cv2.waitKey(0)
             cv2.destroyAllWindows()
 
+    model.train()
+
+
     numIters = 5000
     lossHistory = []
     for i in range(0, numIters):
+
         start = time.time()
         input, target = next(iter(training_loader))
 
@@ -99,11 +108,10 @@ if __name__ == "__main__":
         print(f"ETA [{duration}]:\tLoss at iteration {i}\tis {total_loss}")
         lossHistory.append(total_loss)
 
-
-        if i == 0 or i == (numIters - 1) or keyboard.is_pressed("f10"):
+        if i == 0 or i == (numIters - 1) or portable_keyboard.is_key_pressed(keyboard.Key.f10):
             # first, export our model
-            if i == (numIters - 1):
-                torch.save(model.state_dict(), "C:/FalcorFiles/Models/IFWE.pt") # global pre-context filter
+            #if i == (numIters - 1):
+                #torch.save(model.state_dict(), "C:/FalcorFiles/Models/IFWE.pt") # global pre-context filter
 
             # get last few frames when it has stabilized
             image = output.detach()
@@ -111,7 +119,7 @@ if __name__ == "__main__":
             image = image[:, :, -3:]
 
             first_iter = True
-            while keyboard.is_pressed("f10"):
+            while portable_keyboard.is_key_pressed(keyboard.Key.f10):
                 if first_iter:
                     print("Please release the key to display the window.")
                     first_iter = False
@@ -122,14 +130,20 @@ if __name__ == "__main__":
             cv2.destroyAllWindows()
 
 
-        if keyboard.is_pressed("f9"):
+
+        if portable_keyboard.is_key_pressed(keyboard.Key.f9):
+            model.eval()
+
             first_iter = True
-            while keyboard.is_pressed("f9"):
+            while portable_keyboard.is_key_pressed(keyboard.Key.f9):
                 if first_iter:
                     print("Please release the key to display the window.")
                     first_iter = False
 
             display_full_image(model, training_data, loss_fn)
+
+            model.train()
+
 
     display_full_image(model, training_data, loss_fn)
 

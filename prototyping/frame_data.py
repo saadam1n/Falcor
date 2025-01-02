@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import random
 import math
+import platform
 
 # We need this so OpenCV imports exr files
 import os
@@ -95,7 +96,7 @@ class FrameData:
 
             ref = self.read_exr(i, "Reference").permute(2, 0, 1)
 
-            frame_inputs = torch.cat((color, albedo, worldpos, worldnorm), dim=2).permute(2, 0, 1)
+            frame_inputs = torch.cat((color, albedo, worldnorm, worldpos), dim=2).permute(2, 0, 1)
 
             self.frame_cache[i] = frame_inputs
             self.ref_cache[i] = ref
@@ -108,7 +109,8 @@ class FrameData:
     def read_exr(self, idx, ext):
         filename = str(idx) + "-" + ext + ".exr"
 
-        cache_path = "C:/FalcorFiles/CacheV2/" + filename + ".npy"
+        cache_prefix = "C:/FalcorFiles/CacheV2/" if platform.system() == "Windows" else "/media/saad/00486DF1486DE5BE/FalcorFiles/"
+        cache_path = cache_prefix + filename + ".npy"
 
         if os.path.exists(cache_path):
             img = np.load(cache_path)

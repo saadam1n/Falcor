@@ -387,6 +387,8 @@ class ColorStabilizingPool(nn.Module):
         self.avg_channels = num_avg_channels
 
     def forward(self, input):
+        return self.avg_pool(input)
+
 
         ares = self.avg_pool(input[:, :self.avg_channels, :, :])
         mres = self.max_pool(input[:, self.avg_channels:, :, :])
@@ -1170,3 +1172,337 @@ class EESPPreencoder2(nn.Module):
         output = checkpoint.checkpoint_sequential(self.encoder, segments=3, input=input, use_reentrant=False)
 
         return output
+
+class ResConvBlock(nn.Module):
+    def __init__(self, num_input_channels, kernel_size, expansion_ratio=2):
+        super().__init__()
+
+        self.conv_block = nn.Sequential(
+            nn.Conv2d(num_input_channels, num_input_channels * expansion_ratio, kernel_size=kernel_size, padding=kernel_size // 2),
+            nn.ReLU(),
+            nn.BatchNorm2d(num_input_channels * expansion_ratio),
+            nn.Conv2d(num_input_channels * expansion_ratio, num_input_channels, kernel_size=kernel_size, padding=kernel_size // 2),
+            nn.ReLU(),
+            nn.BatchNorm2d(num_input_channels),
+        )
+
+        self.post_process = nn.Sequential(
+            nn.ReLU(),
+            nn.BatchNorm2d(num_input_channels)
+        )
+
+    def forward(self, input):
+
+        processed = self.conv_block(input) + input
+        normalized = self.post_process(processed)
+
+        return normalized
+
+
+
+
+
+class EESPv2BlockV2(nn.Module):
+    def __init__(self, num_input_channels, num_intermediate_channels, num_groups):
+        super().__init__()
+
+        self.num_groups = num_groups
+        self.num_intermediate_channels = num_intermediate_channels
+
+        self.encode = nn.Sequential(
+            nn.Conv2d(num_input_channels, num_intermediate_channels * num_groups, kernel_size=1),
+            nn.ReLU(),
+            nn.BatchNorm2d(num_intermediate_channels * num_groups),
+        )
+
+        self.conv = nn.ModuleList([])
+        for i in range(self.num_groups):
+            dilation = 2 ** i
+            padding = 2 * dilation
+
+            self.conv.append(
+                nn.Sequential(
+                    nn.Conv2d(num_intermediate_channels, num_intermediate_channels, kernel_size=5, dilation=dilation, padding=padding),
+                    nn.ReLU(),
+                    nn.BatchNorm2d(num_intermediate_channels),
+                    nn.Conv2d(num_intermediate_channels, num_intermediate_channels, kernel_size=5, dilation=dilation, padding=padding),
+                    nn.ReLU(),
+                    nn.BatchNorm2d(num_intermediate_channels),
+                )
+            )
+
+            for layer in self.conv[i]:
+                if isinstance(layer, nn.Conv2d):
+                    layer.weight.data.zero_()
+
+
+        self.decode = nn.Sequential(
+            nn.Conv2d(num_intermediate_channels * num_groups, num_input_channels, kernel_size=1),
+            nn.ReLU(),
+            nn.BatchNorm2d(num_input_channels)
+        )
+
+        self.postproc = nn.Sequential(
+            nn.ReLU(),
+            nn.BatchNorm2d(num_input_channels)
+        )
+
+    def forward(self, input):
+        skip = input
+
+        enc = self.encode(input)
+        intermediates = []
+        for i in range(self.num_groups):
+            base = i * self.num_intermediate_channels
+
+            lane = enc[:, base:base + self.num_intermediate_channels, :, :]
+
+            lane = checkpoint.checkpoint_sequential(self.conv[i], segments=1, input=lane, use_reentrant=False)
+
+            intermediates.append(lane)
+
+        combined = torch.cat(intermediates, dim=1)
+
+        dec = self.decode(combined)
+
+        output = self.postproc(dec + skip)
+
+        return output
+
+
+
+
+
+
+class EESPPreencoder3(nn.Module):
+    def __init__(self, num_input_channels, num_output_channels, num_intermediate_channels, num_groups):
+        super().__init__()
+
+        print("\tUsing a EESP Preencoder V3")
+
+        self.num_groups = num_groups
+        self.num_intermediate_channels = num_intermediate_channels
+
+        internal_channels = num_output_channels
+        self.encoder = nn.Sequential(
+            ResConvBlock(num_input_channels, kernel_size=3, expansion_ratio=1),
+            nn.Conv2d(num_input_channels, internal_channels, kernel_size=3, padding=1), # once features have been extracted, project to a different dimension
+            ResConvBlock(internal_channels, kernel_size=3, expansion_ratio=1),
+            EESPv2BlockV2(internal_channels, self.num_intermediate_channels, self.num_groups),
+            ResConvBlock(internal_channels, kernel_size=3, expansion_ratio=1),
+            EESPv2BlockV2(internal_channels, self.num_intermediate_channels, self.num_groups),
+            ResConvBlock(internal_channels, kernel_size=3, expansion_ratio=1),
+        )
+
+    def forward(self, input):
+        output = checkpoint.checkpoint_sequential(self.encoder, segments=3, input=input, use_reentrant=False)
+
+        return output
+
+
+
+
+
+class PartialBatchNorm(nn.Module):
+    def __init__(self, num_input_channels, num_preserve_channels):
+        super().__init__()
+
+        self.preserve_size = num_preserve_channels
+        self.batch_norm = nn.BatchNorm2d(num_input_channels - num_preserve_channels)
+
+    def forward(self, input):
+        return input
+
+        norm = self.batch_norm(input[:, self.preserve_size:, :, :])
+
+        return torch.cat((input[:, :self.preserve_size, :, :], norm), dim=1)
+
+
+# LightweightDirectDenoiseUNet(self.num_input_channels, 3)
+
+class LightweightDirectDenoiseUNet(nn.Module):
+    def __init__(self, num_input_channels, num_output_channels):
+        super().__init__()
+
+        # assume input channels >> output channels
+# 0.025747863575816154
+        internal_channels = num_input_channels * 2 # probaby 12
+        num_preserve_channels = 3
+        self.conv0 = nn.Sequential(
+            nn.Conv2d(num_input_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            PartialBatchNorm(internal_channels, num_preserve_channels),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            PartialBatchNorm(internal_channels, num_preserve_channels),
+            nn.Conv2d(internal_channels, internal_channels * 2, kernel_size=3, padding=1),
+        )
+
+        self.conv1 = nn.Sequential(
+            ColorStabilizingPool(num_preserve_channels * 2),
+            nn.ReLU(),
+            PartialBatchNorm(internal_channels * 2, num_preserve_channels * 2),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            PartialBatchNorm(internal_channels * 2, num_preserve_channels * 2),
+            nn.Conv2d(internal_channels * 2, internal_channels * 4, kernel_size=3, padding=1),
+        )
+
+        self.conv2 = nn.Sequential(
+            ColorStabilizingPool(num_preserve_channels * 4),
+            nn.ReLU(),
+            PartialBatchNorm(internal_channels * 4, num_preserve_channels * 4),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            PartialBatchNorm(internal_channels * 4, num_preserve_channels * 4),
+            nn.Conv2d(internal_channels * 4, internal_channels * 6, kernel_size=3, padding=1),
+        )
+
+        self.conv3 = nn.Sequential(
+            ColorStabilizingPool(num_preserve_channels * 6),
+            nn.ReLU(),
+            PartialBatchNorm(internal_channels * 6, num_preserve_channels * 6),
+            nn.Conv2d(internal_channels * 6, internal_channels * 6, kernel_size=5, padding=2),
+            nn.ReLU(),
+            PartialBatchNorm(internal_channels * 6, num_preserve_channels * 6),
+            nn.Conv2d(internal_channels * 6, internal_channels * 6, kernel_size=5, padding=2),
+            nn.ReLU(),
+            nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True),
+            PartialBatchNorm(internal_channels * 6, num_preserve_channels),
+        )
+
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(internal_channels * 6, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            PartialBatchNorm(internal_channels * 4, num_preserve_channels * 4),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True),
+            PartialBatchNorm(internal_channels * 4, num_preserve_channels * 4),
+        )
+
+        self.conv5 = nn.Sequential(
+            nn.Conv2d(internal_channels * 4, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            PartialBatchNorm(internal_channels * 2, num_preserve_channels * 2),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            PartialBatchNorm(internal_channels * 2, num_preserve_channels * 2),
+            nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
+        )
+
+        self.conv6 = nn.Sequential(
+            nn.Conv2d(internal_channels * 2, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            PartialBatchNorm(internal_channels, num_preserve_channels),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            PartialBatchNorm(internal_channels, num_preserve_channels),
+            nn.Conv2d(internal_channels, num_output_channels, kernel_size=3, padding=1),
+        )
+
+    def forward(self, input):
+        x0 = self.conv0(input)
+        x1 = self.conv1(x0)
+        x2 = self.conv2(x1)
+        x = self.conv3(x2)
+        x = self.conv4(x + x2)
+        x = self.conv5(x + x1)
+        x = self.conv6(x + x0)
+
+        return x
+
+
+
+
+class LightweightDirectDenoiseUNet2(nn.Module):
+    def __init__(self, num_input_channels, num_output_channels):
+        super().__init__()
+
+        # assume input channels >> output channels
+# 0.025747863575816154
+# 0.025629717856645584
+        internal_channels = num_input_channels * 2 # probaby 12
+        num_preserve_channels = 3
+        self.conv0 = nn.Sequential(
+            nn.Conv2d(num_input_channels, internal_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(internal_channels),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(internal_channels),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels * 2, kernel_size=3, padding=1),
+            nn.BatchNorm2d(internal_channels * 2),
+            nn.ReLU(),
+        )
+
+        self.conv1 = nn.Sequential(
+            ColorStabilizingPool(num_preserve_channels * 2),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.BatchNorm2d(internal_channels * 2),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 4, kernel_size=3, padding=1),
+            nn.BatchNorm2d(internal_channels * 4),
+            nn.ReLU(),
+        )
+
+        self.conv2 = nn.Sequential(
+            ColorStabilizingPool(num_preserve_channels * 4),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.BatchNorm2d(internal_channels * 4),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 6, kernel_size=3, padding=1),
+            nn.BatchNorm2d(internal_channels * 6),
+            nn.ReLU(),
+        )
+
+        self.conv3 = nn.Sequential(
+            ColorStabilizingPool(num_preserve_channels * 6),
+            nn.Conv2d(internal_channels * 6, internal_channels * 6, kernel_size=5, padding=2),
+            nn.BatchNorm2d(internal_channels * 6),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 6, internal_channels * 6, kernel_size=5, padding=2),
+            nn.BatchNorm2d(internal_channels * 6),
+            nn.ReLU(),
+            nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True),
+        )
+
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(internal_channels * 6, internal_channels * 4, kernel_size=3, padding=1),
+            nn.BatchNorm2d(internal_channels * 4),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 4, internal_channels * 4, kernel_size=3, padding=1),
+            nn.BatchNorm2d(internal_channels * 4),
+            nn.ReLU(),
+            nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True),
+        )
+
+        self.conv5 = nn.Sequential(
+            nn.Conv2d(internal_channels * 4, internal_channels * 2, kernel_size=3, padding=1),
+            nn.BatchNorm2d(internal_channels * 2),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels * 2, internal_channels * 2, kernel_size=3, padding=1),
+            nn.BatchNorm2d(internal_channels * 2),
+            nn.ReLU(),
+            nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
+        )
+
+        # no batch norm since that seems to mess up color extraction
+        self.conv6 = nn.Sequential(
+            nn.Conv2d(internal_channels * 2, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, internal_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(internal_channels, num_output_channels, kernel_size=3, padding=1),
+        )
+
+    def forward(self, input):
+        x0 = self.conv0(input)
+        x1 = self.conv1(x0)
+        x2 = self.conv2(x1)
+        x = self.conv3(x2)
+        x = self.conv4(x + x2)
+        x = self.conv5(x + x1)
+        x = self.conv6(x + x0)
+
+        return x
