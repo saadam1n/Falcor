@@ -33,3 +33,5 @@
 *.swp
 
 sampleset_v1
+.slangtorch_cache
+__pycache__
